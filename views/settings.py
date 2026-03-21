@@ -127,22 +127,6 @@ def initialize_settings_state(settings: dict[str, str]) -> None:
         st.session_state["settings_openai_api_key_value"] = load_saved_openai_api_key()
 
 
-def render_getting_started_banner() -> None:
-    if has_openai_api_key():
-        return
-
-    st.info(
-        """
-Welcome. The app is running correctly in local mode.
-
-To finish first-time setup:
-1. Go to the OpenAI API tab and save an API key to enable AI-powered cover letters.
-2. Optionally review Search Criteria and Profile Context to improve role matching and cover letter quality.
-3. Your data stays on this machine unless you explicitly configure something else.
-        """
-    )
-
-
 def apply_configuration_defaults_to_session(
     default_min_fit_score: str,
     default_jobs_per_page: str,
@@ -523,7 +507,6 @@ def render_settings() -> None:
 
     settings = load_settings()
     initialize_settings_state(settings)
-    render_getting_started_banner()
 
     tab_configuration, tab_search, tab_profile, tab_openai = st.tabs(
         ["Configuration", "Search Criteria", "Profile Context", "OpenAI API"]

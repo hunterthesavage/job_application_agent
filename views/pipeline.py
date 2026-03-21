@@ -71,6 +71,87 @@ A good first step is:
     )
 
 
+def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
+    discovery = result.get("discovery", {}) or {}
+    ingest = result.get("ingest", {}) or {}
+
+    seen_urls = int(ingest.get("seen_urls", discovery.get("url_count", 0)) or 0)
+    accepted_jobs = int(ingest.get("accepted_jobs", 0) or 0)
+    skipped_count = int(ingest.get("skipped_count", 0) or 0)
+    error_count = int(ingest.get("error_count", 0) or 0)
+
+    summary = ingest.get("summary", {}) or {}
+    inserted_count = int(summary.get("inserted_count", 0) or 0)
+    updated_count = int(summary.get("updated_count", 0) or 0)
+
+    changed_count = inserted_count + updated_count
+
+    if changed_count > 0:
+        parts = []
+        if inserted_count > 0:
+            parts.append(f"{inserted_count} added")
+        if updated_count > 0:
+            parts.append(f"{updated_count} updated")
+        detail = ", ".join(parts)
+        return "success", f"✓ Job run complete: {detail}"
+
+    if seen_urls == 0:
+        return "warning", "No job URLs were discovered. Try broader search criteria or paste a few URLs manually."
+
+    if accepted_jobs == 0 and skipped_count > 0:
+        return "warning", f"{seen_urls} URLs were found, but none matched your current Settings filters."
+
+    if accepted_jobs > 0 and changed_count == 0:
+        if error_count > 0:
+            return "warning", f"{seen_urls} URLs were reviewed, but no jobs were added. {error_count} processing errors occurred."
+        return "warning", f"{seen_urls} URLs were reviewed, but no new jobs were added."
+
+    if error_count > 0:
+        return "warning", f"Run completed with {error_count} processing errors and no added jobs."
+
+    return "warning", "Run completed, but no jobs were added."
+
+
+def _build_ingest_flash(result: dict, source_label: str) -> tuple[str, str]:
+    summary = result.get("summary", {}) or {}
+    inserted_count = int(summary.get("inserted_count", 0) or 0)
+    updated_count = int(summary.get("updated_count", 0) or 0)
+    seen_urls = int(result.get("seen_urls", 0) or 0)
+    accepted_jobs = int(result.get("accepted_jobs", 0) or 0)
+    skipped_count = int(result.get("skipped_count", 0) or 0)
+    error_count = int(result.get("error_count", 0) or 0)
+
+    changed_count = inserted_count + updated_count
+
+    if changed_count > 0:
+        parts = []
+        if inserted_count > 0:
+            parts.append(f"{inserted_count} added")
+        if updated_count > 0:
+            parts.append(f"{updated_count} updated")
+        return "success", f"✓ {source_label} complete: {', '.join(parts)}"
+
+    if seen_urls == 0:
+        return "warning", f"No job URLs were available for {source_label.lower()}."
+
+    if accepted_jobs == 0 and skipped_count > 0:
+        return "warning", f"{seen_urls} URLs were reviewed for {source_label.lower()}, but none matched your current Settings filters."
+
+    if error_count > 0:
+        return "warning", f"{source_label} completed with {error_count} processing errors and no added jobs."
+
+    return "warning", f"{source_label} completed, but no new jobs were added."
+
+
+def _build_discover_only_flash(result: dict) -> tuple[str, str]:
+    url_count = int(result.get("url_count", 0) or 0)
+
+    if url_count > 0:
+        return "success", f"✓ Job link discovery complete: {url_count} URLs found"
+
+    return "warning", "No job URLs were discovered."
+
+
 def _process_pending_action_before_render() -> None:
     action = get_action("pipeline")
     if not action or action.get("phase") != "execute":
@@ -85,13 +166,15 @@ def _process_pending_action_before_render() -> None:
             if action_type == "discover_and_ingest":
                 result = discover_and_ingest()
                 st.session_state["pipeline_last_result"] = result
-                _set_flash("success", "✓ Jobs found and added")
+                level, message = _build_discover_and_ingest_flash(result)
+                _set_flash(level, message)
                 st.cache_data.clear()
 
             elif action_type == "ingest_pasted":
                 result = ingest_pasted_urls(payload.get("manual_urls", ""))
                 st.session_state["pipeline_last_result"] = result
-                _set_flash("success", "✓ Pasted job links added")
+                level, message = _build_ingest_flash(result, "Pasted job link import")
+                _set_flash(level, message)
                 st.cache_data.clear()
 
             elif action_type == "ingest_saved":
@@ -104,13 +187,15 @@ def _process_pending_action_before_render() -> None:
                 else:
                     result = ingest_urls_from_file(JOB_URLS_FILE)
                     st.session_state["pipeline_last_result"] = result
-                    _set_flash("success", "✓ Saved job links added")
+                    level, message = _build_ingest_flash(result, "Saved job link import")
+                    _set_flash(level, message)
                     st.cache_data.clear()
 
             elif action_type == "discover_only":
                 result = discover_job_links()
                 st.session_state["pipeline_last_result"] = result
-                _set_flash("success", "✓ Job links found and saved")
+                level, message = _build_discover_only_flash(result)
+                _set_flash(level, message)
 
     except Exception as exc:
         _set_flash("error", f"Pipeline action failed: {exc}")
