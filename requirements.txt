@@ -1,0 +1,7 @@
+streamlit
+openai
+pytest
+requests
+beautifulsoup4
+gspread
+google-auth
