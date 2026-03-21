@@ -26,6 +26,13 @@ DFW_KEYWORDS = {
     "dfw",
 }
 
+US_STATE_CODES = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il", "in", "ia",
+    "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj",
+    "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt",
+    "va", "wa", "wv", "wi", "wy", "dc",
+}
+
 
 def safe_text(value: object) -> str:
     if value is None:
@@ -78,6 +85,60 @@ def normalize_title(title: str) -> str:
     title = re.sub(r"[^a-z0-9\s]", "", title)
     title = re.sub(r"\s+", " ", title)
     return title
+
+
+def normalize_location_text(location: str) -> str:
+    text = safe_text(location)
+    text = re.sub(r"\s+", " ", text).strip(" -|,")
+    return text
+
+
+def clean_location_candidate(location: str) -> str:
+    text = normalize_location_text(location)
+    if not text:
+        return ""
+
+    lowered = text.lower()
+
+    if lowered in {"location", "locations", "job location", "apply now", "share this job"}:
+        return ""
+
+    text = re.sub(r"^(location|locations)\s*[:\-]?\s*", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"\s*\|\s*.*$", "", text).strip()
+
+    return text
+
+
+def looks_like_location(text: str) -> bool:
+    candidate = clean_location_candidate(text)
+    if not candidate:
+        return False
+
+    lowered = candidate.lower()
+
+    if "remote" in lowered:
+        return True
+
+    if any(city in lowered for city in DFW_KEYWORDS):
+        return True
+
+    if re.search(r"\b[a-z .'-]+,\s*[A-Z]{2}\b", candidate):
+        return True
+
+    if re.search(r"\b[A-Z][a-zA-Z .'-]+\s*-\s*[A-Z]{2}\b", candidate):
+        return True
+
+    if re.search(r"\b[A-Z][a-zA-Z .'-]+\s+Area\b", candidate):
+        return True
+
+    if re.search(r"\b[A-Z][a-zA-Z .'-]+\s+[A-Z]{2}\b", candidate):
+        return True
+
+    tokens = re.split(r"[\s,/-]+", lowered)
+    if any(token in US_STATE_CODES for token in tokens):
+        return True
+
+    return False
 
 
 def infer_role_family(title: str) -> str:
@@ -187,6 +248,137 @@ def passes_settings_title_gate(title: str, settings: dict[str, str]) -> bool:
     return any(term.lower() in lowered for term in target_titles)
 
 
+def extract_json_ld_candidates(soup: BeautifulSoup) -> list[dict]:
+    candidates = []
+
+    for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+        raw = script.string or script.get_text()
+        raw = safe_text(raw)
+        if not raw:
+            continue
+
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                candidates.extend([item for item in data if isinstance(item, dict)])
+            elif isinstance(data, dict):
+                candidates.append(data)
+        except Exception:
+            continue
+
+    return candidates
+
+
+def flatten_location_value(value) -> list[str]:
+    results: list[str] = []
+
+    if value is None:
+        return results
+
+    if isinstance(value, str):
+        if value.strip():
+            results.append(value.strip())
+        return results
+
+    if isinstance(value, list):
+        for item in value:
+            results.extend(flatten_location_value(item))
+        return results
+
+    if isinstance(value, dict):
+        # Common JobPosting patterns
+        address = value.get("address")
+        if isinstance(address, dict):
+            parts = [
+                safe_text(address.get("addressLocality")),
+                safe_text(address.get("addressRegion")),
+                safe_text(address.get("addressCountry")),
+            ]
+            combined = ", ".join([part for part in parts if part])
+            if combined:
+                results.append(combined)
+
+        parts = [
+            safe_text(value.get("addressLocality")),
+            safe_text(value.get("addressRegion")),
+            safe_text(value.get("addressCountry")),
+            safe_text(value.get("name")),
+            safe_text(value.get("value")),
+        ]
+        combined = ", ".join([part for part in parts[:3] if part])
+        if combined:
+            results.append(combined)
+
+        for key in ["jobLocation", "applicantLocationRequirements", "address", "location"]:
+            if key in value:
+                results.extend(flatten_location_value(value.get(key)))
+
+        return results
+
+    return results
+
+
+def extract_location_from_json_ld(soup: BeautifulSoup) -> str:
+    candidates = extract_json_ld_candidates(soup)
+
+    for item in candidates:
+        for key in ["jobLocation", "applicantLocationRequirements", "location"]:
+            values = flatten_location_value(item.get(key))
+            for value in values:
+                cleaned = clean_location_candidate(value)
+                if looks_like_location(cleaned):
+                    return cleaned
+
+    return ""
+
+
+def extract_location_from_common_selectors(soup: BeautifulSoup) -> str:
+    selectors = [
+        {"name": "div", "attrs": {"class": re.compile(r"location", re.IGNORECASE)}},
+        {"name": "span", "attrs": {"class": re.compile(r"location", re.IGNORECASE)}},
+        {"name": "div", "attrs": {"data-automation-id": re.compile(r"location", re.IGNORECASE)}},
+        {"name": "span", "attrs": {"data-automation-id": re.compile(r"location", re.IGNORECASE)}},
+        {"name": "li", "attrs": {"class": re.compile(r"location", re.IGNORECASE)}},
+        {"name": "p", "attrs": {"class": re.compile(r"location", re.IGNORECASE)}},
+    ]
+
+    for selector in selectors:
+        for tag in soup.find_all(selector["name"], attrs=selector["attrs"]):
+            text = clean_location_candidate(tag.get_text(" ", strip=True))
+            if looks_like_location(text):
+                return text
+
+    return ""
+
+
+def extract_location_from_label_patterns(soup: BeautifulSoup) -> str:
+    visible_text = soup.get_text("\n", strip=True)
+    patterns = [
+        r"Location\s*[:\-]\s*([^\n|]{3,80})",
+        r"Locations\s*[:\-]\s*([^\n|]{3,120})",
+        r"Job Location\s*[:\-]\s*([^\n|]{3,80})",
+        r"Primary Location\s*[:\-]\s*([^\n|]{3,80})",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, visible_text, re.IGNORECASE)
+        if match:
+            candidate = clean_location_candidate(match.group(1))
+            if looks_like_location(candidate):
+                return candidate
+
+    return ""
+
+
+def extract_title_from_json_ld(soup: BeautifulSoup) -> str:
+    candidates = extract_json_ld_candidates(soup)
+    for item in candidates:
+        title = safe_text(item.get("title") or item.get("name"))
+        if title:
+            return title
+    return ""
+
+
 def parse_greenhouse_page(url: str) -> tuple[str, str, str, str]:
     response = requests.get(
         url,
@@ -208,7 +400,19 @@ def parse_greenhouse_page(url: str) -> tuple[str, str, str, str]:
 
     location_tag = soup.find("div", class_="location")
     if location_tag:
-        location = location_tag.get_text(" ", strip=True)
+        location = clean_location_candidate(location_tag.get_text(" ", strip=True))
+
+    if not title:
+        title = extract_title_from_json_ld(soup)
+
+    if not location:
+        location = extract_location_from_json_ld(soup)
+
+    if not location:
+        location = extract_location_from_common_selectors(soup)
+
+    if not location:
+        location = extract_location_from_label_patterns(soup)
 
     if not title and soup.title and soup.title.string:
         title = soup.title.string.strip()
@@ -233,12 +437,27 @@ def parse_page(url: str) -> tuple[str, str, str, str]:
     title = ""
     location = ""
 
-    if soup.title and soup.title.string:
+    h1 = soup.find("h1")
+    if h1:
+        title = h1.get_text(" ", strip=True)
+
+    if not title and soup.title and soup.title.string:
         title = soup.title.string.strip()
 
     meta_title = soup.find("meta", attrs={"property": "og:title"})
     if meta_title and meta_title.get("content"):
         title = meta_title["content"].strip()
+
+    if not title:
+        title = extract_title_from_json_ld(soup)
+
+    location = extract_location_from_json_ld(soup)
+
+    if not location:
+        location = extract_location_from_common_selectors(soup)
+
+    if not location:
+        location = extract_location_from_label_patterns(soup)
 
     text = soup.get_text(" ", strip=True)
     return title, location, text, response.url
@@ -280,6 +499,14 @@ def infer_location(text: str) -> str:
 
     if "remote" in lowered:
         return "Remote"
+
+    match = re.search(r"\b([A-Z][a-zA-Z .'-]+),\s*([A-Z]{2})\b", text)
+    if match:
+        return f"{match.group(1).strip()}, {match.group(2).strip()}"
+
+    match = re.search(r"\b([A-Z][a-zA-Z .'-]+)\s*-\s*([A-Z]{2})\b", text)
+    if match:
+        return f"{match.group(1).strip()}, {match.group(2).strip()}"
 
     for city in DFW_KEYWORDS:
         if city in lowered:
@@ -515,7 +742,10 @@ def create_job_record(job_url: str) -> JobRecord:
     title, extracted_location, text, final_url = parse_page(job_url)
 
     company = infer_company_from_domain(final_url)
-    location = extracted_location if extracted_location.strip() else infer_location(text)
+    location = clean_location_candidate(extracted_location) if extracted_location.strip() else infer_location(text)
+    if not location:
+        location = infer_location(text)
+
     remote_type = infer_remote_type(location)
     dallas_dfw_match = infer_dfw_match(location)
     ats_type = detect_ats_type(final_url)
