@@ -16,7 +16,7 @@ OPENAI_API_KEY_FILE = DATA_DIR / "openai_api_key.txt"
 JOB_URLS_FILE = PROJECT_ROOT / "job_urls.txt"
 MANUAL_URLS_FILE = DATA_DIR / "manual_urls.txt"
 
-SPREADSHEET_ID = "1h0LEK4-t6-j7rmdxjWeO8XY_Kx9L5HfQpOdkJtf_p_E"
+SPREADSHEET_ID = ""
 NEW_ROLES_SHEET = "New Validated Roles"
 APPLIED_SHEET = "Applied Pipeline"
 SETTINGS_SHEET = "Settings"
