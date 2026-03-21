@@ -2,6 +2,7 @@ import streamlit as st
 
 from config import APP_NAME, APP_VERSION
 from services.status import get_system_status
+from ui.navigation import initialize_nav_state, render_button_nav
 
 
 TOP_NAV_OPTIONS = ["New Roles", "Applied Roles", "Pipeline", "Settings"]
@@ -32,26 +33,19 @@ After setup, run your initial job discovery/import workflow to pull jobs into th
 
 
 def initialize_top_nav(first_run: bool) -> None:
-    if "top_nav_selection" not in st.session_state:
-        st.session_state["top_nav_selection"] = "Settings" if first_run else "New Roles"
+    initialize_nav_state(
+        state_key="top_nav_selection",
+        default_value="Settings" if first_run else "New Roles",
+    )
 
 
 def render_top_nav() -> str:
-    current_selection = st.session_state.get("top_nav_selection", "New Roles")
-    current_index = TOP_NAV_OPTIONS.index(current_selection) if current_selection in TOP_NAV_OPTIONS else 0
-
-    selected = st.radio(
-        "Navigation",
-        TOP_NAV_OPTIONS,
-        index=current_index,
-        horizontal=True,
-        label_visibility="collapsed",
+    st.caption("Main navigation")
+    return render_button_nav(
+        options=TOP_NAV_OPTIONS,
+        state_key="top_nav_selection",
+        key_prefix="top_nav",
     )
-
-    if st.session_state.get("top_nav_selection") != selected:
-        st.session_state["top_nav_selection"] = selected
-
-    return selected
 
 
 def render_startup_loading_message() -> st.delta_generator.DeltaGenerator:

@@ -66,6 +66,52 @@ def inject_custom_css() -> None:
                 margin-left: 0.08rem;
             }
 
+            .openai-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.45rem;
+                padding: 0.55rem 0.85rem;
+                border-radius: 999px;
+                font-size: 0.92rem;
+                font-weight: 700;
+                border: 1px solid rgba(255,255,255,0.08);
+                background: rgba(255,255,255,0.04);
+                color: rgba(255,255,255,0.92);
+                box-shadow: 0 8px 20px rgba(0,0,0,0.16);
+            }
+
+            .openai-badge.validated {
+                border-color: rgba(16,185,129,0.42);
+                background: rgba(16,185,129,0.12);
+                color: rgba(209,250,229,0.98);
+            }
+
+            .openai-badge.saved {
+                border-color: rgba(245,158,11,0.36);
+                background: rgba(245,158,11,0.12);
+                color: rgba(254,243,199,0.98);
+            }
+
+            .openai-badge.not-configured {
+                border-color: rgba(255,255,255,0.10);
+                background: rgba(255,255,255,0.04);
+                color: rgba(255,255,255,0.88);
+            }
+
+            .app-busy-banner {
+                margin-top: 0.7rem;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.55rem 0.82rem;
+                border-radius: 14px;
+                background: rgba(59,130,246,0.10);
+                border: 1px solid rgba(59,130,246,0.24);
+                color: rgba(219,234,254,0.96);
+                font-size: 0.93rem;
+                font-weight: 650;
+            }
+
             .kpi-grid {
                 display: grid;
                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -78,28 +124,41 @@ def inject_custom_css() -> None:
                 overflow: hidden;
                 border-radius: 18px;
                 padding: 1rem 1.05rem;
-                border: 1px solid rgba(255,255,255,0.10);
-                box-shadow: 0 14px 38px rgba(0,0,0,0.22);
                 min-height: 110px;
+                background: linear-gradient(180deg, rgba(17,24,39,0.96) 0%, rgba(10,14,24,0.98) 100%);
+                border: 1px solid rgba(255,255,255,0.07);
+                border-top-width: 3px;
+                box-shadow:
+                    0 10px 24px rgba(0,0,0,0.18),
+                    inset 0 1px 0 rgba(255,255,255,0.02);
+            }
+
+            .kpi-card::after {
+                content: "";
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
             }
 
             .kpi-card.blue {
-                background: linear-gradient(135deg, rgba(20,28,48,0.98), rgba(30,58,138,0.60));
+                border-top-color: rgba(59,130,246,0.95);
             }
 
             .kpi-card.green {
-                background: linear-gradient(135deg, rgba(17,34,35,0.98), rgba(22,163,74,0.42));
+                border-top-color: rgba(34,197,94,0.92);
             }
 
             .kpi-card.orange {
-                background: linear-gradient(135deg, rgba(42,27,18,0.98), rgba(249,115,22,0.40));
+                border-top-color: rgba(249,115,22,0.92);
             }
 
             .kpi-label {
-                color: rgba(255,255,255,0.84);
-                font-size: 0.98rem;
-                font-weight: 600;
-                margin-bottom: 0.35rem;
+                color: rgba(255,255,255,0.76);
+                font-size: 0.96rem;
+                font-weight: 620;
+                margin-bottom: 0.42rem;
+                text-transform: none;
             }
 
             .kpi-value {
@@ -107,13 +166,14 @@ def inject_custom_css() -> None:
                 font-size: 2rem;
                 font-weight: 800;
                 line-height: 1.0;
+                letter-spacing: -0.02em;
             }
 
             .filters-shell {
-                border: 1px solid rgba(255,255,255,0.08);
+                border: 1px solid rgba(255,255,255,0.07);
                 border-radius: 18px;
-                background: linear-gradient(180deg, rgba(16,22,36,0.92), rgba(10,14,24,0.92));
-                box-shadow: 0 12px 30px rgba(0,0,0,0.18);
+                background: linear-gradient(180deg, rgba(13,18,30,0.94), rgba(9,13,22,0.96));
+                box-shadow: 0 10px 26px rgba(0,0,0,0.16);
                 padding: 0.95rem 1rem 0.25rem 1rem;
                 margin-bottom: 1.3rem;
             }
@@ -157,33 +217,39 @@ def inject_custom_css() -> None:
             .meta-row {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 0.5rem;
+                gap: 0.55rem;
                 margin-bottom: 0.05rem;
             }
 
             .meta-pill {
-                display: inline-block;
-                border-radius: 999px;
-                padding: 0.35rem 0.78rem;
+                display: inline-flex;
+                align-items: center;
+                border-radius: 14px;
+                padding: 0.48rem 0.82rem;
                 font-size: 0.84rem;
-                font-weight: 650;
-                color: rgba(255,255,255,0.97);
-                border: 1px solid rgba(255,255,255,0.10);
-                background: rgba(255,255,255,0.05);
+                font-weight: 680;
+                line-height: 1;
+                color: rgba(255,255,255,0.94);
+                border: 1px solid rgba(255,255,255,0.09);
+                background: linear-gradient(180deg, rgba(18,24,36,0.94), rgba(12,16,26,0.98));
+                box-shadow:
+                    0 6px 16px rgba(0,0,0,0.14),
+                    inset 0 1px 0 rgba(255,255,255,0.02);
             }
 
             .meta-pill.location {
-                background: rgba(255,255,255,0.06);
+                border-left: 3px solid rgba(148,163,184,0.72);
+                padding-left: 0.7rem;
             }
 
             .meta-pill.fit {
-                background: rgba(37,99,235,0.18);
-                border-color: rgba(59,130,246,0.36);
+                border-left: 3px solid rgba(59,130,246,0.88);
+                padding-left: 0.7rem;
             }
 
             .meta-pill.comp {
-                background: rgba(147,51,234,0.18);
-                border-color: rgba(168,85,247,0.36);
+                border-left: 3px solid rgba(168,85,247,0.88);
+                padding-left: 0.7rem;
             }
 
             .section-row {

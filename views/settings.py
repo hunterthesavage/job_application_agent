@@ -17,6 +17,7 @@ from services.openai_key import (
 )
 from services.settings import DEFAULT_SETTINGS, load_settings, save_settings
 from services.status import get_system_status
+from ui.navigation import initialize_nav_state, render_button_nav
 
 
 FIT_OPTIONS = ["Any", "60", "70", "75", "80", "85", "90"]
@@ -502,24 +503,29 @@ Reference: [Where do I find my OpenAI API key?](https://help.openai.com/en/artic
                 st.error(f"Failed to delete saved API key: {exc}")
 
 
+SETTINGS_NAV_OPTIONS = ["Configuration", "Search Criteria", "Profile Context", "OpenAI API"]
+
+
 def render_settings() -> None:
     st.subheader("Settings")
 
     settings = load_settings()
     initialize_settings_state(settings)
+    initialize_nav_state("settings_subnav_selection", "Configuration")
 
-    tab_configuration, tab_search, tab_profile, tab_openai = st.tabs(
-        ["Configuration", "Search Criteria", "Profile Context", "OpenAI API"]
+    st.caption("Settings sections")
+    selected_section = render_button_nav(
+        options=SETTINGS_NAV_OPTIONS,
+        state_key="settings_subnav_selection",
+        key_prefix="settings_subnav",
     )
+    st.markdown("<div style='height: 0.6rem;'></div>", unsafe_allow_html=True)
 
-    with tab_configuration:
+    if selected_section == "Configuration":
         render_configuration_tab(settings)
-
-    with tab_search:
+    elif selected_section == "Search Criteria":
         render_search_criteria_tab(settings)
-
-    with tab_profile:
+    elif selected_section == "Profile Context":
         render_profile_context_tab(settings)
-
-    with tab_openai:
+    else:
         render_openai_api_tab()
