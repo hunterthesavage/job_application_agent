@@ -44,3 +44,11 @@ job_urls.txt
 greenhouse_boards.txt
 lever_boards.txt
 profile_context.txt
+add_openai_api_settings.sh
+apply_cleanup_pass.sh
+build_backup_health_launcher.sh
+build_ingestion_foundation.sh
+build_smoke_tests.sh
+replace_subprocess_actions.sh
+reset_and_gate_openai.sh
+test_sheet.py
