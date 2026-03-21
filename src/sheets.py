@@ -1,12 +1,15 @@
+import os
+
 import gspread
 from google.oauth2.service_account import Credentials
 
+from config import NEW_ROLES_SHEET, REMOVED_SHEET, SPREADSHEET_ID
 from src.models import JobRecord
 
 
-SHEET_ID = "1h0LEK4-t6-j7rmdxjWeO8XY_Kx9L5HfQpOdkJtf_p_E"
-WORKSHEET_NAME = "New Validated Roles"
-REMOVED_WORKSHEET_NAME = "Removed Roles"
+SHEET_ID = SPREADSHEET_ID
+WORKSHEET_NAME = NEW_ROLES_SHEET
+REMOVED_WORKSHEET_NAME = REMOVED_SHEET
 SERVICE_ACCOUNT_FILE = "service_account.json"
 
 SCOPES = [
@@ -26,7 +29,21 @@ REMOVED_HEADERS = [
 ]
 
 
+def _validate_legacy_sheets_config() -> None:
+    if not SHEET_ID:
+        raise RuntimeError(
+            "Legacy Google Sheets support is not configured. Set SPREADSHEET_ID in config.py or provide it through your local setup."
+        )
+
+    if not os.path.exists(SERVICE_ACCOUNT_FILE):
+        raise FileNotFoundError(
+            f"Missing {SERVICE_ACCOUNT_FILE}. Legacy Google Sheets features require a local service account file."
+        )
+
+
 def get_client():
+    _validate_legacy_sheets_config()
+
     credentials = Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE,
         scopes=SCOPES,
