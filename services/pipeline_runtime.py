@@ -5,6 +5,7 @@ from typing import Any
 
 from config import JOB_URLS_FILE, MANUAL_URLS_FILE
 from services.ingestion import ingest_job_records
+from services.matching_profiles import expand_location_terms, expand_title_terms, normalize_text
 from services.settings import load_settings
 from src import discover_job_urls as discover_module
 from src.validate_job_url import create_job_record
@@ -24,13 +25,6 @@ def parse_csv_text(value: str) -> list[str]:
     if not text:
         return []
     return [part.strip() for part in text.split(",") if part.strip()]
-
-
-def text_contains_any(text: str, patterns: list[str]) -> bool:
-    base = safe_text(text).lower()
-    if not base:
-        return False
-    return any(pattern.lower() in base for pattern in patterns)
 
 
 def load_job_urls_from_file(file_path: str | Path) -> list[str]:
@@ -58,35 +52,60 @@ def parse_manual_urls(text_value: str) -> list[str]:
     return urls
 
 
+def text_contains_any_phrase(text: str, phrases: list[str]) -> bool:
+    base = normalize_text(text)
+    if not base:
+        return False
+    return any(phrase in base for phrase in phrases if phrase)
+
+
+def include_keywords_match(searchable_text: str, include_keywords: list[str]) -> bool:
+    if not include_keywords:
+        return True
+
+    normalized_keywords = [normalize_text(keyword) for keyword in include_keywords if normalize_text(keyword)]
+    if not normalized_keywords:
+        return True
+
+    return text_contains_any_phrase(searchable_text, normalized_keywords)
+
+
 def passes_settings_filters(job, settings: dict[str, str]) -> tuple[bool, str]:
     title = safe_text(getattr(job, "title", ""))
+    company = safe_text(getattr(job, "company", ""))
     location = safe_text(getattr(job, "location", ""))
-    searchable = " ".join(
-        [
-            title,
-            safe_text(getattr(job, "company", "")),
-            location,
-            safe_text(getattr(job, "compensation_raw", "")),
-        ]
-    ).lower()
+    compensation_raw = safe_text(getattr(job, "compensation_raw", ""))
+
+    searchable = " ".join([title, company, location, compensation_raw])
+    normalized_title = normalize_text(title)
+    normalized_location = normalize_text(location)
+    normalized_searchable = normalize_text(searchable)
 
     target_titles = parse_csv_text(settings.get("target_titles", ""))
     preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    include_keywords = parse_csv_text(settings.get("include_keywords", ""))
     exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "true")).lower() == "true"
 
-    if target_titles and not text_contains_any(title, target_titles):
-        return False, "settings_title_gate"
+    expanded_title_terms = expand_title_terms(target_titles)
+    expanded_location_terms = expand_location_terms(preferred_locations)
+    normalized_exclude_keywords = [normalize_text(keyword) for keyword in exclude_keywords if normalize_text(keyword)]
 
-    if preferred_locations and not text_contains_any(location, preferred_locations):
-        if not (remote_only and "remote" in location.lower()):
-            return False, "settings_location_gate"
+    if expanded_title_terms and not text_contains_any_phrase(normalized_title, expanded_title_terms):
+        return False, f"title did not match target titles: {', '.join(target_titles[:5])}"
 
-    if remote_only and "remote" not in location.lower():
-        return False, "remote_only_gate"
+    if expanded_location_terms and not text_contains_any_phrase(normalized_location, expanded_location_terms):
+        if not (remote_only and "remote" in normalized_location):
+            return False, f"location did not match preferred locations: {', '.join(preferred_locations[:5])}"
 
-    if exclude_keywords and any(keyword.lower() in searchable for keyword in exclude_keywords):
-        return False, "exclude_keyword_gate"
+    if remote_only and "remote" not in normalized_location:
+        return False, "role is not marked remote"
+
+    if not include_keywords_match(normalized_searchable, include_keywords):
+        return False, f"did not include required keywords: {', '.join(include_keywords[:5])}"
+
+    if normalized_exclude_keywords and any(keyword in normalized_searchable for keyword in normalized_exclude_keywords):
+        return False, f"matched excluded keywords: {', '.join(exclude_keywords[:5])}"
 
     return True, ""
 
@@ -114,7 +133,7 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
 
             accepted_jobs.append(job)
             output_lines.append(
-                f"Accepted: {safe_text(getattr(job, 'company', ''))} | {safe_text(getattr(job, 'title', ''))}"
+                f"Accepted: {safe_text(getattr(job, 'company', ''))} | {safe_text(getattr(job, 'title', ''))} | {safe_text(getattr(job, 'location', ''))}"
             )
         except Exception as exc:
             output_lines.append(f"Error: {exc}")
@@ -148,6 +167,14 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
     }
 
 
+def build_search_preview() -> dict[str, Any]:
+    settings = load_settings()
+    return {
+        "plan": discover_module.build_search_plan(settings),
+        "queries": discover_module.build_google_discovery_queries(settings),
+    }
+
+
 def discover_job_links() -> dict[str, Any]:
     settings = load_settings()
     discovery_result = discover_module.discover_urls(settings)
@@ -166,6 +193,8 @@ def discover_job_links() -> dict[str, Any]:
             "lever": len(discovery_result.get("lever_urls", [])),
             "search": len(discovery_result.get("search_urls", [])),
         },
+        "queries": discover_module.build_google_discovery_queries(settings),
+        "plan": discover_module.build_search_plan(settings),
     }
 
 

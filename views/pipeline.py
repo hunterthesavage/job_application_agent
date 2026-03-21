@@ -5,6 +5,7 @@ import streamlit as st
 from config import JOB_URLS_FILE
 from services.ingestion import get_recent_ingestion_runs
 from services.pipeline_runtime import (
+    build_search_preview,
     discover_and_ingest,
     discover_job_links,
     ingest_pasted_urls,
@@ -65,8 +66,9 @@ No jobs have been added yet.
 
 A good first step is:
 1. Add your search preferences in Settings
-2. Come back here and click **Find and Add Jobs**
-3. Or paste a few job URLs manually to seed your list
+2. Review the search preview below
+3. Come back here and click **Find and Add Jobs**
+4. Or paste a few job URLs manually to seed your list
         """
     )
 
@@ -92,8 +94,7 @@ def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
             parts.append(f"{inserted_count} added")
         if updated_count > 0:
             parts.append(f"{updated_count} updated")
-        detail = ", ".join(parts)
-        return "success", f"✓ Job run complete: {detail}"
+        return "success", f"✓ Job run complete: {', '.join(parts)}"
 
     if seen_urls == 0:
         return "warning", "No job URLs were discovered. Try broader search criteria or paste a few URLs manually."
@@ -212,6 +213,24 @@ def _advance_pending_action_after_render() -> None:
         st.rerun()
 
 
+def _render_search_preview() -> None:
+    preview = build_search_preview()
+    plan = preview.get("plan", [])
+    queries = preview.get("queries", [])
+
+    st.markdown("### Preview Search Plan")
+    st.caption("This is the current search intent the app will use before validating and importing jobs.")
+
+    if plan:
+        for item in plan:
+            st.markdown(f"- {item}")
+
+    if queries:
+        with st.expander("Show generated discovery queries"):
+            for query in queries:
+                st.code(query, language=None)
+
+
 def render_run_history() -> None:
     st.markdown("### Recent Job Runs")
     runs = get_recent_ingestion_runs(limit=12)
@@ -246,6 +265,7 @@ def render_pipeline() -> None:
     st.subheader("Pipeline")
     _render_first_run_pipeline_guidance()
     _render_flash()
+    _render_search_preview()
 
     st.markdown("### Find and Add Jobs")
     st.caption("Searches for job links, validates them, and adds matching roles to your New Roles list.")
