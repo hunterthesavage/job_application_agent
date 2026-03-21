@@ -56,3 +56,6 @@ test_sheet.py
 # local backup folders
 backup_streamlit_chrome_pass/
 backup_validation_fix/
+
+# local archive for retired files
+_local_archive/
