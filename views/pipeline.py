@@ -66,8 +66,8 @@ No jobs have been added yet.
 
 A good first step is:
 1. Add your search preferences in Settings
-2. Review the search preview below
-3. Come back here and click **Find and Add Jobs**
+2. Review the search summary below
+3. Click **Find and Add Jobs**
 4. Or paste a few job URLs manually to seed your list
         """
     )
@@ -213,22 +213,39 @@ def _advance_pending_action_after_render() -> None:
         st.rerun()
 
 
-def _render_search_preview() -> None:
+def _render_search_summary() -> None:
     preview = build_search_preview()
     plan = preview.get("plan", [])
     queries = preview.get("queries", [])
 
-    st.markdown("### Preview Search Plan")
-    st.caption("This is the current search intent the app will use before validating and importing jobs.")
+    st.markdown("### What I'm searching for")
+    st.caption("This is the search setup the app will use before validating and importing jobs.")
 
-    if plan:
-        for item in plan:
-            st.markdown(f"- {item}")
+    if not plan:
+        st.info("No search settings are saved yet. Go to Settings and add at least a target title.")
+        return
 
-    if queries:
-        with st.expander("Show generated discovery queries"):
+    for item in plan:
+        st.markdown(f"- {item}")
+
+    st.caption("Search sources: Greenhouse, Lever, and broader web job search when available.")
+
+    with st.expander("Show technical search details"):
+        if queries:
+            st.markdown("**Generated discovery queries**")
             for query in queries:
                 st.code(query, language=None)
+        else:
+            st.caption("No generated discovery queries available.")
+
+
+def _render_last_run_details() -> None:
+    last_result = st.session_state.get("pipeline_last_result")
+    if not last_result:
+        return
+
+    with st.expander("Show technical run details"):
+        _render_result(last_result)
 
 
 def render_run_history() -> None:
@@ -265,7 +282,7 @@ def render_pipeline() -> None:
     st.subheader("Pipeline")
     _render_first_run_pipeline_guidance()
     _render_flash()
-    _render_search_preview()
+    _render_search_summary()
 
     st.markdown("### Find and Add Jobs")
     st.caption("Searches for job links, validates them, and adds matching roles to your New Roles list.")
@@ -280,7 +297,7 @@ def render_pipeline() -> None:
 
     manual_urls = st.text_area(
         "Paste one job URL per line",
-        height=180,
+        height=160,
         key="pipeline_manual_urls",
         disabled=app_is_busy(),
     )
@@ -316,10 +333,7 @@ def render_pipeline() -> None:
                 queue_action("pipeline", "discover_only", {}, "Finding job links")
                 st.rerun()
 
-    last_result = st.session_state.get("pipeline_last_result")
-    if last_result:
-        st.markdown("---")
-        _render_result(last_result)
+    _render_last_run_details()
 
     st.markdown("---")
     render_run_history()
