@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 
 APP_NAME = "Job Application Agent"
@@ -16,7 +17,7 @@ OPENAI_API_KEY_FILE = DATA_DIR / "openai_api_key.txt"
 JOB_URLS_FILE = PROJECT_ROOT / "job_urls.txt"
 MANUAL_URLS_FILE = DATA_DIR / "manual_urls.txt"
 
-SPREADSHEET_ID = ""
+SPREADSHEET_ID = os.getenv("JOB_AGENT_SPREADSHEET_ID", "")
 NEW_ROLES_SHEET = "New Validated Roles"
 APPLIED_SHEET = "Applied Pipeline"
 SETTINGS_SHEET = "Settings"
