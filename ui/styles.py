@@ -13,7 +13,7 @@ def inject_custom_css() -> None:
             }
 
             .block-container {
-                padding-top: 1.6rem;
+                padding-top: 2.6rem;
                 padding-bottom: 2.75rem;
                 max-width: 1520px;
             }
@@ -23,7 +23,7 @@ def inject_custom_css() -> None:
             }
 
             .hero-wrap {
-                padding: 0.18rem 0 1.0rem 0;
+                padding: 0.5rem 0 1.0rem 0;
                 margin-bottom: 0.25rem;
             }
 
