@@ -2,13 +2,6 @@ import streamlit as st
 
 from config import APP_NAME, APP_VERSION
 from services.status import get_system_status
-from services.storage import initialize_local_storage
-from ui.components import render_hero
-from ui.styles import inject_custom_css
-from views.applied_roles import render_applied_roles
-from views.new_roles import render_new_roles
-from views.pipeline import render_pipeline
-from views.settings import render_settings
 
 
 TOP_NAV_OPTIONS = ["New Roles", "Applied Roles", "Pipeline", "Settings"]
@@ -61,10 +54,36 @@ def render_top_nav() -> str:
     return selected
 
 
+def render_startup_loading_message() -> st.delta_generator.DeltaGenerator:
+    placeholder = st.empty()
+    placeholder.info(
+        """
+**Warming up the job engine...**
+
+Hang tight while we get your workspace, settings, and local database ready.
+        """
+    )
+    return placeholder
+
+
 def main() -> None:
     st.set_page_config(page_title=f"{APP_NAME} {APP_VERSION}", layout="wide")
+
+    startup_placeholder = render_startup_loading_message()
+
+    from services.storage import initialize_local_storage
+    from ui.components import render_hero
+    from ui.styles import inject_custom_css
+    from views.applied_roles import render_applied_roles
+    from views.new_roles import render_new_roles
+    from views.pipeline import render_pipeline
+    from views.settings import render_settings
+
     initialize_local_storage()
     inject_custom_css()
+
+    startup_placeholder.empty()
+
     render_hero()
 
     first_run = is_first_run()
