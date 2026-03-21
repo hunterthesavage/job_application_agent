@@ -64,7 +64,6 @@ def load_runtime_settings() -> dict[str, str]:
     path = Path(RUNTIME_SETTINGS_FILE)
 
     if not path.exists():
-        print(f"{RUNTIME_SETTINGS_FILE} not found, using default discovery behavior.")
         return {}
 
     try:
@@ -72,8 +71,8 @@ def load_runtime_settings() -> dict[str, str]:
             data = json.load(f)
         if isinstance(data, dict):
             return {str(k): safe_text(v) for k, v in data.items()}
-    except Exception as exc:
-        print(f"Failed to read {RUNTIME_SETTINGS_FILE}: {exc}")
+    except Exception:
+        return {}
 
     return {}
 
@@ -141,13 +140,37 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
             parts.append(site_block)
             queries.append(" ".join(parts))
 
-    # Keep some breadth
     if remote_only and not preferred_locations:
         queries.append(
             f'("VP" OR "Vice President" OR "Head of" OR "Chief") ("Technology" OR "IT" OR "Digital" OR "Platform") "remote" {site_block}'
         )
 
     return list(dict.fromkeys(queries))
+
+
+def build_search_plan(settings: dict[str, str]) -> list[str]:
+    plan_lines = []
+
+    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    include_keywords = parse_csv_text(settings.get("include_keywords", ""))
+    remote_only = settings.get("remote_only", "false").lower() == "true"
+
+    if target_titles:
+        plan_lines.append(f"Titles: {', '.join(target_titles[:8])}")
+    else:
+        plan_lines.append("Titles: default senior tech leadership profile")
+
+    if preferred_locations:
+        plan_lines.append(f"Locations: {', '.join(preferred_locations[:6])}")
+    else:
+        plan_lines.append(f"Locations: {'remote only' if remote_only else 'remote + United States fallback'}")
+
+    if include_keywords:
+        plan_lines.append(f"Include keywords: {', '.join(include_keywords[:6])}")
+
+    plan_lines.append(f"Remote only: {'true' if remote_only else 'false'}")
+    return plan_lines
 
 
 def discover_greenhouse_jobs(board_url: str, settings: dict[str, str]) -> list[str]:
@@ -228,9 +251,10 @@ def extract_result_url(result: dict) -> str:
     return ""
 
 
-def discover_google_style_urls(settings: dict[str, str]) -> list[str]:
+def discover_google_style_urls(settings: dict[str, str], log_lines: list[str] | None = None) -> list[str]:
     if DDGS is None:
-        print("DDGS package not installed, skipping Google-style discovery.")
+        if log_lines is not None:
+            log_lines.append("DDGS package not installed, skipping Google-style discovery.")
         return []
 
     discovered = []
@@ -238,11 +262,13 @@ def discover_google_style_urls(settings: dict[str, str]) -> list[str]:
 
     with DDGS() as ddgs:
         for query in queries:
-            print(f"Searching query: {query}")
+            if log_lines is not None:
+                log_lines.append(f"Searching query: {query}")
 
             try:
                 results = list(ddgs.text(query, max_results=40))
-                print(f"Search results returned: {len(results)}")
+                if log_lines is not None:
+                    log_lines.append(f"Search results returned: {len(results)}")
 
                 for result in results:
                     url = extract_result_url(result)
@@ -259,42 +285,28 @@ def discover_google_style_urls(settings: dict[str, str]) -> list[str]:
 
                     discovered.append(url)
             except Exception as exc:
-                print(f"Search failed for query '{query}': {exc}")
+                if log_lines is not None:
+                    log_lines.append(f"Search failed for query '{query}': {exc}")
 
     return list(dict.fromkeys(discovered))
 
 
-def load_existing_output_urls(file_path: str) -> set[str]:
-    existing = set()
+def save_output_urls(file_path: str | Path, urls: list[str]) -> None:
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            for line in file:
-                line = line.strip()
-                if line:
-                    existing.add(line)
-    except FileNotFoundError:
-        pass
-
-    return existing
-
-
-def append_urls_to_output(file_path: str, urls: list[str]) -> int:
-    existing = load_existing_output_urls(file_path)
-    new_urls = [url for url in urls if url not in existing]
-
-    if not new_urls:
-        return 0
-
-    with open(file_path, "a", encoding="utf-8") as file:
-        for url in new_urls:
+    with path.open("w", encoding="utf-8") as file:
+        for url in urls:
             file.write(url + "\n")
 
-    return len(new_urls)
 
+def discover_urls(settings: dict[str, str] | None = None) -> dict:
+    resolved_settings = settings or load_runtime_settings()
 
-def main() -> None:
-    settings = load_runtime_settings()
+    log_lines: list[str] = []
+    log_lines.append("Discovery plan:")
+    for line in build_search_plan(resolved_settings):
+        log_lines.append(f"- {line}")
 
     greenhouse_board_urls = load_board_urls(GREENHOUSE_BOARD_FILE)
     lever_board_urls = load_board_urls(LEVER_BOARD_FILE)
@@ -304,37 +316,60 @@ def main() -> None:
     search_discovered = []
 
     for board_url in greenhouse_board_urls:
-        print(f"Checking Greenhouse board: {board_url}")
-
+        log_lines.append(f"Checking Greenhouse board: {board_url}")
         try:
-            urls = discover_greenhouse_jobs(board_url, settings)
-            print(f"Found Greenhouse jobs: {len(urls)}")
+            urls = discover_greenhouse_jobs(board_url, resolved_settings)
             greenhouse_discovered.extend(urls)
+            log_lines.append(f"Greenhouse URLs found: {len(urls)}")
         except Exception as exc:
-            print(f"Failed on {board_url}: {exc}")
+            log_lines.append(f"Greenhouse board failed: {exc}")
 
     for board_url in lever_board_urls:
-        print(f"Checking Lever board: {board_url}")
-
+        log_lines.append(f"Checking Lever board: {board_url}")
         try:
-            urls = discover_lever_jobs(board_url, settings)
-            print(f"Found Lever jobs: {len(urls)}")
+            urls = discover_lever_jobs(board_url, resolved_settings)
             lever_discovered.extend(urls)
+            log_lines.append(f"Lever URLs found: {len(urls)}")
         except Exception as exc:
-            print(f"Failed on {board_url}: {exc}")
+            log_lines.append(f"Lever board failed: {exc}")
 
-    search_discovered = discover_google_style_urls(settings)
+    search_discovered = discover_google_style_urls(resolved_settings, log_lines=log_lines)
 
-    all_discovered = greenhouse_discovered + lever_discovered + search_discovered
-    unique_urls = list(dict.fromkeys(all_discovered))
-    added_count = append_urls_to_output(OUTPUT_FILE, unique_urls)
+    greenhouse_discovered = list(dict.fromkeys(greenhouse_discovered))
+    lever_discovered = list(dict.fromkeys(lever_discovered))
+    search_discovered = list(dict.fromkeys(search_discovered))
 
-    print("\nDiscovery complete.")
-    print(f"Greenhouse URLs found: {len(dict.fromkeys(greenhouse_discovered))}")
-    print(f"Lever URLs found: {len(dict.fromkeys(lever_discovered))}")
-    print(f"Search URLs found: {len(dict.fromkeys(search_discovered))}")
-    print(f"Total unique URLs found: {len(unique_urls)}")
-    print(f"New URLs added to {OUTPUT_FILE}: {added_count}")
+    all_urls = list(dict.fromkeys(greenhouse_discovered + lever_discovered + search_discovered))
+
+    log_lines.append("")
+    log_lines.append("Discovery complete.")
+    log_lines.append(f"Greenhouse URLs: {len(greenhouse_discovered)}")
+    log_lines.append(f"Lever URLs: {len(lever_discovered)}")
+    log_lines.append(f"Search URLs: {len(search_discovered)}")
+    log_lines.append(f"Unique total URLs: {len(all_urls)}")
+
+    return {
+        "settings": resolved_settings,
+        "greenhouse_urls": greenhouse_discovered,
+        "lever_urls": lever_discovered,
+        "search_urls": search_discovered,
+        "all_urls": all_urls,
+        "url_count": len(all_urls),
+        "output": "\n".join(log_lines).strip(),
+    }
+
+
+def main() -> None:
+    result = discover_urls()
+
+    urls = result.get("all_urls", [])
+    save_output_urls(OUTPUT_FILE, urls)
+
+    output = result.get("output", "").strip()
+    if output:
+        print(output)
+
+    print(f"Saved {len(urls)} URLs to {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":

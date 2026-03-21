@@ -1,27 +1,13 @@
 from __future__ import annotations
 
-import io
-import os
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any
 
-from config import JOB_URLS_FILE, MANUAL_URLS_FILE, PROJECT_ROOT
+from config import JOB_URLS_FILE, MANUAL_URLS_FILE
 from services.ingestion import ingest_job_records
-from services.runtime_settings import write_runtime_settings_file
 from services.settings import load_settings
 from src import discover_job_urls as discover_module
 from src.validate_job_url import create_job_record
-
-
-@contextmanager
-def working_directory(path: Path):
-    original = Path.cwd()
-    os.chdir(path)
-    try:
-        yield
-    finally:
-        os.chdir(original)
 
 
 def safe_text(value) -> str:
@@ -163,37 +149,23 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
 
 
 def discover_job_links() -> dict[str, Any]:
-    write_runtime_settings_file()
+    settings = load_settings()
+    discovery_result = discover_module.discover_urls(settings)
 
-    stdout_buffer = io.StringIO()
-    stderr_buffer = io.StringIO()
-
-    with working_directory(PROJECT_ROOT):
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-            discover_module.main()
-
-    urls = []
-    if JOB_URLS_FILE.exists():
-        urls = load_job_urls_from_file(JOB_URLS_FILE)
-
-    output = stdout_buffer.getvalue().strip()
-    error_output = stderr_buffer.getvalue().strip()
-
-    if error_output:
-        output = f"{output}\n{error_output}".strip()
-
-    if not urls:
-        if output:
-            output = f"{output}\n\nNo job URLs were discovered."
-        else:
-            output = "No job URLs were discovered."
+    discovered_urls = discovery_result.get("all_urls", [])
+    discover_module.save_output_urls(JOB_URLS_FILE, discovered_urls)
 
     return {
         "status": "completed",
-        "output": output,
+        "output": discovery_result.get("output", ""),
         "job_urls_file": str(JOB_URLS_FILE),
-        "url_count": len(urls),
-        "urls": urls,
+        "url_count": len(discovered_urls),
+        "urls": discovered_urls,
+        "providers": {
+            "greenhouse": len(discovery_result.get("greenhouse_urls", [])),
+            "lever": len(discovery_result.get("lever_urls", [])),
+            "search": len(discovery_result.get("search_urls", [])),
+        },
     }
 
 
@@ -236,7 +208,7 @@ def discover_and_ingest() -> dict[str, Any]:
 
     if not discovered_urls:
         combined_output_parts.append(
-            "No URLs were available to ingest. Review your Settings criteria or try a broader search."
+            "No URLs were available to ingest. Review your Settings criteria, confirm discovery dependencies are installed, or try pasted URLs."
         )
         return {
             "status": "completed",
@@ -260,7 +232,7 @@ def discover_and_ingest() -> dict[str, Any]:
     ingest_result = _build_jobs_from_urls(
         discovered_urls,
         source_name="Local Pipeline",
-        source_detail=str(JOB_URLS_FILE.resolve()),
+        source_detail="in_memory_discovery_result",
     )
 
     if ingest_result.get("output"):
