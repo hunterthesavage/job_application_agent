@@ -1,61 +1,42 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
+*.pyd
+.pytest_cache/
 
-# Virtual env
+# Virtual environments
 .venv/
 venv/
+env/
 
 # macOS
 .DS_Store
 
-# Env / secrets
-.env
-.env.*
-service_account.json
-*.pem
-*.key
-
-# Local app state
-data/
-backups/
-runtime_settings.json
-
-# Logs
+# Local logs
 *.log
+job_agent_stdout.log
+job_agent_stderr.log
 
-# Test / cache
-.pytest_cache/
-.mypy_cache/
-
-# IDE
-.vscode/
-.idea/
-
-# Generated / scratch files
-* copy.py
-* copy *.py
-*COPY.py
-JOB_AGENT_*_SNAPSHOT.txt
-daily_digest.txt
-daily_digestOLD.txt
+# Local runtime / app state
+data/job_agent.db
+data/manual_urls.txt
+data/openai_api_key.txt
+data/openai_api_key.meta.json
+data/openai_api_state.json
+runtime_settings.json
 job_urls.txt
-greenhouse_boards.txt
-lever_boards.txt
-profile_context.txt
-add_openai_api_settings.sh
-apply_cleanup_pass.sh
-build_backup_health_launcher.sh
-build_ingestion_foundation.sh
-build_smoke_tests.sh
-replace_subprocess_actions.sh
-reset_and_gate_openai.sh
-test_sheet.py
 
-# local backup folders
+# Local secrets
+.env
+service_account.json
+
+# Local backup / archive folders
+_local_archive/
 backup_streamlit_chrome_pass/
 backup_validation_fix/
+backup_nav_redesign/
+backup_option_b_style/
 
-# local archive for retired files
-_local_archive/
+# Streamlit local state
+.streamlit/secrets.toml
