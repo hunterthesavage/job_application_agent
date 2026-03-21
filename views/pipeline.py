@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import quote_plus
 
 import streamlit as st
 
@@ -97,7 +98,7 @@ def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
         return "success", f"✓ Job run complete: {', '.join(parts)}"
 
     if seen_urls == 0:
-        return "warning", "No job URLs were discovered. Try broader search criteria or paste a few URLs manually."
+        return "warning", "No job URLs were discovered. Try the fallback search links below or broaden your criteria."
 
     if accepted_jobs == 0 and skipped_count > 0:
         return "warning", f"{seen_urls} URLs were found, but none matched your current Settings filters."
@@ -239,6 +240,59 @@ def _render_search_summary() -> None:
             st.caption("No generated discovery queries available.")
 
 
+def _render_provider_summary() -> None:
+    last_result = st.session_state.get("pipeline_last_result")
+    if not last_result:
+        return
+
+    discovery = last_result.get("discovery", last_result) or {}
+    providers = discovery.get("providers", {}) or {}
+
+    greenhouse_count = int(providers.get("greenhouse", 0) or 0)
+    lever_count = int(providers.get("lever", 0) or 0)
+    search_count = int(providers.get("search", 0) or 0)
+    total_count = int(discovery.get("url_count", 0) or 0)
+
+    if not providers and total_count == 0:
+        return
+
+    st.markdown("### Discovery results")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Greenhouse", greenhouse_count)
+    c2.metric("Lever", lever_count)
+    c3.metric("Web Search", search_count)
+    c4.metric("Total URLs", total_count)
+
+
+def _manual_search_link(query: str) -> str:
+    return f"https://www.google.com/search?q={quote_plus(query)}"
+
+
+def _render_manual_fallback_links() -> None:
+    last_result = st.session_state.get("pipeline_last_result")
+    if not last_result:
+        return
+
+    discovery = last_result.get("discovery", last_result) or {}
+    total_count = int(discovery.get("url_count", 0) or 0)
+
+    if total_count > 0:
+        return
+
+    preview = build_search_preview()
+    queries = preview.get("queries", []) or []
+
+    if not queries:
+        return
+
+    st.markdown("### Manual fallback searches")
+    st.caption("Live discovery found no URLs this time. These links run broader web searches you can open manually.")
+
+    for query in queries[:8]:
+        st.markdown(f"- [{query}]({_manual_search_link(query)})")
+
+
 def _render_last_run_details() -> None:
     last_result = st.session_state.get("pipeline_last_result")
     if not last_result:
@@ -283,6 +337,8 @@ def render_pipeline() -> None:
     _render_first_run_pipeline_guidance()
     _render_flash()
     _render_search_summary()
+    _render_provider_summary()
+    _render_manual_fallback_links()
 
     st.markdown("### Find and Add Jobs")
     st.caption("Searches for job links, validates them, and adds matching roles to your New Roles list.")
