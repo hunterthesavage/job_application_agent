@@ -861,19 +861,24 @@ def main() -> None:
                 duplicate_skip_count += 1
                 continue
 
-            if not passes_strict_title_gate(job.title):
-                print("Skipped job due to title gate.")
-                print(f"Title: {job.title}")
-                skipped_count += 1
-                title_skip_count += 1
-                continue
+            target_titles = []
+            if settings:
+                target_titles = [str(t).strip() for t in settings.get("target_titles", []) if str(t).strip()]
 
-            if not passes_settings_title_gate(job.title, settings):
-                print("Skipped job due to settings title targeting.")
-                print(f"Title: {job.title}")
-                skipped_count += 1
-                settings_skip_count += 1
-                continue
+            if target_titles:
+                if not passes_settings_title_gate(job.title, settings):
+                    print("Skipped job due to settings title targeting.")
+                    print(f"Title: {job.title}")
+                    skipped_count += 1
+                    settings_skip_count += 1
+                    continue
+            else:
+                if not passes_strict_title_gate(job.title):
+                    print("Skipped job due to title gate.")
+                    print(f"Title: {job.title}")
+                    skipped_count += 1
+                    title_skip_count += 1
+                    continue
 
             if not passes_strict_location_gate(job.location):
                 print("Skipped job due to location gate.")
