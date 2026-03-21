@@ -52,3 +52,7 @@ build_smoke_tests.sh
 replace_subprocess_actions.sh
 reset_and_gate_openai.sh
 test_sheet.py
+
+# local backup folders
+backup_streamlit_chrome_pass/
+backup_validation_fix/
