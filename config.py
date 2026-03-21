@@ -11,10 +11,7 @@ BACKUPS_DIR = PROJECT_ROOT / "backups"
 
 DATABASE_FILENAME = "job_agent.db"
 DATABASE_PATH = DATA_DIR / DATABASE_FILENAME
-
 OPENAI_API_KEY_FILE = DATA_DIR / "openai_api_key.txt"
-OPENAI_API_KEY_META_FILE = DATA_DIR / "openai_api_key.meta.json"
-OPENAI_API_STATE_FILE = DATA_DIR / "openai_api_state.json"
 
 JOB_URLS_FILE = PROJECT_ROOT / "job_urls.txt"
 MANUAL_URLS_FILE = DATA_DIR / "manual_urls.txt"

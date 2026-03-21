@@ -6,7 +6,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from services.openai_key import get_effective_openai_api_key, is_openai_ready
+from services.openai_key import get_effective_openai_api_key
 from services.settings import DEFAULT_SETTINGS, load_settings
 from services.sqlite_actions import get_job_by_id, record_cover_letter_artifact
 
@@ -55,12 +55,12 @@ def load_profile_context_from_settings(settings: dict[str, str]) -> str:
 
 
 def generate_letter(profile_context: str, job: dict[str, str]) -> str:
-    if not is_openai_ready():
+    api_key = get_effective_openai_api_key()
+    if not api_key:
         raise ValueError(
-            "OpenAI API key is not ready. Save and validate your API key in Settings → OpenAI API first."
+            "No OpenAI API key is configured. Add one in Settings → OpenAI API, or set OPENAI_API_KEY in your environment."
         )
 
-    api_key = get_effective_openai_api_key()
     client = OpenAI(api_key=api_key)
 
     prompt = f"""

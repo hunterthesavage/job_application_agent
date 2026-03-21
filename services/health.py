@@ -6,7 +6,7 @@ from pathlib import Path
 
 from config import DATABASE_PATH
 from services.backup import get_latest_backup
-from services.openai_key import get_openai_validation_status, load_saved_openai_api_key
+from services.openai_key import has_openai_api_key, load_saved_openai_api_key
 from services.settings import load_settings
 
 
@@ -44,7 +44,6 @@ def run_health_check() -> dict:
         "cover_letter_folder_exists": False,
         "cover_letter_folder_path": "",
         "openai_api_key_present": False,
-        "openai_api_key_validated": False,
         "openai_api_key_source": "none",
         "latest_backup_exists": False,
         "latest_backup_path": "",
@@ -80,24 +79,18 @@ def run_health_check() -> dict:
             results["status"] = "warning"
             results["issues"].append("Cover letter output folder does not exist.")
 
-    validation = get_openai_validation_status()
-    results["openai_api_key_present"] = validation["has_key"] == "true"
-    results["openai_api_key_validated"] = validation["validated"] == "true"
-
     saved_key = load_saved_openai_api_key()
     env_key = str(os.getenv("OPENAI_API_KEY", "")).strip()
 
     if saved_key:
+        results["openai_api_key_present"] = True
         results["openai_api_key_source"] = "saved_file"
     elif env_key:
+        results["openai_api_key_present"] = True
         results["openai_api_key_source"] = "environment"
-
-    if not results["openai_api_key_present"]:
+    else:
         results["status"] = "warning"
         results["issues"].append("No OpenAI API key is configured.")
-    elif not results["openai_api_key_validated"]:
-        results["status"] = "warning"
-        results["issues"].append("OpenAI API key is saved but not validated.")
 
     latest_backup = get_latest_backup()
     if latest_backup is not None and latest_backup.exists():

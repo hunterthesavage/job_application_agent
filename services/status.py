@@ -1,6 +1,6 @@
 from services.backup import get_latest_backup
 from services.db import db_connection
-from services.openai_key import get_openai_validation_status, load_saved_openai_api_key, mask_openai_api_key
+from services.openai_key import has_openai_api_key, load_saved_openai_api_key, mask_openai_api_key
 
 
 def get_system_status() -> dict[str, str]:
@@ -34,13 +34,6 @@ def get_system_status() -> dict[str, str]:
 
     latest_backup = get_latest_backup()
     saved_key = load_saved_openai_api_key()
-    validation = get_openai_validation_status()
-
-    key_status = "Not configured"
-    if validation["has_key"] == "true" and validation["validated"] == "false":
-        key_status = "Saved not validated"
-    elif validation["has_key"] == "true" and validation["validated"] == "true":
-        key_status = "Validated"
 
     return {
         "jobs_total": str(jobs_total),
@@ -52,7 +45,6 @@ def get_system_status() -> dict[str, str]:
         "last_import_at": last_import_row["completed_at"] if last_import_row else "—",
         "last_import_status": last_import_row["status"] if last_import_row else "—",
         "latest_backup_path": str(latest_backup) if latest_backup else "—",
-        "openai_api_key_status": key_status,
+        "openai_api_key_status": "Configured" if has_openai_api_key() else "Not configured",
         "openai_api_key_masked": mask_openai_api_key(saved_key) if saved_key else "Not saved",
-        "openai_api_key_last_validated_at": validation["last_validated_at"] or "—",
     }
