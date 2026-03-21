@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual env
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Env / secrets
+.env
+.env.*
+service_account.json
+*.pem
+*.key
+
+# Local app state
+data/
+backups/
+runtime_settings.json
+
+# Logs
+*.log
+
+# Test / cache
+.pytest_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Generated / scratch files
+* copy.py
+* copy *.py
+*COPY.py
+JOB_AGENT_*_SNAPSHOT.txt
+daily_digest.txt
+daily_digestOLD.txt
+job_urls.txt
+greenhouse_boards.txt
+lever_boards.txt
+profile_context.txt
