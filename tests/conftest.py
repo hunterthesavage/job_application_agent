@@ -10,14 +10,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
-def isolate_openai_state_file(tmp_path, monkeypatch):
+def isolate_openai_key_file(tmp_path, monkeypatch):
     import config
     import services.openai_key as key_module
 
-    state_file = tmp_path / "openai_api_state.json"
+    key_file = tmp_path / "openai_api_key.txt"
 
-    monkeypatch.setattr(config, "OPENAI_API_STATE_FILE", state_file, raising=False)
-    monkeypatch.setattr(key_module, "OPENAI_API_STATE_FILE", state_file, raising=False)
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(config, "OPENAI_API_KEY_FILE", key_file, raising=False)
+    monkeypatch.setattr(key_module, "OPENAI_API_KEY_FILE", key_file, raising=False)
 
 
 @pytest.fixture()
