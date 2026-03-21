@@ -40,3 +40,10 @@ backup_option_b_style/
 
 # Streamlit local state
 .streamlit/secrets.toml
+
+# Local generated app outputs
+daily_digest.txt
+backups/*
+!backups/.gitkeep
+data/*
+!data/.gitkeep
