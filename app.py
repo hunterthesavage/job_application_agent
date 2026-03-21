@@ -11,6 +11,9 @@ from views.pipeline import render_pipeline
 from views.settings import render_settings
 
 
+TOP_NAV_OPTIONS = ["New Roles", "Applied Roles", "Pipeline", "Settings"]
+
+
 def is_first_run() -> bool:
     status = get_system_status()
 
@@ -35,6 +38,26 @@ After setup, run your initial job discovery/import workflow to pull jobs into th
     )
 
 
+def initialize_top_nav(first_run: bool) -> None:
+    if "top_nav_selection" not in st.session_state:
+        st.session_state["top_nav_selection"] = "Settings" if first_run else "New Roles"
+
+
+def render_top_nav() -> str:
+    current_selection = st.session_state.get("top_nav_selection", "New Roles")
+    current_index = TOP_NAV_OPTIONS.index(current_selection) if current_selection in TOP_NAV_OPTIONS else 0
+
+    selected = st.radio(
+        "Navigation",
+        TOP_NAV_OPTIONS,
+        index=current_index,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="top_nav_selection",
+    )
+    return selected
+
+
 def main() -> None:
     st.set_page_config(page_title=f"{APP_NAME} {APP_VERSION}", layout="wide")
     initialize_local_storage()
@@ -42,41 +65,21 @@ def main() -> None:
     render_hero()
 
     first_run = is_first_run()
+    initialize_top_nav(first_run)
 
     if first_run:
         render_first_run_callout()
-        tab_settings, tab_new, tab_applied, tab_pipeline = st.tabs(
-            ["Settings", "New Roles", "Applied Roles", "Pipeline"]
-        )
 
-        with tab_settings:
-            render_settings()
+    selected_view = render_top_nav()
 
-        with tab_new:
-            render_new_roles()
-
-        with tab_applied:
-            render_applied_roles()
-
-        with tab_pipeline:
-            render_pipeline()
-
+    if selected_view == "New Roles":
+        render_new_roles()
+    elif selected_view == "Applied Roles":
+        render_applied_roles()
+    elif selected_view == "Pipeline":
+        render_pipeline()
     else:
-        tab_new, tab_applied, tab_pipeline, tab_settings = st.tabs(
-            ["New Roles", "Applied Roles", "Pipeline", "Settings"]
-        )
-
-        with tab_new:
-            render_new_roles()
-
-        with tab_applied:
-            render_applied_roles()
-
-        with tab_pipeline:
-            render_pipeline()
-
-        with tab_settings:
-            render_settings()
+        render_settings()
 
 
 if __name__ == "__main__":

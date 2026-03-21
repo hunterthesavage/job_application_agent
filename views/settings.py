@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import subprocess
 
 import streamlit as st
@@ -8,6 +9,8 @@ from services.backup import backup_database, restore_latest_backup
 from services.health import run_health_check
 from services.openai_key import (
     delete_saved_openai_api_key,
+    get_effective_openai_api_key,
+    has_openai_api_key,
     load_saved_openai_api_key,
     mask_openai_api_key,
     save_openai_api_key,
@@ -122,6 +125,22 @@ def initialize_settings_state(settings: dict[str, str]) -> None:
 
     if "settings_openai_api_key_value" not in st.session_state:
         st.session_state["settings_openai_api_key_value"] = load_saved_openai_api_key()
+
+
+def render_getting_started_banner() -> None:
+    if has_openai_api_key():
+        return
+
+    st.info(
+        """
+Welcome. The app is running correctly in local mode.
+
+To finish first-time setup:
+1. Go to the OpenAI API tab and save an API key to enable AI-powered cover letters.
+2. Optionally review Search Criteria and Profile Context to improve role matching and cover letter quality.
+3. Your data stays on this machine unless you explicitly configure something else.
+        """
+    )
 
 
 def apply_configuration_defaults_to_session(
@@ -451,8 +470,20 @@ Reference: [Where do I find my OpenAI API key?](https://help.openai.com/en/artic
     )
 
     saved_key = load_saved_openai_api_key()
-    st.caption(f"Current saved key: {mask_openai_api_key(saved_key)}")
+    env_key = os.getenv("OPENAI_API_KEY", "").strip()
+    effective_key = get_effective_openai_api_key()
+
+    st.caption(f"Saved local key: {mask_openai_api_key(saved_key)}")
+    st.caption(f"Environment key: {mask_openai_api_key(env_key)}")
+    st.caption(f"Effective key in use: {mask_openai_api_key(effective_key)}")
     st.caption(f"Saved file path: {OPENAI_API_KEY_FILE}")
+
+    if saved_key and env_key:
+        st.info("Both a saved local key and an environment key are present. The app will use the saved local key first.")
+    elif env_key and not saved_key:
+        st.info("No saved local key file was found. The app is currently using OPENAI_API_KEY from the environment.")
+    elif not effective_key:
+        st.warning("No OpenAI key is currently available. AI-powered features will remain unavailable until you add one.")
 
     with st.form("settings_openai_api_form"):
         api_key_value = st.text_input(
@@ -492,6 +523,7 @@ def render_settings() -> None:
 
     settings = load_settings()
     initialize_settings_state(settings)
+    render_getting_started_banner()
 
     tab_configuration, tab_search, tab_profile, tab_openai = st.tabs(
         ["Configuration", "Search Criteria", "Profile Context", "OpenAI API"]

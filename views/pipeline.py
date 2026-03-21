@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import streamlit as st
 
 from config import JOB_URLS_FILE
@@ -8,6 +10,7 @@ from services.pipeline_runtime import (
     ingest_pasted_urls,
     ingest_urls_from_file,
 )
+from services.status import get_system_status
 from services.ui_busy import app_is_busy, clear_action, get_action, move_action_to_execute, queue_action, stop_busy
 
 
@@ -25,6 +28,8 @@ def _render_flash() -> None:
 
     if level == "error":
         st.error(message)
+    elif level == "warning":
+        st.warning(message)
     else:
         st.success(message)
 
@@ -37,6 +42,33 @@ def _render_result(result: dict) -> None:
         st.error("Action failed.")
         if result.get("output"):
             st.text(result["output"])
+
+
+def _job_urls_file_exists() -> bool:
+    return Path(JOB_URLS_FILE).exists()
+
+
+def _is_first_run_pipeline_state() -> bool:
+    status = get_system_status()
+    jobs_total = str(status.get("jobs_total", "0")).strip()
+    last_import_at = str(status.get("last_import_at", "—")).strip()
+    return jobs_total == "0" and last_import_at == "—"
+
+
+def _render_first_run_pipeline_guidance() -> None:
+    if not _is_first_run_pipeline_state():
+        return
+
+    st.info(
+        """
+No jobs have been added yet.
+
+A good first step is:
+1. Add your search preferences in Settings
+2. Come back here and click **Find and Add Jobs**
+3. Or paste a few job URLs manually to seed your list
+        """
+    )
 
 
 def _process_pending_action_before_render() -> None:
@@ -63,10 +95,17 @@ def _process_pending_action_before_render() -> None:
                 st.cache_data.clear()
 
             elif action_type == "ingest_saved":
-                result = ingest_urls_from_file(JOB_URLS_FILE)
-                st.session_state["pipeline_last_result"] = result
-                _set_flash("success", "✓ Saved job links added")
-                st.cache_data.clear()
+                if not _job_urls_file_exists():
+                    st.session_state["pipeline_last_result"] = {
+                        "status": "skipped",
+                        "output": f"No saved job link file found yet at: {JOB_URLS_FILE}",
+                    }
+                    _set_flash("warning", "No saved job links file exists yet. Run discovery first or paste job links.")
+                else:
+                    result = ingest_urls_from_file(JOB_URLS_FILE)
+                    st.session_state["pipeline_last_result"] = result
+                    _set_flash("success", "✓ Saved job links added")
+                    st.cache_data.clear()
 
             elif action_type == "discover_only":
                 result = discover_job_links()
@@ -120,7 +159,7 @@ def render_pipeline() -> None:
     _process_pending_action_before_render()
 
     st.subheader("Pipeline")
-
+    _render_first_run_pipeline_guidance()
     _render_flash()
 
     st.markdown("### Find and Add Jobs")
@@ -152,10 +191,18 @@ def render_pipeline() -> None:
         st.markdown("### Saved Job Links")
         st.caption(f"Uses the saved URL file at: {JOB_URLS_FILE}")
 
+        if _job_urls_file_exists():
+            st.success("Saved job link file found.")
+        else:
+            st.info("No saved job link file exists yet. Use Find Job Links Only or Find and Add Jobs first.")
+
         adv1, adv2 = st.columns(2)
 
         with adv1:
             if st.button("Add Saved Job Links", use_container_width=True, type="secondary", disabled=app_is_busy()):
+                if not _job_urls_file_exists():
+                    _set_flash("warning", "No saved job links file exists yet. Run discovery first or paste job links.")
+                    st.rerun()
                 queue_action("pipeline", "ingest_saved", {}, "Adding saved job links")
                 st.rerun()
 

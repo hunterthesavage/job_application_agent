@@ -35,8 +35,8 @@ def _get_openai_badge() -> tuple[str, str]:
     if key_status == "validated":
         return "OpenAI: Validated", "validated"
 
-    if key_status == "saved not validated":
-        return "OpenAI: Saved", "saved"
+    if key_status in {"saved not validated", "configured"}:
+        return "OpenAI: Configured", "saved"
 
     return "OpenAI: Not Configured", "not-configured"
 
