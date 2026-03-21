@@ -11,7 +11,7 @@ from services.data import (
     open_url,
     safe_value,
 )
-from services.openai_key import get_openai_disabled_reason, is_openai_ready
+from services.openai_key import get_effective_openai_api_key
 from services.settings import load_settings
 from services.sqlite_actions import mark_job_as_applied, remove_job
 from services.status import get_system_status
@@ -274,8 +274,13 @@ def render_job_card(
     with right:
         btn1, btn2, btn3, btn4 = st.columns([1.05, 0.95, 1.15, 0.95])
 
-        cover_letter_enabled = is_openai_ready()
-        cover_letter_help = get_openai_disabled_reason() or "Generate a tailored cover letter"
+        api_key = get_effective_openai_api_key()
+        cover_letter_enabled = bool(api_key)
+        cover_letter_help = (
+            "Generate a tailored cover letter"
+            if cover_letter_enabled
+            else "No OpenAI API key is configured. Add one in Settings > OpenAI API."
+        )
 
         with btn1:
             if st.button(
