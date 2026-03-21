@@ -5,10 +5,12 @@ from typing import Any
 
 from config import JOB_URLS_FILE, MANUAL_URLS_FILE
 from services.ingestion import ingest_job_records
-from services.matching_profiles import expand_location_terms, expand_title_terms, normalize_text
 from services.settings import load_settings
 from src import discover_job_urls as discover_module
 from src.validate_job_url import create_job_record
+
+
+AUTO_ACCEPT_SCORE = 45
 
 
 def safe_text(value) -> str:
@@ -20,11 +22,26 @@ def safe_text(value) -> str:
     return text
 
 
+def normalize_text(value: str) -> str:
+    return " ".join(
+        safe_text(value)
+        .lower()
+        .replace("/", " ")
+        .replace("-", " ")
+        .replace(",", " ")
+        .split()
+    )
+
+
 def parse_csv_text(value: str) -> list[str]:
     text = safe_text(value)
     if not text:
         return []
     return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def tokenize(value: str) -> list[str]:
+    return [token for token in normalize_text(value).split() if token]
 
 
 def load_job_urls_from_file(file_path: str | Path) -> list[str]:
@@ -52,34 +69,129 @@ def parse_manual_urls(text_value: str) -> list[str]:
     return urls
 
 
-def text_contains_any_phrase(text: str, phrases: list[str]) -> bool:
-    base = normalize_text(text)
-    if not base:
-        return False
-    return any(phrase in base for phrase in phrases if phrase)
+def token_overlap_score(source_text: str, target_text: str) -> float:
+    source_tokens = set(tokenize(source_text))
+    target_tokens = set(tokenize(target_text))
+
+    if not source_tokens or not target_tokens:
+        return 0.0
+
+    overlap = source_tokens.intersection(target_tokens)
+    if not overlap:
+        return 0.0
+
+    return len(overlap) / max(1, len(source_tokens))
 
 
-def include_keywords_match(searchable_text: str, include_keywords: list[str]) -> bool:
+def phrase_match_bonus(source_text: str, candidate_text: str) -> float:
+    source = normalize_text(source_text)
+    candidate = normalize_text(candidate_text)
+
+    if not source or not candidate:
+        return 0.0
+
+    if source in candidate:
+        return 1.0
+
+    return 0.0
+
+
+def title_match_score(job_title: str, target_titles: list[str]) -> tuple[int, list[str]]:
+    if not target_titles:
+        return 25, ["no target title set"]
+
+    best_score = 0
+    best_reason = "no meaningful title match"
+
+    for target in target_titles:
+        phrase_bonus = phrase_match_bonus(target, job_title)
+        overlap = token_overlap_score(target, job_title)
+
+        score = int((phrase_bonus * 25) + (overlap * 20))
+
+        if score > best_score:
+            best_score = score
+            best_reason = f"title matched '{target}'"
+
+    return best_score, [best_reason]
+
+
+def location_match_score(job_location: str, preferred_locations: list[str]) -> tuple[int, list[str]]:
+    if not preferred_locations:
+        return 20, ["no preferred location set"]
+
+    best_score = 0
+    best_reason = "no meaningful location match"
+
+    for target in preferred_locations:
+        phrase_bonus = phrase_match_bonus(target, job_location)
+        overlap = token_overlap_score(target, job_location)
+
+        score = int((phrase_bonus * 20) + (overlap * 15))
+
+        if score > best_score:
+            best_score = score
+            best_reason = f"location matched '{target}'"
+
+    return best_score, [best_reason]
+
+
+def include_keywords_score(searchable_text: str, include_keywords: list[str]) -> tuple[int, list[str]]:
     if not include_keywords:
-        return True
+        return 0, []
 
-    normalized_keywords = [normalize_text(keyword) for keyword in include_keywords if normalize_text(keyword)]
-    if not normalized_keywords:
-        return True
+    matched = []
+    searchable = normalize_text(searchable_text)
 
-    return text_contains_any_phrase(searchable_text, normalized_keywords)
+    for keyword in include_keywords:
+        normalized_keyword = normalize_text(keyword)
+        if normalized_keyword and normalized_keyword in searchable:
+            matched.append(keyword)
+
+    if not matched:
+        return 0, [f"missing include keywords: {', '.join(include_keywords[:5])}"]
+
+    score = min(20, 8 + (len(matched) * 4))
+    return score, [f"matched include keywords: {', '.join(matched[:5])}"]
 
 
-def passes_settings_filters(job, settings: dict[str, str]) -> tuple[bool, str]:
+def exclude_keywords_penalty(searchable_text: str, exclude_keywords: list[str]) -> tuple[int, list[str]]:
+    if not exclude_keywords:
+        return 0, []
+
+    matched = []
+    searchable = normalize_text(searchable_text)
+
+    for keyword in exclude_keywords:
+        normalized_keyword = normalize_text(keyword)
+        if normalized_keyword and normalized_keyword in searchable:
+            matched.append(keyword)
+
+    if not matched:
+        return 0, []
+
+    return -50, [f"matched excluded keywords: {', '.join(matched[:5])}"]
+
+
+def remote_preference_score(job_location: str, remote_only: bool) -> tuple[int, list[str]]:
+    normalized_location = normalize_text(job_location)
+
+    if not remote_only:
+        return 0, []
+
+    if "remote" in normalized_location:
+        return 10, ["remote preference matched"]
+
+    return -25, ["role is not marked remote"]
+
+
+def score_job_match(job, settings: dict[str, str]) -> dict[str, Any]:
     title = safe_text(getattr(job, "title", ""))
     company = safe_text(getattr(job, "company", ""))
     location = safe_text(getattr(job, "location", ""))
     compensation_raw = safe_text(getattr(job, "compensation_raw", ""))
 
     searchable = " ".join([title, company, location, compensation_raw])
-    normalized_title = normalize_text(title)
-    normalized_location = normalize_text(location)
-    normalized_searchable = normalize_text(searchable)
 
     target_titles = parse_csv_text(settings.get("target_titles", ""))
     preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
@@ -87,27 +199,34 @@ def passes_settings_filters(job, settings: dict[str, str]) -> tuple[bool, str]:
     exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "true")).lower() == "true"
 
-    expanded_title_terms = expand_title_terms(target_titles)
-    expanded_location_terms = expand_location_terms(preferred_locations)
-    normalized_exclude_keywords = [normalize_text(keyword) for keyword in exclude_keywords if normalize_text(keyword)]
+    title_points, title_reasons = title_match_score(title, target_titles)
+    location_points, location_reasons = location_match_score(location, preferred_locations)
+    include_points, include_reasons = include_keywords_score(searchable, include_keywords)
+    exclude_points, exclude_reasons = exclude_keywords_penalty(searchable, exclude_keywords)
+    remote_points, remote_reasons = remote_preference_score(location, remote_only)
 
-    if expanded_title_terms and not text_contains_any_phrase(normalized_title, expanded_title_terms):
-        return False, f"title did not match target titles: {', '.join(target_titles[:5])}"
+    total_score = title_points + location_points + include_points + exclude_points + remote_points
+    should_accept = total_score >= AUTO_ACCEPT_SCORE
 
-    if expanded_location_terms and not text_contains_any_phrase(normalized_location, expanded_location_terms):
-        if not (remote_only and "remote" in normalized_location):
-            return False, f"location did not match preferred locations: {', '.join(preferred_locations[:5])}"
+    reasons = []
+    reasons.extend(title_reasons)
+    reasons.extend(location_reasons)
+    reasons.extend(include_reasons)
+    reasons.extend(exclude_reasons)
+    reasons.extend(remote_reasons)
 
-    if remote_only and "remote" not in normalized_location:
-        return False, "role is not marked remote"
-
-    if not include_keywords_match(normalized_searchable, include_keywords):
-        return False, f"did not include required keywords: {', '.join(include_keywords[:5])}"
-
-    if normalized_exclude_keywords and any(keyword in normalized_searchable for keyword in normalized_exclude_keywords):
-        return False, f"matched excluded keywords: {', '.join(exclude_keywords[:5])}"
-
-    return True, ""
+    return {
+        "score": total_score,
+        "should_accept": should_accept,
+        "reason_text": "; ".join([reason for reason in reasons if reason]),
+        "breakdown": {
+            "title_points": title_points,
+            "location_points": location_points,
+            "include_points": include_points,
+            "exclude_points": exclude_points,
+            "remote_points": remote_points,
+        },
+    }
 
 
 def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str) -> dict[str, Any]:
@@ -125,15 +244,21 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
             job = create_job_record(job_url)
             setattr(job, "source", source_name)
 
-            passed, reason = passes_settings_filters(job, settings)
-            if not passed:
-                output_lines.append(f"Skipped by settings filter: {reason}")
+            match = score_job_match(job, settings)
+
+            if not match["should_accept"]:
+                output_lines.append(
+                    f"Skipped by match score ({match['score']}): {match['reason_text']}"
+                )
                 skipped_count += 1
                 continue
 
             accepted_jobs.append(job)
             output_lines.append(
-                f"Accepted: {safe_text(getattr(job, 'company', ''))} | {safe_text(getattr(job, 'title', ''))} | {safe_text(getattr(job, 'location', ''))}"
+                f"Accepted (score {match['score']}): "
+                f"{safe_text(getattr(job, 'company', ''))} | "
+                f"{safe_text(getattr(job, 'title', ''))} | "
+                f"{safe_text(getattr(job, 'location', ''))}"
             )
         except Exception as exc:
             output_lines.append(f"Error: {exc}")
@@ -150,11 +275,12 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
     output_lines.append("Validation + ingestion complete.")
     output_lines.append(f"Seen URLs: {len(urls)}")
     output_lines.append(f"Accepted jobs: {len(accepted_jobs)}")
-    output_lines.append(f"Skipped by settings: {skipped_count}")
+    output_lines.append(f"Skipped by scoring: {skipped_count}")
     output_lines.append(f"Errors before ingest: {error_count}")
     output_lines.append(f"Inserted: {summary['inserted_count']}")
     output_lines.append(f"Updated: {summary['updated_count']}")
     output_lines.append(f"Skipped removed: {summary['skipped_removed_count']}")
+    output_lines.append(f"Auto-accept threshold: {AUTO_ACCEPT_SCORE}")
 
     return {
         "status": "completed",
@@ -224,7 +350,11 @@ def ingest_pasted_urls(text_value: str) -> dict[str, Any]:
     urls = parse_manual_urls(text_value)
     MANUAL_URLS_FILE.parent.mkdir(parents=True, exist_ok=True)
     MANUAL_URLS_FILE.write_text("\n".join(urls) + ("\n" if urls else ""), encoding="utf-8")
-    return _build_jobs_from_urls(urls, source_name="Local Pipeline", source_detail=str(MANUAL_URLS_FILE.resolve()))
+    return _build_jobs_from_urls(
+        urls,
+        source_name="Local Pipeline",
+        source_detail=str(MANUAL_URLS_FILE.resolve()),
+    )
 
 
 def discover_and_ingest() -> dict[str, Any]:

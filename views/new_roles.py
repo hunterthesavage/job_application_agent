@@ -9,7 +9,6 @@ from services.data import (
     load_sqlite_new_roles,
     normalize_fit_score,
     paginate_df,
-    row_matches_settings_filters,
 )
 from services.settings import load_settings
 from services.sqlite_actions import mark_job_as_applied, remove_job
@@ -17,7 +16,6 @@ from services.ui_busy import (
     clear_action,
     get_action,
     move_action_to_execute,
-    queue_action,
     stop_busy,
 )
 from ui.components import (
@@ -118,14 +116,6 @@ def initialize_filter_state_from_settings(settings: dict) -> None:
         st.session_state["filter_compensation_only"] = False
 
 
-def apply_settings_role_filters(df, settings: dict):
-    if df.empty:
-        return df
-
-    mask = df.apply(lambda row: row_matches_settings_filters(row, settings), axis=1)
-    return df[mask]
-
-
 def render_new_roles() -> None:
     _process_pending_action_before_render()
 
@@ -158,13 +148,15 @@ def render_new_roles() -> None:
         df_display["_fit_sort"] = df_display["Fit Score"].apply(normalize_fit_score)
         df_display = df_display.sort_values(by="_fit_sort", ascending=False).drop(columns=["_fit_sort"])
 
-    df_targeted = apply_settings_role_filters(df_display, settings)
-
     kpis = calculate_kpis(df, df_applied)
     render_kpis(kpis)
     render_filter_bar()
 
-    df_filtered = apply_new_role_filters(df_targeted)
+    # IMPORTANT:
+    # New Roles should show all imported roles by default.
+    # Saved Settings should drive discovery/import, not silently hide results here.
+    # Only apply the visible UI filters on this page.
+    df_filtered = apply_new_role_filters(df_display)
 
     default_jobs_per_page = int(settings.get("default_jobs_per_page", "10"))
     page_size = get_page_size("new_roles_page_size", default=default_jobs_per_page)
@@ -188,7 +180,7 @@ def render_new_roles() -> None:
     )
 
     if paged_df.empty:
-        st.info("No roles match the current settings and filters.")
+        st.info("No roles match the current on-screen filters.")
     else:
         for job_id, row in paged_df.iterrows():
             render_job_card(

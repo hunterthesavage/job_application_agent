@@ -46,11 +46,61 @@ SENIORITY_TERMS = [
     "coo",
 ]
 
+TITLE_QUERY_EXPANSIONS = {
+    "analyst": [
+        "analyst",
+        "data analyst",
+        "business analyst",
+        "financial analyst",
+        "bi analyst",
+        "analytics analyst",
+    ],
+    "nurse": [
+        "nurse",
+        "registered nurse",
+        "rn",
+        "nurse practitioner",
+        "clinical nurse",
+    ],
+    "engineer": [
+        "engineer",
+        "software engineer",
+        "data engineer",
+        "platform engineer",
+        "cloud engineer",
+    ],
+    "manager": [
+        "manager",
+        "program manager",
+        "project manager",
+        "operations manager",
+        "product manager",
+    ],
+}
+
+STATE_ABBREVIATIONS = {
+    "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca",
+    "colorado": "co", "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga",
+    "hawaii": "hi", "idaho": "id", "illinois": "il", "indiana": "in", "iowa": "ia",
+    "kansas": "ks", "kentucky": "ky", "louisiana": "la", "maine": "me", "maryland": "md",
+    "massachusetts": "ma", "michigan": "mi", "minnesota": "mn", "mississippi": "ms",
+    "missouri": "mo", "montana": "mt", "nebraska": "ne", "nevada": "nv", "new hampshire": "nh",
+    "new jersey": "nj", "new mexico": "nm", "new york": "ny", "north carolina": "nc",
+    "north dakota": "nd", "ohio": "oh", "oklahoma": "ok", "oregon": "or", "pennsylvania": "pa",
+    "rhode island": "ri", "south carolina": "sc", "south dakota": "sd", "tennessee": "tn",
+    "texas": "tx", "utah": "ut", "vermont": "vt", "virginia": "va", "washington": "wa",
+    "west virginia": "wv", "wisconsin": "wi", "wyoming": "wy",
+}
+
 
 def safe_text(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def normalize_text(value: str) -> str:
+    return " ".join(safe_text(value).lower().replace("/", " ").replace("-", " ").split())
 
 
 def parse_csv_text(value: str) -> list[str]:
@@ -106,6 +156,56 @@ def title_matches_settings(title: str, settings: dict[str, str]) -> bool:
     return any(term.lower() in lowered for term in target_titles)
 
 
+def expand_title_query_terms(target_titles: list[str]) -> list[str]:
+    expanded: list[str] = []
+
+    for raw_term in target_titles:
+        term = normalize_text(raw_term)
+        if not term:
+            continue
+
+        if term in TITLE_QUERY_EXPANSIONS:
+            expanded.extend(TITLE_QUERY_EXPANSIONS[term])
+        else:
+            expanded.append(raw_term.strip())
+
+    return list(dict.fromkeys([safe_text(x) for x in expanded if safe_text(x)]))
+
+
+def expand_location_query_terms(preferred_locations: list[str], remote_only: bool) -> list[str]:
+    if not preferred_locations:
+        return ["remote"] if remote_only else ["remote", "United States"]
+
+    expanded: list[str] = []
+
+    for raw_location in preferred_locations:
+        location = safe_text(raw_location)
+        if not location:
+            continue
+
+        expanded.append(location)
+
+        normalized = normalize_text(location)
+        tokens = [token for token in normalized.replace(",", " ").split() if token]
+
+        if len(tokens) >= 2:
+            expanded.append(" ".join(tokens))
+            expanded.append("-".join(tokens))
+
+        for token in tokens:
+            if len(token) > 1:
+                expanded.append(token)
+
+        if normalized in STATE_ABBREVIATIONS:
+            expanded.append(STATE_ABBREVIATIONS[normalized])
+
+        for state_name, abbr in STATE_ABBREVIATIONS.items():
+            if abbr == normalized:
+                expanded.append(state_name)
+
+    return list(dict.fromkeys([safe_text(x) for x in expanded if safe_text(x)]))
+
+
 def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
     target_titles = parse_csv_text(settings.get("target_titles", ""))
     preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
@@ -115,37 +215,64 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
     if not target_titles and not preferred_locations and not include_keywords:
         return DEFAULT_GOOGLE_DISCOVERY_QUERIES
 
-    queries = []
+    queries: list[str] = []
     site_block = "(site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com OR site:ashbyhq.com OR site:smartrecruiters.com)"
 
-    title_terms = target_titles or [
+    title_terms = expand_title_query_terms(target_titles or [
         "VP Technology",
         "VP IT",
         "CIO",
         "CTO",
         "Head of Technology",
-    ]
+    ])
 
-    location_terms = preferred_locations or (["remote"] if remote_only else ["remote", "United States"])
+    location_terms = expand_location_query_terms(preferred_locations, remote_only)
+    keyword_terms = include_keywords[:4]
 
-    keyword_block = ""
-    if include_keywords:
-        keyword_block = " ".join(f'"{keyword}"' for keyword in include_keywords[:3])
-
+    # Tier 1: precise but not too constrained
     for title in title_terms[:8]:
-        for location in location_terms[:4]:
+        for location in location_terms[:6]:
             parts = [f'"{title}"', f'"{location}"']
-            if keyword_block:
-                parts.append(keyword_block)
+            if keyword_terms:
+                parts.extend(f'"{keyword}"' for keyword in keyword_terms[:2])
             parts.append(site_block)
             queries.append(" ".join(parts))
 
+    # Tier 2: broader token-style queries
+    for title in title_terms[:6]:
+        for location in location_terms[:4]:
+            parts = [title, location]
+            if keyword_terms:
+                parts.extend(keyword_terms[:2])
+            parts.append(site_block)
+            queries.append(" ".join(parts))
+
+    # Tier 3: family-style OR query for broader roles
+    if len(title_terms) > 1:
+        title_or = " OR ".join(f'"{title}"' for title in title_terms[:5])
+        for location in location_terms[:3]:
+            parts = [f"({title_or})", location]
+            if keyword_terms:
+                parts.extend(keyword_terms[:2])
+            parts.append(site_block)
+            queries.append(" ".join(parts))
+
+    # Tier 4: location-light fallback if a location exists
+    if preferred_locations:
+        for title in title_terms[:5]:
+            parts = [f'"{title}"']
+            if keyword_terms:
+                parts.extend(f'"{keyword}"' for keyword in keyword_terms[:2])
+            parts.append(site_block)
+            queries.append(" ".join(parts))
+
+    # Remote fallback
     if remote_only and not preferred_locations:
         queries.append(
             f'("VP" OR "Vice President" OR "Head of" OR "Chief") ("Technology" OR "IT" OR "Digital" OR "Platform") "remote" {site_block}'
         )
 
-    return list(dict.fromkeys(queries))
+    return list(dict.fromkeys([query.strip() for query in queries if query.strip()]))
 
 
 def build_search_plan(settings: dict[str, str]) -> list[str]:
@@ -267,8 +394,13 @@ def discover_google_style_urls(settings: dict[str, str], log_lines: list[str] | 
 
             try:
                 results = list(ddgs.text(query, max_results=40))
+                result_count = len(results)
+
                 if log_lines is not None:
-                    log_lines.append(f"Search results returned: {len(results)}")
+                    log_lines.append(f"Search results returned: {result_count}")
+
+                if result_count == 0:
+                    continue
 
                 for result in results:
                     url = extract_result_url(result)
@@ -280,10 +412,8 @@ def discover_google_style_urls(settings: dict[str, str], log_lines: list[str] | 
                     if not is_allowed_job_url(url):
                         continue
 
-                    if title and not title_matches_settings(title, settings):
-                        continue
-
                     discovered.append(url)
+
             except Exception as exc:
                 if log_lines is not None:
                     log_lines.append(f"Search failed for query '{query}': {exc}")
