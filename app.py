@@ -53,8 +53,11 @@ def render_top_nav() -> str:
         index=current_index,
         horizontal=True,
         label_visibility="collapsed",
-        key="top_nav_selection",
     )
+
+    if st.session_state.get("top_nav_selection") != selected:
+        st.session_state["top_nav_selection"] = selected
+
     return selected
 
 

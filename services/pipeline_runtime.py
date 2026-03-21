@@ -48,9 +48,13 @@ def text_contains_any(text: str, patterns: list[str]) -> bool:
 
 
 def load_job_urls_from_file(file_path: str | Path) -> list[str]:
+    path = Path(file_path)
+    if not path.exists():
+        return []
+
     urls: list[str] = []
 
-    with Path(file_path).open("r", encoding="utf-8") as file:
+    with path.open("r", encoding="utf-8") as file:
         for line in file:
             line = line.strip()
             if line and not line.startswith("#"):
@@ -178,17 +182,40 @@ def discover_job_links() -> dict[str, Any]:
     if error_output:
         output = f"{output}\n{error_output}".strip()
 
+    if not urls:
+        if output:
+            output = f"{output}\n\nNo job URLs were discovered."
+        else:
+            output = "No job URLs were discovered."
+
     return {
         "status": "completed",
         "output": output,
         "job_urls_file": str(JOB_URLS_FILE),
         "url_count": len(urls),
+        "urls": urls,
     }
 
 
 def ingest_urls_from_file(file_path: str | Path) -> dict[str, Any]:
     path = Path(file_path)
     urls = load_job_urls_from_file(path)
+
+    if not urls:
+        return {
+            "status": "completed",
+            "output": f"No job URLs found in: {path.resolve()}",
+            "summary": {
+                "inserted_count": 0,
+                "updated_count": 0,
+                "skipped_removed_count": 0,
+            },
+            "accepted_jobs": 0,
+            "seen_urls": 0,
+            "skipped_count": 0,
+            "error_count": 0,
+        }
+
     return _build_jobs_from_urls(urls, source_name="Local Pipeline", source_detail=str(path.resolve()))
 
 
@@ -201,11 +228,41 @@ def ingest_pasted_urls(text_value: str) -> dict[str, Any]:
 
 def discover_and_ingest() -> dict[str, Any]:
     discovery_result = discover_job_links()
-    ingest_result = ingest_urls_from_file(JOB_URLS_FILE)
+    discovered_urls = discovery_result.get("urls", [])
 
     combined_output_parts = []
     if discovery_result.get("output"):
         combined_output_parts.append(discovery_result["output"])
+
+    if not discovered_urls:
+        combined_output_parts.append(
+            "No URLs were available to ingest. Review your Settings criteria or try a broader search."
+        )
+        return {
+            "status": "completed",
+            "output": "\n\n".join(combined_output_parts).strip(),
+            "discovery": discovery_result,
+            "ingest": {
+                "status": "completed",
+                "output": "No ingestion was performed because discovery returned zero URLs.",
+                "summary": {
+                    "inserted_count": 0,
+                    "updated_count": 0,
+                    "skipped_removed_count": 0,
+                },
+                "accepted_jobs": 0,
+                "seen_urls": 0,
+                "skipped_count": 0,
+                "error_count": 0,
+            },
+        }
+
+    ingest_result = _build_jobs_from_urls(
+        discovered_urls,
+        source_name="Local Pipeline",
+        source_detail=str(JOB_URLS_FILE.resolve()),
+    )
+
     if ingest_result.get("output"):
         combined_output_parts.append(ingest_result["output"])
 
