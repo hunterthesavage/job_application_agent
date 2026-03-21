@@ -3,14 +3,26 @@ from datetime import datetime
 
 import gspread
 
+from config import NEW_ROLES_SHEET, SPREADSHEET_ID
 
-SPREADSHEET_ID = "1h0LEK4-t6-j7rmdxjWeO8XY_Kx9L5HfQpOdkJtf_p_E"
-SHEET_NAME = "New Validated Roles"
+
+SHEET_NAME = NEW_ROLES_SHEET
 OUTPUT_FILE = "daily_digest.txt"
+SERVICE_ACCOUNT_FILE = "service_account.json"
 
 
 def get_today_rows():
-    gc = gspread.service_account(filename="service_account.json")
+    if not SPREADSHEET_ID:
+        raise RuntimeError(
+            "Legacy Google Sheets digest is not configured. Set SPREADSHEET_ID in config.py or provide it through your local setup."
+        )
+
+    if not os.path.exists(SERVICE_ACCOUNT_FILE):
+        raise FileNotFoundError(
+            f"Missing {SERVICE_ACCOUNT_FILE}. Legacy Google Sheets features require a local service account file."
+        )
+
+    gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
     sh = gc.open_by_key(SPREADSHEET_ID)
     worksheet = sh.worksheet(SHEET_NAME)
 
