@@ -18,8 +18,8 @@ def isolate_openai_key_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "DATA_DIR", tmp_path, raising=False)
     monkeypatch.setattr(config, "OPENAI_API_KEY_FILE", key_file, raising=False)
+    monkeypatch.setattr(key_module, "DATA_DIR", tmp_path, raising=False)
     monkeypatch.setattr(key_module, "OPENAI_API_KEY_FILE", key_file, raising=False)
-
 
 @pytest.fixture()
 def temp_db_path(tmp_path, monkeypatch):
