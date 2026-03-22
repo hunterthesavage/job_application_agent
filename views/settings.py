@@ -10,6 +10,7 @@ from services.health import run_health_check
 from services.openai_key import (
     delete_saved_openai_api_key,
     get_effective_openai_api_key,
+    get_openai_api_key_details,
     has_openai_api_key,
     load_saved_openai_api_key,
     mask_openai_api_key,
@@ -18,6 +19,15 @@ from services.openai_key import (
 from services.settings import DEFAULT_SETTINGS, load_settings, save_settings
 from services.status import get_system_status
 from ui.navigation import initialize_nav_state, render_button_nav
+
+
+SETTINGS_NAV_OPTIONS = [
+    "Configuration",
+    "Search Criteria",
+    "Profile Context",
+    "OpenAI API",
+]
+
 
 
 FIT_OPTIONS = ["Any", "60", "70", "75", "80", "85", "90"]
@@ -442,69 +452,77 @@ def render_profile_context_tab(settings: dict[str, str]) -> None:
 
 def render_openai_api_tab() -> None:
     st.markdown("### OpenAI API")
-    st.caption("Add the API key used for cover letter generation. The value is stored locally on this machine in a dedicated key file.")
+    st.caption("Add the API key used for cover letter generation. The app uses a saved local key first and falls back to OPENAI_API_KEY from the environment.")
 
-    st.markdown(
-        """
-Create or manage your API key here: [OpenAI API keys](https://platform.openai.com/api-keys)
+    st.markdown("Create or manage your API key here: [OpenAI API keys](https://platform.openai.com/api-keys)")
+    st.markdown("Check billing or credits here: [OpenAI Billing](https://platform.openai.com/settings/organization/billing/overview)")
+    st.markdown("Reference: [Where do I find my OpenAI API key?](https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key)")
 
-Check billing or credits here: [OpenAI Billing](https://platform.openai.com/settings/organization/billing/overview)
+    details = get_openai_api_key_details()
 
-Reference: [Where do I find my OpenAI API key?](https://help.openai.com/en/articles/4936850-where-do-i-find-my-secret-api-key)
-        """
+    source_label_map = {
+        "saved": "Saved local key",
+        "environment": "Environment variable",
+        "none": "No key configured",
+    }
+
+    status_label = "Configured" if details["active_key_present"] else "Not Configured"
+    source_label = source_label_map.get(str(details["active_source"]), "No key configured")
+
+    st.markdown(f"**Status:** {status_label}")
+    st.markdown(f"**Active key source:** {source_label}")
+
+    if details["active_key_present"]:
+        st.markdown(f"**Active key:** `{details['active_key_masked']}`")
+    else:
+        st.info("No OpenAI API key is configured yet. Save a local key below or provide OPENAI_API_KEY in the environment.")
+
+    if "settings_openai_api_key_value" not in st.session_state:
+        st.session_state["settings_openai_api_key_value"] = load_saved_openai_api_key()
+
+    st.markdown("---")
+
+    st.text_input(
+        "OpenAI API Key",
+        key="settings_openai_api_key_value",
+        type="password",
+        help="Paste the API key you want to save locally for this machine.",
     )
 
-    saved_key = load_saved_openai_api_key()
-    env_key = os.getenv("OPENAI_API_KEY", "").strip()
-    effective_key = get_effective_openai_api_key()
+    action_col_1, action_col_2 = st.columns(2)
 
-    st.caption(f"Saved local key: {mask_openai_api_key(saved_key)}")
-    st.caption(f"Environment key: {mask_openai_api_key(env_key)}")
-    st.caption(f"Effective key in use: {mask_openai_api_key(effective_key)}")
-    st.caption(f"Saved file path: {OPENAI_API_KEY_FILE}")
-
-    if saved_key and env_key:
-        st.info("Both a saved local key and an environment key are present. The app will use the saved local key first.")
-    elif env_key and not saved_key:
-        st.info("No saved local key file was found. The app is currently using OPENAI_API_KEY from the environment.")
-    elif not effective_key:
-        st.warning("No OpenAI key is currently available. AI-powered features will remain unavailable until you add one.")
-
-    with st.form("settings_openai_api_form"):
-        api_key_value = st.text_input(
-            "OpenAI API Key",
-            value="",
-            type="password",
-            help="Paste your API key here. It will be stored locally and masked in the UI.",
-        )
-
-        c1, c2 = st.columns(2)
-        save_api = c1.form_submit_button("Save API Key", type="primary", use_container_width=True)
-        delete_api = c2.form_submit_button("Delete Saved API Key", type="secondary", use_container_width=True)
-
-        if save_api:
+    with action_col_1:
+        if st.button("Save API Key", use_container_width=True, type="primary", key="save_openai_api_key_button"):
             try:
-                if not str(api_key_value).strip():
-                    st.error("Paste an API key before saving.")
-                else:
-                    save_path = save_openai_api_key(api_key_value)
-                    st.session_state["settings_openai_api_key_value"] = ""
-                    st.success(f"API key saved to: {save_path}")
-                    st.rerun()
+                saved_path = save_openai_api_key(st.session_state.get("settings_openai_api_key_value", ""))
+                st.success(f"Saved API key locally: {saved_path}")
+                st.rerun()
             except Exception as exc:
                 st.error(f"Failed to save API key: {exc}")
 
-        if delete_api:
+    with action_col_2:
+        if st.button(
+            "Delete Saved API Key",
+            use_container_width=True,
+            type="secondary",
+            key="delete_saved_openai_api_key_button",
+            disabled=not bool(details["saved_key_present"]),
+        ):
             try:
                 delete_saved_openai_api_key()
-                st.success("Saved API key deleted.")
+                st.session_state["settings_openai_api_key_value"] = ""
+                st.success("Deleted saved local API key.")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Failed to delete saved API key: {exc}")
 
-
-SETTINGS_NAV_OPTIONS = ["Configuration", "Search Criteria", "Profile Context", "OpenAI API"]
-
+    with st.expander("Advanced key diagnostics"):
+        st.markdown(f"**Saved local key present:** {'Yes' if details['saved_key_present'] else 'No'}")
+        st.markdown(f"**Environment key present:** {'Yes' if details['environment_key_present'] else 'No'}")
+        st.markdown(f"**Saved local key:** `{details['saved_key_masked']}`")
+        st.markdown(f"**Environment key:** `{details['environment_key_masked']}`")
+        st.markdown("**Precedence:** Saved local key overrides the environment key when both are present.")
+        st.caption(f"Saved file path: {details['saved_file_path']}")
 
 def render_settings() -> None:
     st.subheader("Settings")
@@ -515,6 +533,7 @@ def render_settings() -> None:
 
     st.caption("Settings sections")
     selected_section = render_button_nav(
+        selected_button_type="tertiary",
         options=SETTINGS_NAV_OPTIONS,
         state_key="settings_subnav_selection",
         key_prefix="settings_subnav",

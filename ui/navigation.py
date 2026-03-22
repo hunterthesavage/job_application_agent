@@ -8,10 +8,16 @@ def initialize_nav_state(state_key: str, default_value: str) -> None:
         st.session_state[state_key] = default_value
 
 
+def _set_nav_value(state_key: str, value: str) -> None:
+    st.session_state[state_key] = value
+
+
 def render_button_nav(
     options: Sequence[str],
     state_key: str,
     key_prefix: str,
+    selected_button_type: str = "primary",
+    unselected_button_type: str = "secondary",
 ) -> str:
     if not options:
         raise ValueError("options must not be empty")
@@ -24,15 +30,16 @@ def render_button_nav(
     columns = st.columns(len(options))
 
     for idx, option in enumerate(options):
-        is_selected = option == current_value
-        if columns[idx].button(
+        is_selected = option == st.session_state.get(state_key, options[0])
+        button_type = selected_button_type if is_selected else unselected_button_type
+
+        columns[idx].button(
             option,
             key=f"{key_prefix}_{idx}_{option.lower().replace(' ', '_')}",
             use_container_width=True,
-            type="primary" if is_selected else "secondary",
-        ):
-            if option != current_value:
-                st.session_state[state_key] = option
-                st.rerun()
+            type=button_type,
+            on_click=_set_nav_value,
+            args=(state_key, option),
+        )
 
     return st.session_state.get(state_key, current_value)

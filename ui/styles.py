@@ -311,6 +311,32 @@ def inject_custom_css() -> None:
                 transform: translateY(-1px);
             }
 
+
+            div[data-testid="stButton"] > button[kind="tertiary"] {
+                border-radius: 14px;
+                min-height: 48px;
+                font-weight: 760;
+                border: 1px solid rgba(96,165,250,0.42);
+                background: linear-gradient(180deg, rgba(59,130,246,0.92) 0%, rgba(37,99,235,0.92) 100%);
+                color: rgba(255,255,255,0.98);
+                box-shadow:
+                    0 10px 24px rgba(37,99,235,0.22),
+                    inset 0 1px 0 rgba(255,255,255,0.10);
+            }
+
+            div[data-testid="stButton"] > button[kind="tertiary"]:hover {
+                transform: translateY(-1px);
+                border-color: rgba(147,197,253,0.72);
+                background: linear-gradient(180deg, rgba(96,165,250,0.98) 0%, rgba(37,99,235,0.95) 100%);
+            }
+
+            div[data-testid="stButton"] > button[kind="tertiary"]:focus:not(:active) {
+                border-color: rgba(147,197,253,0.82);
+                box-shadow:
+                    0 0 0 0.2rem rgba(59,130,246,0.20),
+                    0 10px 24px rgba(37,99,235,0.22);
+            }
+
             div[data-baseweb="select"] > div,
             div[data-testid="stSelectbox"] > div {
                 border-radius: 14px;

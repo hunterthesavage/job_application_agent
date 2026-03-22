@@ -48,24 +48,19 @@ def render_top_nav() -> str:
     )
 
 
-def render_startup_loading_message() -> st.delta_generator.DeltaGenerator:
-    placeholder = st.empty()
-    placeholder.info(
-        """
-**Warming up the job engine...**
+def initialize_app_once() -> None:
+    if st.session_state.get("_app_initialized", False):
+        return
 
-Hang tight while we get your workspace, settings, and local database ready.
-        """
-    )
-    return placeholder
+    from services.storage import initialize_local_storage
+
+    initialize_local_storage()
+    st.session_state["_app_initialized"] = True
 
 
 def main() -> None:
     st.set_page_config(page_title=f"{APP_NAME} {APP_VERSION}", layout="wide")
 
-    startup_placeholder = render_startup_loading_message()
-
-    from services.storage import initialize_local_storage
     from ui.components import render_hero
     from ui.styles import inject_custom_css
     from views.applied_roles import render_applied_roles
@@ -73,10 +68,8 @@ def main() -> None:
     from views.pipeline import render_pipeline
     from views.settings import render_settings
 
-    initialize_local_storage()
+    initialize_app_once()
     inject_custom_css()
-
-    startup_placeholder.empty()
 
     render_hero()
 
