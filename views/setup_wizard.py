@@ -398,23 +398,17 @@ def _render_ready_step(settings: dict[str, str]) -> None:
 
     st.info("When you click Find and Add Jobs, the app will run your first discovery automatically and then route you to results.")
 
-    c1, c2, c3 = st.columns([1, 1.4, 1])
+    c1, c2 = st.columns([1.4, 1])
 
     with c1:
-        if st.button("Back", use_container_width=True, key="wizard_ready_back"):
-            _go_back()
-            st.rerun()
-
-    with c2:
         if st.button("Find and Add Jobs", type="primary", use_container_width=True, key="wizard_find_and_add_jobs"):
             _start_first_discovery()
             st.rerun()
 
-    with c3:
+    with c2:
         if st.button("Finish for Now", use_container_width=True, key="wizard_finish_for_now"):
             _skip_to_app()
             st.rerun()
-
 
 def render_setup_wizard() -> None:
     settings = load_settings()

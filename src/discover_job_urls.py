@@ -76,6 +76,16 @@ TITLE_QUERY_EXPANSIONS = {
         "operations manager",
         "product manager",
     ],
+    "scrum": [
+        "scrum",
+        "scrum master",
+        "senior scrum master",
+        "agile coach",
+        "agile delivery lead",
+        "delivery manager",
+        "program manager",
+        "technical program manager",
+    ],
 }
 
 STATE_ABBREVIATIONS = {
@@ -108,6 +118,52 @@ def parse_csv_text(value: str) -> list[str]:
     if not text:
         return []
     return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    for item in items:
+        value = safe_text(item)
+        if not value:
+            continue
+
+        normalized = normalize_text(value)
+        if not normalized or normalized in seen:
+            continue
+
+        seen.add(normalized)
+        ordered.append(value)
+
+    return ordered
+
+
+def filter_keyword_terms(keyword_terms: list[str], title_terms: list[str]) -> list[str]:
+    filtered: list[str] = []
+
+    title_tokens: set[str] = set()
+    normalized_titles = [normalize_text(title) for title in title_terms]
+    for normalized_title in normalized_titles:
+        for token in normalized_title.split():
+            if token:
+                title_tokens.add(token)
+
+    for keyword in keyword_terms:
+        value = safe_text(keyword)
+        normalized_keyword = normalize_text(value)
+        if not normalized_keyword:
+            continue
+
+        if normalized_keyword in title_tokens:
+            continue
+
+        if any(normalized_keyword == normalized_title for normalized_title in normalized_titles):
+            continue
+
+        filtered.append(value)
+
+    return dedupe_preserve_order(filtered)
 
 
 def load_runtime_settings() -> dict[str, str]:
@@ -225,16 +281,17 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
         "CTO",
         "Head of Technology",
     ])
+    title_terms = dedupe_preserve_order(title_terms)
 
-    location_terms = expand_location_query_terms(preferred_locations, remote_only)
-    keyword_terms = include_keywords[:4]
+    location_terms = dedupe_preserve_order(expand_location_query_terms(preferred_locations, remote_only))
+    keyword_terms = filter_keyword_terms(include_keywords[:6], title_terms)
 
-    # Tier 1: precise but not too constrained
+    # Tier 1: precise but less brittle
     for title in title_terms[:8]:
-        for location in location_terms[:6]:
+        for location in location_terms[:5]:
             parts = [f'"{title}"', f'"{location}"']
             if keyword_terms:
-                parts.extend(f'"{keyword}"' for keyword in keyword_terms[:2])
+                parts.append(f'"{keyword_terms[0]}"')
             parts.append(site_block)
             queries.append(" ".join(parts))
 
@@ -247,9 +304,9 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
             parts.append(site_block)
             queries.append(" ".join(parts))
 
-    # Tier 3: family-style OR query for broader roles
+    # Tier 3: family-style OR query for broader role matching
     if len(title_terms) > 1:
-        title_or = " OR ".join(f'"{title}"' for title in title_terms[:5])
+        title_or = " OR ".join(f'"{title}"' for title in title_terms[:6])
         for location in location_terms[:3]:
             parts = [f"({title_or})", location]
             if keyword_terms:
@@ -257,12 +314,19 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
             parts.append(site_block)
             queries.append(" ".join(parts))
 
-    # Tier 4: location-light fallback if a location exists
-    if preferred_locations:
-        for title in title_terms[:5]:
-            parts = [f'"{title}"']
-            if keyword_terms:
-                parts.extend(f'"{keyword}"' for keyword in keyword_terms[:2])
+    # Tier 4: title-only fallback if locations are too restrictive
+    for title in title_terms[:6]:
+        parts = [f'"{title}"']
+        if keyword_terms:
+            parts.extend(f'"{keyword}"' for keyword in keyword_terms[:2])
+        parts.append(site_block)
+        queries.append(" ".join(parts))
+
+    # Tier 5: keyword-location fallback for broad non-exec roles
+    if keyword_terms and location_terms:
+        for location in location_terms[:3]:
+            parts = [location]
+            parts.extend(keyword_terms[:2])
             parts.append(site_block)
             queries.append(" ".join(parts))
 
@@ -272,8 +336,7 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
             f'("VP" OR "Vice President" OR "Head of" OR "Chief") ("Technology" OR "IT" OR "Digital" OR "Platform") "remote" {site_block}'
         )
 
-    return list(dict.fromkeys([query.strip() for query in queries if query.strip()]))
-
+    return dedupe_preserve_order([query.strip() for query in queries if query.strip()])
 
 def build_search_plan(settings: dict[str, str]) -> list[str]:
     plan_lines = []
