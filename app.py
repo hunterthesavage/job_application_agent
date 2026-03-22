@@ -1,6 +1,7 @@
 import streamlit as st
 
 from config import APP_NAME, APP_VERSION
+from services.settings import load_settings
 from services.status import get_system_status
 from ui.navigation import initialize_nav_state, render_button_nav
 
@@ -8,34 +9,30 @@ from ui.navigation import initialize_nav_state, render_button_nav
 TOP_NAV_OPTIONS = ["New Roles", "Applied Roles", "Pipeline", "Settings"]
 
 
-def is_first_run() -> bool:
+def has_jobs() -> bool:
     status = get_system_status()
-
     jobs_total = str(status.get("jobs_total", "0")).strip()
-    last_import_at = str(status.get("last_import_at", "—")).strip()
-
-    return jobs_total == "0" and last_import_at == "—"
+    return jobs_total not in {"", "0"}
 
 
-def render_first_run_callout() -> None:
-    st.info(
-        """
-This looks like a fresh setup.
+def should_show_setup_wizard() -> bool:
+    settings = load_settings()
+    dismissed = str(settings.get("setup_wizard_dismissed", "false")).strip().lower() == "true"
+    completed = str(settings.get("setup_wizard_completed", "false")).strip().lower() == "true"
 
-Start in **Settings** to configure:
-1. Search Criteria so the app knows what roles to look for
-2. Profile Context to improve AI-generated content
-3. OpenAI API if you want cover letter generation
+    if has_jobs():
+        return False
 
-After setup, run your initial job discovery/import workflow to pull jobs into the app.
-        """
-    )
+    if completed or dismissed:
+        return False
+
+    return True
 
 
-def initialize_top_nav(first_run: bool) -> None:
+def initialize_top_nav(default_value: str = "New Roles") -> None:
     initialize_nav_state(
         state_key="top_nav_selection",
-        default_value="Settings" if first_run else "New Roles",
+        default_value=default_value,
     )
 
 
@@ -67,18 +64,17 @@ def main() -> None:
     from views.new_roles import render_new_roles
     from views.pipeline import render_pipeline
     from views.settings import render_settings
+    from views.setup_wizard import render_setup_wizard
 
     initialize_app_once()
     inject_custom_css()
-
     render_hero()
 
-    first_run = is_first_run()
-    initialize_top_nav(first_run)
+    if should_show_setup_wizard():
+        render_setup_wizard()
+        return
 
-    if first_run:
-        render_first_run_callout()
-
+    initialize_top_nav(default_value="New Roles")
     selected_view = render_top_nav()
 
     if selected_view == "New Roles":
