@@ -58,27 +58,78 @@ def render_boot_loading_card() -> st.delta_generator.DeltaGenerator:
     placeholder = st.empty()
     placeholder.markdown(
         """
+        <style>
+        @keyframes jobAgentPulse {
+            0% { transform: scale(0.85); opacity: 0.55; box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+            70% { transform: scale(1.02); opacity: 1; box-shadow: 0 0 0 18px rgba(59,130,246,0.0); }
+            100% { transform: scale(0.92); opacity: 0.7; box-shadow: 0 0 0 0 rgba(59,130,246,0.0); }
+        }
+        @keyframes jobAgentSweep {
+            0% { transform: rotate(0deg); opacity: 0.55; }
+            100% { transform: rotate(360deg); opacity: 1; }
+        }
+        </style>
         <div style="
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 22px;
             background: linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.98) 100%);
             box-shadow: 0 18px 48px rgba(0,0,0,0.24);
-            padding: 1.15rem 1.25rem;
+            padding: 1.2rem 1.35rem;
             margin-top: 0.8rem;
             margin-bottom: 1rem;
+            display:flex;
+            align-items:center;
+            gap:1rem;
         ">
-            <div style="font-size:1.2rem;font-weight:800;color:rgba(255,255,255,0.96);margin-bottom:0.35rem;">
-                Sharpening pencils and stalking job boards...
+            <div style="
+                position:relative;
+                width:56px;
+                height:56px;
+                flex:0 0 56px;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+            ">
+                <div style="
+                    position:absolute;
+                    width:22px;
+                    height:22px;
+                    border-radius:999px;
+                    background: radial-gradient(circle, rgba(147,197,253,1) 0%, rgba(59,130,246,0.96) 65%, rgba(37,99,235,0.96) 100%);
+                    animation: jobAgentPulse 1.8s ease-out infinite;
+                "></div>
+                <div style="
+                    position:absolute;
+                    width:52px;
+                    height:52px;
+                    border-radius:999px;
+                    border: 2px solid rgba(59,130,246,0.24);
+                "></div>
+                <div style="
+                    position:absolute;
+                    width:52px;
+                    height:52px;
+                    border-radius:999px;
+                    border-top: 2px solid rgba(96,165,250,0.95);
+                    border-right: 2px solid transparent;
+                    border-bottom: 2px solid transparent;
+                    border-left: 2px solid transparent;
+                    animation: jobAgentSweep 1.2s linear infinite;
+                "></div>
             </div>
-            <div style="font-size:0.98rem;color:rgba(255,255,255,0.78);">
-                Getting your workspace, settings, and local database ready.
+            <div>
+                <div style="font-size:1.22rem;font-weight:800;color:rgba(255,255,255,0.96);margin-bottom:0.35rem;">
+                    Sharpening pencils and stalking job boards...
+                </div>
+                <div style="font-size:0.98rem;color:rgba(255,255,255,0.78);">
+                    Scanning signals, waking up the database, and getting your search rig ready.
+                </div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
     return placeholder
-
 
 def initialize_app_once() -> None:
     if st.session_state.get("_app_initialized", False):
