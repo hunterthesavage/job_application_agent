@@ -40,7 +40,7 @@ def _go_back() -> None:
     _set_step_index(_current_step_index() - 1)
 
 
-def _complete_and_go_to_pipeline() -> None:
+def _start_first_discovery() -> None:
     save_settings(
         {
             "setup_wizard_completed": "true",
@@ -48,6 +48,7 @@ def _complete_and_go_to_pipeline() -> None:
         }
     )
     st.session_state["top_nav_selection"] = "Pipeline"
+    st.session_state["_wizard_run_discovery_on_load"] = True
 
 
 def _skip_to_app() -> None:
@@ -136,19 +137,24 @@ def _render_welcome_step() -> None:
 1. **Search Criteria** so the app knows what roles to look for  
 2. **Profile Context** to improve AI-generated content, optional  
 3. **OpenAI API** for cover letters, optional  
-4. **First action** so you know exactly where to go next
+4. **Find and Add Jobs** so you can start with real results
         """
     )
 
-    c1, c2 = st.columns([1.2, 1])
-    with c1:
-        if st.button("Start Setup", type="primary", use_container_width=True, key="wizard_start_setup"):
-            _go_next()
-            st.rerun()
-    with c2:
-        if st.button("Skip to App", type="secondary", use_container_width=True, key="wizard_skip_to_app_welcome"):
+    st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+
+    if st.button("Start Setup", type="primary", use_container_width=True, key="wizard_start_setup"):
+        _go_next()
+        st.rerun()
+
+    st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+    skip_col_1, skip_col_2 = st.columns([1, 5])
+    with skip_col_1:
+        if st.button("Skip", type="secondary", use_container_width=True, key="wizard_skip_to_app_welcome"):
             _skip_to_app()
             st.rerun()
+    with skip_col_2:
+        st.caption("Skip for now and go straight into the app.")
 
 
 def _render_search_step() -> None:
@@ -379,7 +385,7 @@ def _render_openai_step() -> None:
 
 def _render_ready_step(settings: dict[str, str]) -> None:
     st.markdown("## Ready to Go")
-    st.write("Your setup is in place. The next step is to run your first discovery pass.")
+    st.write("Your setup is in place. The next step is to run your first discovery pass now.")
 
     target_titles = str(settings.get("target_titles", "")).strip() or "Not set"
     preferred_locations = str(settings.get("preferred_locations", "")).strip() or "Not set"
@@ -390,16 +396,21 @@ def _render_ready_step(settings: dict[str, str]) -> None:
     c2.metric("Locations", preferred_locations[:40] + ("..." if len(preferred_locations) > 40 else ""))
     c3.metric("Remote Only", "Yes" if remote_only else "No")
 
-    st.info("Next, go to Pipeline and run your first Find and Add Jobs workflow.")
+    st.info("When you click Find and Add Jobs, the app will run your first discovery automatically and then route you to results.")
 
-    c1, c2 = st.columns([1.2, 1])
+    c1, c2, c3 = st.columns([1, 1.4, 1])
 
     with c1:
-        if st.button("Go to Pipeline", type="primary", use_container_width=True, key="wizard_go_pipeline"):
-            _complete_and_go_to_pipeline()
+        if st.button("Back", use_container_width=True, key="wizard_ready_back"):
+            _go_back()
             st.rerun()
 
     with c2:
+        if st.button("Find and Add Jobs", type="primary", use_container_width=True, key="wizard_find_and_add_jobs"):
+            _start_first_discovery()
+            st.rerun()
+
+    with c3:
         if st.button("Finish for Now", use_container_width=True, key="wizard_finish_for_now"):
             _skip_to_app()
             st.rerun()

@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import streamlit as st
 
 from config import APP_NAME, APP_VERSION
@@ -9,10 +12,16 @@ from ui.navigation import initialize_nav_state, render_button_nav
 TOP_NAV_OPTIONS = ["New Roles", "Applied Roles", "Pipeline", "Settings"]
 
 
+def _safe_int(value: object) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return 0
+
+
 def has_jobs() -> bool:
     status = get_system_status()
-    jobs_total = str(status.get("jobs_total", "0")).strip()
-    return jobs_total not in {"", "0"}
+    return _safe_int(status.get("jobs_total", 0)) > 0
 
 
 def should_show_setup_wizard() -> bool:
@@ -45,6 +54,32 @@ def render_top_nav() -> str:
     )
 
 
+def render_boot_loading_card() -> st.delta_generator.DeltaGenerator:
+    placeholder = st.empty()
+    placeholder.markdown(
+        """
+        <div style="
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.98) 100%);
+            box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+            padding: 1.15rem 1.25rem;
+            margin-top: 0.8rem;
+            margin-bottom: 1rem;
+        ">
+            <div style="font-size:1.2rem;font-weight:800;color:rgba(255,255,255,0.96);margin-bottom:0.35rem;">
+                Sharpening pencils and stalking job boards...
+            </div>
+            <div style="font-size:0.98rem;color:rgba(255,255,255,0.78);">
+                Getting your workspace, settings, and local database ready.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    return placeholder
+
+
 def initialize_app_once() -> None:
     if st.session_state.get("_app_initialized", False):
         return
@@ -55,8 +90,102 @@ def initialize_app_once() -> None:
     st.session_state["_app_initialized"] = True
 
 
+def maybe_run_wizard_discovery_bootstrap() -> None:
+    if not st.session_state.get("_wizard_run_discovery_on_load", False):
+        return
+
+    before_status = get_system_status()
+    before_jobs = _safe_int(before_status.get("jobs_total", 0))
+
+    st.markdown(
+        """
+        <div style="
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.98) 100%);
+            box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+            padding: 1.25rem 1.35rem;
+            margin-top: 0.6rem;
+            margin-bottom: 1rem;
+        ">
+            <div style="font-size:1.25rem;font-weight:800;color:rgba(255,255,255,0.96);margin-bottom:0.35rem;">
+                Casting the net and shaking the ATS trees...
+            </div>
+            <div style="font-size:0.98rem;color:rgba(255,255,255,0.78);">
+                Running your first discovery and import now.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.spinner("Finding and adding jobs..."):
+        result = subprocess.run(
+            [sys.executable, "-m", "src.discover_and_ingest"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    after_status = get_system_status()
+    after_jobs = _safe_int(after_status.get("jobs_total", 0))
+    added_count = max(after_jobs - before_jobs, 0)
+
+    st.session_state["_wizard_run_discovery_on_load"] = False
+
+    if result.returncode == 0:
+        if after_jobs > 0:
+            display_count = added_count if added_count > 0 else after_jobs
+            st.session_state["_post_wizard_run_message"] = {
+                "kind": "success",
+                "text": f"First discovery finished. {display_count} job(s) are ready to review.",
+            }
+            st.session_state["top_nav_selection"] = "New Roles"
+        else:
+            st.session_state["_post_wizard_run_message"] = {
+                "kind": "info",
+                "text": "Discovery finished, but no jobs were added yet. Review Pipeline results, adjust Search Criteria, or try manual URLs.",
+            }
+            st.session_state["top_nav_selection"] = "Pipeline"
+    else:
+        stderr_text = (result.stderr or "").strip()
+        stdout_text = (result.stdout or "").strip()
+        detail = stderr_text or stdout_text or "Unknown discovery error."
+
+        st.session_state["_post_wizard_run_message"] = {
+            "kind": "error",
+            "text": f"Discovery failed. {detail}",
+        }
+        st.session_state["top_nav_selection"] = "Pipeline"
+
+    st.rerun()
+
+
+def render_post_wizard_message() -> None:
+    message = st.session_state.pop("_post_wizard_run_message", None)
+    if not message:
+        return
+
+    kind = str(message.get("kind", "info")).strip().lower()
+    text = str(message.get("text", "")).strip()
+
+    if not text:
+        return
+
+    if kind == "success":
+        st.success(text)
+    elif kind == "error":
+        st.error(text)
+    else:
+        st.info(text)
+
+
 def main() -> None:
     st.set_page_config(page_title=f"{APP_NAME} {APP_VERSION}", layout="wide")
+
+    boot_placeholder = None
+    if not st.session_state.get("_app_initialized", False):
+        boot_placeholder = render_boot_loading_card()
 
     from ui.components import render_hero
     from ui.styles import inject_custom_css
@@ -68,6 +197,10 @@ def main() -> None:
 
     initialize_app_once()
     inject_custom_css()
+
+    if boot_placeholder is not None:
+        boot_placeholder.empty()
+
     render_hero()
 
     if should_show_setup_wizard():
@@ -76,6 +209,12 @@ def main() -> None:
 
     initialize_top_nav(default_value="New Roles")
     selected_view = render_top_nav()
+
+    if selected_view == "Pipeline" and st.session_state.get("_wizard_run_discovery_on_load", False):
+        maybe_run_wizard_discovery_bootstrap()
+        return
+
+    render_post_wizard_message()
 
     if selected_view == "New Roles":
         render_new_roles()
