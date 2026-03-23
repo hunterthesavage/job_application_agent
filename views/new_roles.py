@@ -27,6 +27,7 @@ from ui.components import (
 
 
 VALID_FIT_OPTIONS = ["Any", 60, 70, 75, 80, 85, 90]
+TRUST_FILTER_OPTIONS = ["All", "ATS Confirmed", "Career Site Confirmed", "Web Discovered", "Third-Party Listing", "Unknown"]
 
 
 def _set_flash(level: str, message: str) -> None:
@@ -45,6 +46,33 @@ def _render_flash() -> None:
         st.error(message)
     else:
         st.success(message)
+
+
+def _row_value(row, *names: str) -> str:
+    for name in names:
+        try:
+            value = row.get(name, "")
+        except Exception:
+            value = ""
+        text = str(value).strip()
+        if text and text.lower() != "nan":
+            return text
+    return ""
+
+
+def _render_source_trust_badge(row) -> None:
+    trust = _row_value(row, "Source Trust", "source_trust") or "Unknown"
+    source_type = _row_value(row, "Source Type", "source_type") or "Unknown"
+    source_detail = _row_value(row, "Source Detail", "source_detail", "Source") or ""
+    discovery_state = _row_value(row, "Discovery State", "discovery_state") or ""
+
+    caption_parts = [f"Trust: {trust}", f"Source Type: {source_type}"]
+    if discovery_state:
+        caption_parts.append(f"Discovery: {discovery_state}")
+    st.caption(" | ".join(caption_parts))
+
+    if source_detail:
+        st.caption(f"Source Detail: {source_detail}")
 
 
 def _process_pending_action_before_render() -> None:
@@ -115,11 +143,51 @@ def initialize_filter_state_from_settings(settings: dict) -> None:
     if "filter_compensation_only" not in st.session_state:
         st.session_state["filter_compensation_only"] = False
 
+    if "filter_discovery_state" not in st.session_state:
+        st.session_state["filter_discovery_state"] = "All"
+
+    if "filter_source_trust" not in st.session_state:
+        st.session_state["filter_source_trust"] = "All"
+
+
+def _render_trust_filter() -> None:
+    left, right = st.columns([1, 3])
+    with left:
+        st.selectbox(
+            "Source trust",
+            TRUST_FILTER_OPTIONS,
+            key="filter_source_trust",
+            help="Filter jobs by how directly the source was confirmed.",
+        )
+    with right:
+        st.caption("Use this to quickly separate ATS-confirmed jobs from broader web discovery.")
+
+
+def _apply_source_trust_filter(df):
+    selected = str(st.session_state.get("filter_source_trust", "All") or "All").strip()
+    if selected == "All":
+        return df
+
+    trust_col = None
+    for candidate in ["Source Trust", "source_trust"]:
+        if candidate in df.columns:
+            trust_col = candidate
+            break
+
+    if trust_col is None:
+        return df
+
+    series = df[trust_col].fillna("").astype(str).str.strip()
+    if selected == "Unknown":
+        return df[series.eq("") | series.eq("Unknown")]
+    return df[series.eq(selected)]
+
 
 def render_new_roles() -> None:
     _process_pending_action_before_render()
 
     st.subheader("New Roles")
+    st.caption("Each role now shows both fit and source trust so broader discovery is easier to interpret.")
 
     settings = load_settings()
     initialize_filter_state_from_settings(settings)
@@ -140,7 +208,7 @@ def render_new_roles() -> None:
 
     df_display = df.copy()
 
-    for col in ["Fit Score", "Location", "Compensation Raw"]:
+    for col in ["Fit Score", "Location", "Compensation Raw", "Discovery State", "Source Trust", "Source Type", "Source Detail"]:
         if col not in df_display.columns:
             df_display[col] = ""
 
@@ -151,12 +219,10 @@ def render_new_roles() -> None:
     kpis = calculate_kpis(df, df_applied)
     render_kpis(kpis)
     render_filter_bar()
+    _render_trust_filter()
 
-    # IMPORTANT:
-    # New Roles should show all imported roles by default.
-    # Saved Settings should drive discovery/import, not silently hide results here.
-    # Only apply the visible UI filters on this page.
     df_filtered = apply_new_role_filters(df_display)
+    df_filtered = _apply_source_trust_filter(df_filtered)
 
     default_jobs_per_page = int(settings.get("default_jobs_per_page", "10"))
     page_size = get_page_size("new_roles_page_size", default=default_jobs_per_page)
@@ -187,6 +253,8 @@ def render_new_roles() -> None:
                 int(job_id),
                 row,
             )
+            _render_source_trust_badge(row)
+            st.markdown("---")
 
     render_bottom_pagination_controls(
         total_rows=len(df_filtered),

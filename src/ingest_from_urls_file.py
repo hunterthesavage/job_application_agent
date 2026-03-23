@@ -3,8 +3,9 @@ import sys
 from config import JOB_URLS_FILE
 from src.validate_job_url_sqlite import load_job_urls_from_file
 from services.ingestion import ingest_job_records
-from src.validate_job_url import create_job_record
 from services.settings import load_settings
+from services.source_trust import enrich_job_payload
+from src.validate_job_url import create_job_record
 
 
 def safe_text(value) -> str:
@@ -76,9 +77,9 @@ def main() -> None:
     for url in urls:
         try:
             job = create_job_record(url)
-            setattr(job, "source", "Local Pipeline")
+            payload = enrich_job_payload(job, source_hint="Local Pipeline")
             if passes_settings_filters(job, settings):
-                jobs.append(job)
+                jobs.append(payload)
         except Exception as exc:
             print(f"Failed on {url}: {exc}")
 

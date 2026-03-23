@@ -1,8 +1,11 @@
+import re
 import sys
 from pathlib import Path
 
 from services.ingestion import ingest_job_records
+from services.location_matching import evaluate_location_filters
 from services.settings import load_settings
+from services.source_trust import enrich_job_payload
 from src.validate_job_url import create_job_record
 
 
@@ -39,6 +42,38 @@ def parse_csv_text(value: str) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
+def parse_preferred_locations(value: str) -> list[str]:
+    """
+    Preferred locations are structured entries, so commas may be part of one location
+    like 'Miami, FL' or 'London, UK'.
+
+    Supported formats:
+    - newline separated:
+        Miami, FL
+        London, UK
+        Dallas, TX
+    - semicolon separated:
+        Miami, FL; London, UK; Dallas, TX
+
+    Fallback:
+    - if neither newline nor semicolon is present, treat the whole string as one entry
+    """
+    text = safe_text(value)
+    if not text:
+        return []
+
+    if "\n" in text:
+        return [part.strip() for part in text.splitlines() if part.strip()]
+
+    if ";" in text:
+        return [part.strip() for part in text.split(";") if part.strip()]
+
+    # Light cleanup for accidental repeated separators/spaces,
+    # but preserve commas inside the location.
+    text = re.sub(r"\s+", " ", text).strip()
+    return [text] if text else []
+
+
 def passes_settings_filters(job, settings: dict[str, str]) -> tuple[bool, str]:
     title = safe_text(getattr(job, "title", ""))
     location = safe_text(getattr(job, "location", ""))
@@ -52,19 +87,20 @@ def passes_settings_filters(job, settings: dict[str, str]) -> tuple[bool, str]:
     ).lower()
 
     target_titles = parse_csv_text(settings.get("target_titles", ""))
-    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "true")).lower() == "true"
 
     if target_titles and not text_contains_any(title, target_titles):
         return False, "settings_title_gate"
 
-    if preferred_locations and not text_contains_any(location, preferred_locations):
-        if not (remote_only and "remote" in location.lower()):
-            return False, "settings_location_gate"
-
-    if remote_only and "remote" not in location.lower():
-        return False, "remote_only_gate"
+    location_passed, location_reason = evaluate_location_filters(
+        job_location=location,
+        preferred_locations=preferred_locations,
+        remote_only=remote_only,
+    )
+    if not location_passed:
+        return False, location_reason
 
     if exclude_keywords and any(keyword.lower() in searchable for keyword in exclude_keywords):
         return False, "exclude_keyword_gate"
@@ -102,7 +138,6 @@ def main() -> None:
 
         try:
             job = create_job_record(job_url)
-            setattr(job, "source", "Local Pipeline")
 
             passed, reason = passes_settings_filters(job, settings)
             if not passed:
@@ -110,8 +145,15 @@ def main() -> None:
                 skipped_count += 1
                 continue
 
-            accepted_jobs.append(job)
-            print(f"Accepted: {safe_text(getattr(job, 'company', ''))} | {safe_text(getattr(job, 'title', ''))}")
+            payload = enrich_job_payload(job, source_hint="Local Pipeline")
+            accepted_jobs.append(payload)
+            print(
+                "Accepted: "
+                f"{safe_text(payload.get('company', ''))} | "
+                f"{safe_text(payload.get('title', ''))} | "
+                f"{safe_text(payload.get('location', ''))} | "
+                f"{safe_text(payload.get('source_trust', ''))}"
+            )
         except Exception as exc:
             print(f"Error: {exc}")
             error_count += 1
@@ -131,6 +173,7 @@ def main() -> None:
     print(f"Inserted: {summary['inserted_count']}")
     print(f"Updated: {summary['updated_count']}")
     print(f"Skipped removed: {summary['skipped_removed_count']}")
+    print(f"Source trust mix: {summary.get('source_trust_counts', {})}")
 
 
 if __name__ == "__main__":

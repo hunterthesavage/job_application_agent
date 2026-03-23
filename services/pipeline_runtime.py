@@ -1,16 +1,27 @@
 from __future__ import annotations
 
+import re
+import time
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 from config import JOB_URLS_FILE, MANUAL_URLS_FILE
 from services.ingestion import ingest_job_records
+from services.location_matching import (
+    evaluate_location_filters,
+    location_matches_preference,
+    parse_location,
+)
+from services.matching_profiles import expand_title_terms
 from services.settings import load_settings
+from services.source_trust import enrich_job_payload
 from src import discover_job_urls as discover_module
 from src.validate_job_url import create_job_record
 
 
 AUTO_ACCEPT_SCORE = 45
+MAX_URLS_PER_RUN = 25  # temporary fast-test cap; set to 0 for unlimited
 
 
 def safe_text(value) -> str:
@@ -33,11 +44,33 @@ def normalize_text(value: str) -> str:
     )
 
 
+def parse_csv_setting(value: Any) -> list[str]:
+    text = safe_text(value)
+    if not text:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
 def parse_csv_text(value: str) -> list[str]:
     text = safe_text(value)
     if not text:
         return []
     return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def parse_preferred_locations(value: str) -> list[str]:
+    text = safe_text(value)
+    if not text:
+        return []
+
+    if "\n" in text:
+        return [part.strip() for part in text.splitlines() if part.strip()]
+
+    if ";" in text:
+        return [part.strip() for part in text.split(";") if part.strip()]
+
+    text = re.sub(r"\s+", " ", text).strip()
+    return [text] if text else []
 
 
 def tokenize(value: str) -> list[str]:
@@ -96,6 +129,133 @@ def phrase_match_bonus(source_text: str, candidate_text: str) -> float:
     return 0.0
 
 
+def is_probable_job_url(job_url: str) -> tuple[bool, str]:
+    value = safe_text(job_url)
+    if not value:
+        return False, "blank_url"
+
+    lowered = value.lower()
+    parsed = urlparse(value)
+    host = parsed.netloc.lower()
+    path = (parsed.path or "").lower()
+    query = (parsed.query or "").lower()
+    path_parts = [part for part in parsed.path.split("/") if part]
+
+    blocked_substrings = [
+        "?error=",
+        "?keyword=",
+        "/search",
+        "/jobs/search",
+        "/about-us/",
+        "/about/",
+        "/leadership",
+        "/executive-team",
+        "/executive_team",
+        "/team/",
+        "/our-team",
+        "/people/",
+        "/our-people",
+        "/company/",
+        "/companies/",
+        "/careers/",
+    ]
+    for marker in blocked_substrings:
+        if marker in lowered:
+            return False, f"blocked_pattern:{marker}"
+
+    blocked_path_exact_or_prefixes = [
+        "/leadership",
+        "/team",
+        "/people",
+        "/about-us",
+        "/about",
+        "/company",
+        "/companies",
+        "/executives",
+        "/our-team",
+        "/our-people",
+    ]
+    for marker in blocked_path_exact_or_prefixes:
+        if path == marker or path.startswith(marker + "/"):
+            return False, f"blocked_path:{marker}"
+
+    # Block obvious search/result shells and query-driven listing pages
+    if any(token in query for token in ["keyword=", "location=", "search=", "query="]):
+        return False, "blocked_query_listing"
+
+    # Lever
+    if "jobs.lever.co" in host:
+        # require at least org + posting slug, and avoid obvious wrappers
+        if "jobgether" in lowered:
+            return False, "blocked_jobgether_wrapper"
+        return (len(path_parts) >= 2, "lever_detail" if len(path_parts) >= 2 else "lever_board_root")
+
+    # Greenhouse
+    if "job-boards.greenhouse.io" in host or "boards.greenhouse.io" in host:
+        if "jobs" in path_parts and len(path_parts) >= 2:
+            return True, "greenhouse_detail"
+        return False, "greenhouse_board_root"
+
+    # Ashby
+    if "jobs.ashbyhq.com" in host:
+        return (len(path_parts) >= 2, "ashby_detail" if len(path_parts) >= 2 else "ashby_board_root")
+
+    # SmartRecruiters
+    if "jobs.smartrecruiters.com" in host:
+        return (len(path_parts) >= 2, "smartrecruiters_detail" if len(path_parts) >= 2 else "smartrecruiters_root")
+
+    # Workday: be stricter, must clearly be a /job/ detail page
+    if "myworkdayjobs.com" in host:
+        if "/job/" in path:
+            return True, "workday_detail"
+        return False, "workday_root"
+
+    # For non-ATS URLs from search, reject common corporate/info pages early
+    generic_non_job_hosts = [
+        "linkedin.com",
+        "facebook.com",
+        "instagram.com",
+        "x.com",
+        "twitter.com",
+        "youtube.com",
+        "wikipedia.org",
+    ]
+    if any(bad_host in host for bad_host in generic_non_job_hosts):
+        return False, "blocked_generic_host"
+
+    # Soft allow fallback only when URL shape looks posting-like
+    jobish_path_markers = [
+        "/job/",
+        "/jobs/",
+        "/careers/job",
+        "/open-positions/",
+        "/positions/",
+        "/vacancies/",
+        "/opportunities/",
+        "/role/",
+        "/roles/",
+    ]
+    if any(marker in path for marker in jobish_path_markers):
+        return True, "generic_jobish_path"
+
+    return False, "unclassified_non_job"
+
+
+def should_force_accept_without_location(job: Any, settings: dict[str, Any]) -> bool:
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
+    if preferred_locations:
+        return False
+
+    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    expanded_titles = expand_title_terms(target_titles) if target_titles else []
+
+    title = safe_text(getattr(job, "title", "")).lower()
+    if not title or not expanded_titles:
+        return False
+
+    return any(term.lower() in title for term in expanded_titles)
+
+
 def title_match_score(job_title: str, target_titles: list[str]) -> tuple[int, list[str]]:
     if not target_titles:
         return 25, ["no target title set"]
@@ -116,24 +276,43 @@ def title_match_score(job_title: str, target_titles: list[str]) -> tuple[int, li
     return best_score, [best_reason]
 
 
-def location_match_score(job_location: str, preferred_locations: list[str]) -> tuple[int, list[str]]:
+def location_match_score(
+    job_location: str,
+    preferred_locations: list[str],
+    remote_only: bool,
+) -> tuple[int, list[str]]:
+    parsed_job = parse_location(job_location)
+
+    if remote_only:
+        passed, reason = evaluate_location_filters(
+            job_location=job_location,
+            preferred_locations=preferred_locations,
+            remote_only=True,
+        )
+        if passed:
+            if parsed_job.is_remote:
+                return 20, ["remote-only location matched remote role"]
+            if parsed_job.is_us_scope_remote:
+                return 18, ["remote-only location matched us-scope role"]
+            return 15, [reason]
+        return 0, [reason]
+
+    if parsed_job.is_remote:
+        return 20, ["matched remote location"]
+
+    if parsed_job.is_us_scope_remote:
+        return 18, ["matched us-scope location"]
+
     if not preferred_locations:
+        if parsed_job.is_blank:
+            return 0, ["blank job location"]
         return 20, ["no preferred location set"]
 
-    best_score = 0
-    best_reason = "no meaningful location match"
+    matched, reason = location_matches_preference(job_location, preferred_locations)
+    if matched:
+        return 20, [reason]
 
-    for target in preferred_locations:
-        phrase_bonus = phrase_match_bonus(target, job_location)
-        overlap = token_overlap_score(target, job_location)
-
-        score = int((phrase_bonus * 20) + (overlap * 15))
-
-        if score > best_score:
-            best_score = score
-            best_reason = f"location matched '{target}'"
-
-    return best_score, [best_reason]
+    return 0, ["settings_location_gate"]
 
 
 def include_keywords_score(searchable_text: str, include_keywords: list[str]) -> tuple[int, list[str]]:
@@ -174,13 +353,16 @@ def exclude_keywords_penalty(searchable_text: str, exclude_keywords: list[str]) 
 
 
 def remote_preference_score(job_location: str, remote_only: bool) -> tuple[int, list[str]]:
-    normalized_location = normalize_text(job_location)
+    parsed_job = parse_location(job_location)
 
     if not remote_only:
         return 0, []
 
-    if "remote" in normalized_location:
+    if parsed_job.is_remote:
         return 10, ["remote preference matched"]
+
+    if parsed_job.is_us_scope_remote:
+        return 8, ["remote preference matched via us-scope location"]
 
     return -25, ["role is not marked remote"]
 
@@ -194,19 +376,27 @@ def score_job_match(job, settings: dict[str, str]) -> dict[str, Any]:
     searchable = " ".join([title, company, location, compensation_raw])
 
     target_titles = parse_csv_text(settings.get("target_titles", ""))
-    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     include_keywords = parse_csv_text(settings.get("include_keywords", ""))
     exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "true")).lower() == "true"
 
     title_points, title_reasons = title_match_score(title, target_titles)
-    location_points, location_reasons = location_match_score(location, preferred_locations)
+    location_points, location_reasons = location_match_score(location, preferred_locations, remote_only)
     include_points, include_reasons = include_keywords_score(searchable, include_keywords)
     exclude_points, exclude_reasons = exclude_keywords_penalty(searchable, exclude_keywords)
     remote_points, remote_reasons = remote_preference_score(location, remote_only)
 
+    location_filter_passed, location_filter_reason = evaluate_location_filters(
+        job_location=location,
+        preferred_locations=preferred_locations,
+        remote_only=remote_only,
+    )
+
     total_score = title_points + location_points + include_points + exclude_points + remote_points
-    should_accept = total_score >= AUTO_ACCEPT_SCORE
+
+    hard_reject = not location_filter_passed
+    should_accept = (total_score >= AUTO_ACCEPT_SCORE) and not hard_reject
 
     reasons = []
     reasons.extend(title_reasons)
@@ -214,6 +404,9 @@ def score_job_match(job, settings: dict[str, str]) -> dict[str, Any]:
     reasons.extend(include_reasons)
     reasons.extend(exclude_reasons)
     reasons.extend(remote_reasons)
+
+    if hard_reject and location_filter_reason:
+        reasons.append(f"hard reject: {location_filter_reason}")
 
     return {
         "score": total_score,
@@ -226,25 +419,233 @@ def score_job_match(job, settings: dict[str, str]) -> dict[str, Any]:
             "exclude_points": exclude_points,
             "remote_points": remote_points,
         },
+        "hard_reject": hard_reject,
+        "location_filter_passed": location_filter_passed,
+        "location_filter_reason": location_filter_reason,
     }
 
+
+def _batch_dedupe_key(payload: dict[str, Any]) -> str:
+    duplicate_key = safe_text(payload.get("duplicate_key", ""))
+    if duplicate_key:
+        return f"dup:{normalize_text(duplicate_key)}"
+
+    job_posting_url = safe_text(payload.get("job_posting_url", ""))
+    if job_posting_url:
+        return f"url:{job_posting_url.strip().lower()}"
+
+    company = normalize_text(payload.get("company", ""))
+    title = normalize_text(payload.get("title", ""))
+    location = normalize_text(payload.get("location", ""))
+
+    fallback = "|".join([part for part in [company, title, location] if part])
+    return f"fallback:{fallback}" if fallback else ""
+
+
+def _trust_score(value: str) -> int:
+    trust = safe_text(value)
+    order = {
+        "ATS Confirmed": 4,
+        "Career Site Confirmed": 3,
+        "Web Discovered": 2,
+        "Third-Party Listing": 1,
+        "Unknown": 0,
+        "": 0,
+    }
+    return order.get(trust, 0)
+
+
+def _payload_quality_score(payload: dict[str, Any]) -> tuple[int, int, int, int]:
+    trust = _trust_score(payload.get("source_trust", ""))
+    source_detail_len = len(safe_text(payload.get("source_detail", "")))
+    url_len = len(safe_text(payload.get("job_posting_url", "")))
+    title_len = len(safe_text(payload.get("title", "")))
+    return (trust, source_detail_len, url_len, title_len)
+
+
+def _prefer_payload(existing_payload: dict[str, Any], candidate_payload: dict[str, Any]) -> dict[str, Any]:
+    if _payload_quality_score(candidate_payload) > _payload_quality_score(existing_payload):
+        return candidate_payload
+    return existing_payload
+
+
+def _extract_url_title_hint(job_url: str) -> str:
+    value = safe_text(job_url)
+    if not value:
+        return ""
+
+    try:
+        parsed = urlparse(value)
+        host = (parsed.netloc or "").lower()
+        raw_parts = [part for part in parsed.path.split("/") if part]
+    except Exception:
+        return ""
+
+    if not raw_parts:
+        return ""
+
+    ignored = {
+        "job", "jobs", "careers", "career", "positions", "position", "roles", "role",
+        "opportunities", "opportunity", "opening", "openings", "external", "internal",
+        "en-us", "en", "us", "apply", "view", "posting", "postings", "detail", "details"
+    }
+
+    def _raw_part_is_opaque(part: str) -> bool:
+        compact = part.replace("-", "").replace("_", "")
+        if len(compact) >= 24 and any(ch.isdigit() for ch in compact):
+            return True
+        hex_chars = set("0123456789abcdef")
+        if len(compact) >= 24 and all(ch in hex_chars for ch in compact.lower()):
+            return True
+        return False
+
+    # For ATS URLs, the first meaningful segment is often the company slug.
+    ats_hosts = (
+        "jobs.lever.co",
+        "job-boards.greenhouse.io",
+        "boards.greenhouse.io",
+        "jobs.ashbyhq.com",
+        "jobs.smartrecruiters.com",
+        "myworkdayjobs.com",
+    )
+
+    candidate_parts = raw_parts[-3:]
+
+    if any(ats_host in host for ats_host in ats_hosts):
+        filtered = []
+        for part in candidate_parts:
+            normalized = normalize_text(part)
+            if not normalized or normalized in ignored:
+                continue
+            filtered.append(part)
+        # if the first remaining part looks like an org slug and there is more after it, drop it
+        if len(filtered) >= 2:
+            filtered = filtered[1:]
+        candidate_parts = filtered
+
+    kept = []
+    for part in candidate_parts:
+        normalized = normalize_text(part)
+        if not normalized:
+            continue
+        if normalized in ignored:
+            continue
+        if normalized.isdigit():
+            continue
+        if _raw_part_is_opaque(part):
+            continue
+        kept.append(normalized)
+
+    if not kept:
+        return ""
+
+    hint = " ".join(kept)
+    tokens = [token for token in hint.split() if token and not token.isdigit()]
+    if len(tokens) < 2:
+        return ""
+
+    return hint
+
+
+def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[bool, str]:
+    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    if not target_titles:
+        return True, "no target titles configured"
+
+    hint = _extract_url_title_hint(job_url)
+    if not hint:
+        return True, "no reliable url title hint"
+
+    try:
+        expanded_titles = list(dict.fromkeys(expand_title_terms(target_titles)))
+    except Exception:
+        expanded_titles = target_titles[:]
+
+    acronym_expansions = {
+        "ceo": ["chief executive officer"],
+        "cto": ["chief technology officer"],
+        "cio": ["chief information officer"],
+        "coo": ["chief operating officer"],
+        "cfo": ["chief financial officer"],
+        "cmo": ["chief marketing officer"],
+        "cro": ["chief revenue officer"],
+    }
+
+    enriched_titles = []
+    for title in expanded_titles:
+        enriched_titles.append(title)
+        normalized_title = normalize_text(title)
+        if normalized_title in acronym_expansions:
+            enriched_titles.extend(acronym_expansions[normalized_title])
+
+    expanded_titles = list(dict.fromkeys(enriched_titles))
+
+    normalized_hint = normalize_text(hint)
+    hint_tokens = set(tokenize(hint))
+
+    # allow if any expanded target phrase appears in the hint
+    for target in expanded_titles:
+        normalized_target = normalize_text(target)
+        if not normalized_target:
+            continue
+        if normalized_target in normalized_hint:
+            return True, f"url title hint matched '{target}'"
+
+    # allow if at least one meaningful token overlaps
+    target_token_pool = set()
+    for target in expanded_titles:
+        for token in tokenize(target):
+            if len(token) >= 3:
+                target_token_pool.add(token)
+
+    overlap = hint_tokens.intersection(target_token_pool)
+    if overlap:
+        return True, f"url title hint token overlap: {', '.join(sorted(overlap)[:3])}"
+
+    return False, f"url title prefilter mismatch: {hint}"
 
 def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str) -> dict[str, Any]:
     settings = load_settings()
 
     accepted_jobs = []
+    accepted_jobs_by_key: dict[str, dict[str, Any]] = {}
     skipped_count = 0
+    skipped_title_prefilter_count = 0
+    skipped_duplicate_batch_count = 0
     error_count = 0
     output_lines: list[str] = []
+
+    build_started_at = time.perf_counter()
 
     for job_url in urls:
         output_lines.append(f"Processing: {job_url}")
 
         try:
+            should_process, gate_reason = is_probable_job_url(job_url)
+            if not should_process:
+                output_lines.append(f"Skipped URL quality gate: {gate_reason} | {job_url}")
+                skipped_count += 1
+                continue
+
+            title_prefilter_passed, title_prefilter_reason = _cheap_url_title_prefilter(job_url, settings)
+            if not title_prefilter_passed:
+                output_lines.append(f"Skipped URL title prefilter: {title_prefilter_reason} | {job_url}")
+                skipped_title_prefilter_count += 1
+                continue
+
             job = create_job_record(job_url)
             setattr(job, "source", source_name)
 
             match = score_job_match(job, settings)
+
+            if not match["should_accept"] and should_force_accept_without_location(job, settings):
+                match["should_accept"] = True
+                match["hard_reject"] = False
+                match["location_filter_passed"] = True
+                match["location_filter_reason"] = "blank-location title override"
+                match["score"] = max(int(match.get("score", 0)), AUTO_ACCEPT_SCORE)
+                existing_reason = safe_text(match.get("reason_text", ""))
+                match["reason_text"] = (existing_reason + " | blank-location title override").strip(" |")
 
             if not match["should_accept"]:
                 output_lines.append(
@@ -253,34 +654,86 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
                 skipped_count += 1
                 continue
 
-            accepted_jobs.append(job)
+            payload = enrich_job_payload(
+                job,
+                source_hint=source_name,
+                source_detail_hint=source_detail,
+            )
+
+            batch_key = _batch_dedupe_key(payload)
+
+            if batch_key:
+                existing_payload = accepted_jobs_by_key.get(batch_key)
+                if existing_payload is not None:
+                    chosen_payload = _prefer_payload(existing_payload, payload)
+                    accepted_jobs_by_key[batch_key] = chosen_payload
+                    skipped_duplicate_batch_count += 1
+                    output_lines.append(
+                        f"Skipped duplicate in batch: "
+                        f"{safe_text(payload.get('company', ''))} | "
+                        f"{safe_text(payload.get('title', ''))} | "
+                        f"{safe_text(payload.get('location', ''))}"
+                    )
+                    continue
+
+                accepted_jobs_by_key[batch_key] = payload
+
+            accepted_jobs.append(payload)
             output_lines.append(
                 f"Accepted (score {match['score']}): "
-                f"{safe_text(getattr(job, 'company', ''))} | "
-                f"{safe_text(getattr(job, 'title', ''))} | "
-                f"{safe_text(getattr(job, 'location', ''))}"
+                f"{safe_text(payload.get('company', ''))} | "
+                f"{safe_text(payload.get('title', ''))} | "
+                f"{safe_text(payload.get('location', ''))} | "
+                f"{safe_text(payload.get('source_trust', 'Unknown'))}"
             )
         except Exception as exc:
             output_lines.append(f"Error: {exc}")
             error_count += 1
 
+    build_seconds = time.perf_counter() - build_started_at
+
+    ingest_started_at = time.perf_counter()
     summary = ingest_job_records(
         job_records=accepted_jobs,
         source_name=source_name,
         source_detail=source_detail,
         run_type="validate_urls",
     )
+    ingest_seconds = time.perf_counter() - ingest_started_at
 
     output_lines.append("")
     output_lines.append("Validation + ingestion complete.")
     output_lines.append(f"Seen URLs: {len(urls)}")
     output_lines.append(f"Accepted jobs: {len(accepted_jobs)}")
     output_lines.append(f"Skipped by scoring: {skipped_count}")
+    output_lines.append(f"Skipped URL title prefilter: {skipped_title_prefilter_count}")
+    output_lines.append(f"Skipped duplicate in batch: {skipped_duplicate_batch_count}")
     output_lines.append(f"Errors before ingest: {error_count}")
     output_lines.append(f"Inserted: {summary['inserted_count']}")
     output_lines.append(f"Updated: {summary['updated_count']}")
     output_lines.append(f"Skipped removed: {summary['skipped_removed_count']}")
+    output_lines.append(f"Build/validate seconds: {build_seconds:.2f}")
+    output_lines.append(f"Ingest seconds: {ingest_seconds:.2f}")
+
+    source_yield_top = summary.get("source_yield_top", [])
+    if source_yield_top:
+        output_lines.append("")
+        output_lines.append("Top sources this run:")
+        for row in source_yield_top[:5]:
+            output_lines.append(
+                f"- {safe_text(row.get('ats_type', 'Unknown'))} | "
+                f"{safe_text(row.get('source_root', 'unknown'))} | "
+                f"{int(row.get('job_count', 0))} jobs"
+            )
+
+    source_dominance = summary.get("source_dominance", {})
+    if source_dominance.get("flag"):
+        output_lines.append("")
+        output_lines.append(f"Dominance warning: {safe_text(source_dominance.get('reason', ''))}")
+
     output_lines.append(f"Auto-accept threshold: {AUTO_ACCEPT_SCORE}")
+    if MAX_URLS_PER_RUN > 0:
+        output_lines.append(f"Max URLs per run cap: {MAX_URLS_PER_RUN}")
 
     return {
         "status": "completed",
@@ -289,7 +742,11 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
         "accepted_jobs": len(accepted_jobs),
         "seen_urls": len(urls),
         "skipped_count": skipped_count,
+        "skipped_title_prefilter_count": skipped_title_prefilter_count,
+        "skipped_duplicate_batch_count": skipped_duplicate_batch_count,
         "error_count": error_count,
+        "build_seconds": build_seconds,
+        "ingest_seconds": ingest_seconds,
     }
 
 
@@ -328,6 +785,9 @@ def ingest_urls_from_file(file_path: str | Path) -> dict[str, Any]:
     path = Path(file_path)
     urls = load_job_urls_from_file(path)
 
+    if MAX_URLS_PER_RUN > 0:
+        urls = urls[:MAX_URLS_PER_RUN]
+
     if not urls:
         return {
             "status": "completed",
@@ -336,11 +796,17 @@ def ingest_urls_from_file(file_path: str | Path) -> dict[str, Any]:
                 "inserted_count": 0,
                 "updated_count": 0,
                 "skipped_removed_count": 0,
+                "net_new_count": 0,
+                "rediscovered_count": 0,
+                "duplicate_in_run_count": 0,
             },
             "accepted_jobs": 0,
             "seen_urls": 0,
             "skipped_count": 0,
+            "skipped_duplicate_batch_count": 0,
             "error_count": 0,
+            "build_seconds": 0.0,
+            "ingest_seconds": 0.0,
         }
 
     return _build_jobs_from_urls(urls, source_name="Local Pipeline", source_detail=str(path.resolve()))
@@ -348,6 +814,9 @@ def ingest_urls_from_file(file_path: str | Path) -> dict[str, Any]:
 
 def ingest_pasted_urls(text_value: str) -> dict[str, Any]:
     urls = parse_manual_urls(text_value)
+    if MAX_URLS_PER_RUN > 0:
+        urls = urls[:MAX_URLS_PER_RUN]
+
     MANUAL_URLS_FILE.parent.mkdir(parents=True, exist_ok=True)
     MANUAL_URLS_FILE.write_text("\n".join(urls) + ("\n" if urls else ""), encoding="utf-8")
     return _build_jobs_from_urls(
@@ -358,17 +827,39 @@ def ingest_pasted_urls(text_value: str) -> dict[str, Any]:
 
 
 def discover_and_ingest() -> dict[str, Any]:
+    total_started_at = time.perf_counter()
+
+    discovery_started_at = time.perf_counter()
     discovery_result = discover_job_links()
+    discovery_seconds = time.perf_counter() - discovery_started_at
+
     discovered_urls = discovery_result.get("urls", [])
+    original_discovered_count = len(discovered_urls)
+
+    if MAX_URLS_PER_RUN > 0:
+        discovered_urls = discovered_urls[:MAX_URLS_PER_RUN]
 
     combined_output_parts = []
     if discovery_result.get("output"):
         combined_output_parts.append(discovery_result["output"])
 
+    combined_output_parts.append(
+        f"Discovery seconds: {discovery_seconds:.2f}"
+    )
+    combined_output_parts.append(
+        f"Discovered URLs before cap: {original_discovered_count}"
+    )
+    if MAX_URLS_PER_RUN > 0:
+        combined_output_parts.append(
+            f"URLs after cap: {len(discovered_urls)} (cap {MAX_URLS_PER_RUN})"
+        )
+
     if not discovered_urls:
         combined_output_parts.append(
             "No URLs were available to ingest. Review your Settings criteria, confirm discovery dependencies are installed, or try pasted URLs."
         )
+        total_seconds = time.perf_counter() - total_started_at
+        combined_output_parts.append(f"Total pipeline seconds: {total_seconds:.2f}")
         return {
             "status": "completed",
             "output": "\n\n".join(combined_output_parts).strip(),
@@ -380,11 +871,17 @@ def discover_and_ingest() -> dict[str, Any]:
                     "inserted_count": 0,
                     "updated_count": 0,
                     "skipped_removed_count": 0,
+                    "net_new_count": 0,
+                    "rediscovered_count": 0,
+                    "duplicate_in_run_count": 0,
                 },
                 "accepted_jobs": 0,
                 "seen_urls": 0,
                 "skipped_count": 0,
+                "skipped_duplicate_batch_count": 0,
                 "error_count": 0,
+                "build_seconds": 0.0,
+                "ingest_seconds": 0.0,
             },
         }
 
@@ -396,6 +893,9 @@ def discover_and_ingest() -> dict[str, Any]:
 
     if ingest_result.get("output"):
         combined_output_parts.append(ingest_result["output"])
+
+    total_seconds = time.perf_counter() - total_started_at
+    combined_output_parts.append(f"Total pipeline seconds: {total_seconds:.2f}")
 
     return {
         "status": "completed",

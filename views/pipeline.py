@@ -4,7 +4,7 @@ from urllib.parse import quote_plus
 import streamlit as st
 
 from config import JOB_URLS_FILE
-from services.ingestion import get_recent_ingestion_runs
+from services.ingestion import get_recent_ingestion_runs, get_source_registry_summary
 from services.pipeline_runtime import (
     build_search_preview,
     discover_and_ingest,
@@ -86,15 +86,25 @@ def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
     summary = ingest.get("summary", {}) or {}
     inserted_count = int(summary.get("inserted_count", 0) or 0)
     updated_count = int(summary.get("updated_count", 0) or 0)
+    net_new_count = int(summary.get("net_new_count", inserted_count) or 0)
+    rediscovered_count = int(summary.get("rediscovered_count", 0) or 0)
+    duplicate_in_run_count = int(summary.get("duplicate_in_run_count", 0) or 0)
 
     changed_count = inserted_count + updated_count
 
     if changed_count > 0:
         parts = []
-        if inserted_count > 0:
-            parts.append(f"{inserted_count} added")
-        if updated_count > 0:
-            parts.append(f"{updated_count} updated")
+        if net_new_count > 0:
+            parts.append(f"{net_new_count} net new")
+        if rediscovered_count > 0:
+            parts.append(f"{rediscovered_count} rediscovered")
+        if duplicate_in_run_count > 0:
+            parts.append(f"{duplicate_in_run_count} duplicate in run")
+        if not parts:
+            if inserted_count > 0:
+                parts.append(f"{inserted_count} added")
+            if updated_count > 0:
+                parts.append(f"{updated_count} updated")
         return "success", f"✓ Job run complete: {', '.join(parts)}"
 
     if seen_urls == 0:
@@ -104,9 +114,11 @@ def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
         return "warning", f"{seen_urls} URLs were found, but none matched your current Settings filters."
 
     if accepted_jobs > 0 and changed_count == 0:
+        if duplicate_in_run_count > 0:
+            return "warning", f"{seen_urls} URLs were reviewed, but only duplicate-in-run matches were found."
         if error_count > 0:
             return "warning", f"{seen_urls} URLs were reviewed, but no jobs were added. {error_count} processing errors occurred."
-        return "warning", f"{seen_urls} URLs were reviewed, but no new jobs were added."
+        return "warning", f"{seen_urls} URLs were reviewed, but no net-new or rediscovered jobs were added."
 
     if error_count > 0:
         return "warning", f"Run completed with {error_count} processing errors and no added jobs."
@@ -118,6 +130,9 @@ def _build_ingest_flash(result: dict, source_label: str) -> tuple[str, str]:
     summary = result.get("summary", {}) or {}
     inserted_count = int(summary.get("inserted_count", 0) or 0)
     updated_count = int(summary.get("updated_count", 0) or 0)
+    net_new_count = int(summary.get("net_new_count", inserted_count) or 0)
+    rediscovered_count = int(summary.get("rediscovered_count", 0) or 0)
+    duplicate_in_run_count = int(summary.get("duplicate_in_run_count", 0) or 0)
     seen_urls = int(result.get("seen_urls", 0) or 0)
     accepted_jobs = int(result.get("accepted_jobs", 0) or 0)
     skipped_count = int(result.get("skipped_count", 0) or 0)
@@ -127,10 +142,17 @@ def _build_ingest_flash(result: dict, source_label: str) -> tuple[str, str]:
 
     if changed_count > 0:
         parts = []
-        if inserted_count > 0:
-            parts.append(f"{inserted_count} added")
-        if updated_count > 0:
-            parts.append(f"{updated_count} updated")
+        if net_new_count > 0:
+            parts.append(f"{net_new_count} net new")
+        if rediscovered_count > 0:
+            parts.append(f"{rediscovered_count} rediscovered")
+        if duplicate_in_run_count > 0:
+            parts.append(f"{duplicate_in_run_count} duplicate in run")
+        if not parts:
+            if inserted_count > 0:
+                parts.append(f"{inserted_count} added")
+            if updated_count > 0:
+                parts.append(f"{updated_count} updated")
         return "success", f"✓ {source_label} complete: {', '.join(parts)}"
 
     if seen_urls == 0:
@@ -139,10 +161,13 @@ def _build_ingest_flash(result: dict, source_label: str) -> tuple[str, str]:
     if accepted_jobs == 0 and skipped_count > 0:
         return "warning", f"{seen_urls} URLs were reviewed for {source_label.lower()}, but none matched your current Settings filters."
 
+    if duplicate_in_run_count > 0:
+        return "warning", f"{source_label} completed, but only duplicate-in-run matches were found."
+
     if error_count > 0:
         return "warning", f"{source_label} completed with {error_count} processing errors and no added jobs."
 
-    return "warning", f"{source_label} completed, but no new jobs were added."
+    return "warning", f"{source_label} completed, but no net-new or rediscovered jobs were added."
 
 
 def _build_discover_only_flash(result: dict) -> tuple[str, str]:
@@ -219,179 +244,332 @@ def _render_search_summary() -> None:
     plan = preview.get("plan", [])
     queries = preview.get("queries", [])
 
-    st.markdown("### What I'm searching for")
-    st.caption("This is the search setup the app will use before validating and importing jobs.")
+    st.markdown("### Search Summary")
 
-    if not plan:
-        st.info("No search settings are saved yet. Go to Settings and add at least a target title.")
-        return
+    if plan:
+        for line in plan:
+            st.write(f"- {line}")
 
-    for item in plan:
-        st.markdown(f"- {item}")
-
-    st.caption("Search sources: Greenhouse, Lever, and broader web job search when available.")
-
-    with st.expander("Show technical search details"):
-        if queries:
-            st.markdown("**Generated discovery queries**")
+    if queries:
+        with st.expander("Preview generated search queries", expanded=False):
             for query in queries:
-                st.code(query, language=None)
-        else:
-            st.caption("No generated discovery queries available.")
+                st.code(query, language="text")
 
 
-def _render_provider_summary() -> None:
-    last_result = st.session_state.get("pipeline_last_result")
-    if not last_result:
-        return
-
-    discovery = last_result.get("discovery", last_result) or {}
-    providers = discovery.get("providers", {}) or {}
-
-    greenhouse_count = int(providers.get("greenhouse", 0) or 0)
-    lever_count = int(providers.get("lever", 0) or 0)
-    search_count = int(providers.get("search", 0) or 0)
-    total_count = int(discovery.get("url_count", 0) or 0)
-
-    if not providers and total_count == 0:
-        return
-
-    st.markdown("### Discovery results")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Greenhouse", greenhouse_count)
-    c2.metric("Lever", lever_count)
-    c3.metric("Web Search", search_count)
-    c4.metric("Total URLs", total_count)
-
-
-def _manual_search_link(query: str) -> str:
-    return f"https://www.google.com/search?q={quote_plus(query)}"
-
-
-def _render_manual_fallback_links() -> None:
-    last_result = st.session_state.get("pipeline_last_result")
-    if not last_result:
-        return
-
-    discovery = last_result.get("discovery", last_result) or {}
-    total_count = int(discovery.get("url_count", 0) or 0)
-
-    if total_count > 0:
-        return
-
+def _render_google_search_links() -> None:
     preview = build_search_preview()
-    queries = preview.get("queries", []) or []
+    queries = preview.get("queries", [])[:8]
 
     if not queries:
         return
 
-    st.markdown("### Manual fallback searches")
-    st.caption("Live discovery found no URLs this time. These links run broader web searches you can open manually.")
+    st.markdown("### Fallback Search Links")
+    st.caption("If discovery is light, use these direct Google searches to inspect the market manually.")
 
-    for query in queries[:8]:
-        st.markdown(f"- [{query}]({_manual_search_link(query)})")
+    for query in queries:
+        encoded = quote_plus(query)
+        st.markdown(f"- [Search Google for: {query}](https://www.google.com/search?q={encoded})")
 
 
-def _render_last_run_details() -> None:
-    last_result = st.session_state.get("pipeline_last_result")
-    if not last_result:
+def _render_source_registry_visibility() -> None:
+    st.markdown("### Source Registry")
+    st.caption("This shows how many source roots the app currently knows and how trustworthy they are.")
+
+    try:
+        summary = get_source_registry_summary()
+    except Exception as exc:
+        st.warning(f"Could not load source registry yet: {exc}")
         return
 
-    with st.expander("Show technical run details"):
-        _render_result(last_result)
+    totals = summary.get("totals", {}) or {}
+    recent_sources = summary.get("recent_sources", []) or []
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Known Sources", int(totals.get("total_sources", 0) or 0))
+    c2.metric("ATS Confirmed", int(totals.get("ats_confirmed_sources", 0) or 0))
+    c3.metric("Career Site", int(totals.get("career_site_sources", 0) or 0))
+    c4.metric("Web Discovered", int(totals.get("web_discovered_sources", 0) or 0))
+
+    if recent_sources:
+        with st.expander("Recent active sources", expanded=False):
+            for item in recent_sources:
+                source_name = str(item.get("source_name", "") or item.get("hostname", "Unknown source"))
+                hostname = str(item.get("hostname", "") or "")
+                source_trust = str(item.get("source_trust", "Unknown") or "Unknown")
+                source_type = str(item.get("source_type", "Unknown") or "Unknown")
+                matching_count = int(item.get("matching_job_count", 0) or 0)
+                last_success = str(item.get("last_success_at", "") or "")
+                label = source_name if not hostname else f"{source_name} ({hostname})"
+                st.write(f"- {label} | {source_trust} | {source_type} | matched jobs: {matching_count} | last seen: {last_success}")
+    else:
+        st.info("No source registry entries yet. Run a job import first.")
 
 
-def render_run_history() -> None:
+def _render_recent_runs() -> None:
     st.markdown("### Recent Job Runs")
-    runs = get_recent_ingestion_runs(limit=12)
+    runs = get_recent_ingestion_runs(limit=8)
 
     if not runs:
-        st.info("No job runs yet.")
+        st.info("No ingestion history yet.")
         return
 
     for run in runs:
-        st.markdown(
-            f"""
-            <div class="job-card">
-                <div class="job-title">{run['run_type']} | {run['source_name']}</div>
-                <div class="meta-row">
-                    <span class="meta-pill fit">Status: {run['status']}</span>
-                    <span class="meta-pill location">Seen: {run['total_seen']}</span>
-                    <span class="meta-pill comp">Inserted: {run['inserted_count']}</span>
-                    <span class="meta-pill comp">Updated: {run['updated_count']}</span>
-                    <span class="meta-pill comp">Skipped Removed: {run['skipped_removed_count']}</span>
-                    <span class="meta-pill comp">Errors: {run['error_count']}</span>
-                </div>
-                <div class="hero-subtle">Started: {run['started_at']} | Completed: {run['completed_at'] or '—'} | Detail: {run['source_detail']}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        summary = run.get("details", {}) or {}
+        trust_counts = summary.get("source_trust_counts", {}) or {}
+        trust_text = ", ".join([f"{k}: {v}" for k, v in trust_counts.items()])
+
+        inserted_count = int(run.get("inserted_count", 0) or 0)
+        updated_count = int(run.get("updated_count", 0) or 0)
+        net_new_count = int(summary.get("net_new_count", inserted_count) or 0)
+        rediscovered_count = int(summary.get("rediscovered_count", 0) or 0)
+        duplicate_in_run_count = int(summary.get("duplicate_in_run_count", 0) or 0)
+        error_count = int(run.get("error_count", 0) or 0)
+
+        run_parts = []
+        if net_new_count > 0:
+            run_parts.append(f"net new {net_new_count}")
+        if rediscovered_count > 0:
+            run_parts.append(f"rediscovered {rediscovered_count}")
+        if duplicate_in_run_count > 0:
+            run_parts.append(f"duplicate in run {duplicate_in_run_count}")
+        if not run_parts:
+            run_parts.append(f"net new {net_new_count}")
+            run_parts.append(f"rediscovered {rediscovered_count}")
+
+        headline = (
+            f"Run #{run['id']} | {run['source_name']} | "
+            f"{' | '.join(run_parts)} | "
+            f"errors {error_count}"
         )
+        st.write(headline)
+        if trust_text:
+            st.caption(f"Trust mix: {trust_text}")
+
+
+def _format_elapsed(start_iso: str) -> str:
+    if not start_iso:
+        return "00:00:00"
+    try:
+        started = datetime.fromisoformat(start_iso)
+    except Exception:
+        return "00:00:00"
+    delta = datetime.now() - started
+    total_seconds = max(0, int(delta.total_seconds()))
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _ensure_pipeline_run_state() -> None:
+    if "pipeline_run_active" not in st.session_state:
+        st.session_state.pipeline_run_active = False
+    if "pipeline_run_started_at" not in st.session_state:
+        st.session_state.pipeline_run_started_at = ""
+    if "pipeline_run_status" not in st.session_state:
+        st.session_state.pipeline_run_status = "Idle"
+    if "pipeline_run_output" not in st.session_state:
+        st.session_state.pipeline_run_output = ""
+
+
+
+def _parse_sqlite_datetime(value: str):
+    from datetime import datetime as _dt
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    candidates = [
+        text,
+        text.replace("Z", "+00:00"),
+        text.replace(" ", "T"),
+        text.replace(" ", "T").replace("Z", "+00:00"),
+    ]
+
+    for candidate in candidates:
+        try:
+            return _dt.fromisoformat(candidate)
+        except Exception:
+            pass
+
+    formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+    ]
+    for fmt in formats:
+        try:
+            return _dt.strptime(text, fmt)
+        except Exception:
+            pass
+
+    return None
+
+
+
+def _format_seconds_duration(value) -> str:
+    try:
+        total_seconds = max(0, int(value or 0))
+    except Exception:
+        return "Unknown"
+
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _format_run_duration(started_at: str, completed_at: str) -> str:
+    if not started_at or not completed_at:
+        return "Unknown"
+
+    start = _parse_sqlite_datetime(started_at)
+    end = _parse_sqlite_datetime(completed_at)
+
+    if not start or not end:
+        return "Unknown"
+
+    total_seconds = max(0, int((end - start).total_seconds()))
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _render_last_run_monitor() -> None:
+    runs = get_recent_ingestion_runs(limit=1)
+    if not runs:
+        st.info("No pipeline runs recorded yet.")
+        return
+
+    run = runs[0]
+    details = run.get("details", {}) if isinstance(run.get("details", {}), dict) else {}
+
+    run_id = run.get("id", "")
+    started_at = str(run.get("started_at", "") or "")
+    completed_at = str(run.get("completed_at", "") or "")
+    status = str(run.get("status", "") or "Unknown")
+    ingest_duration = _format_run_duration(started_at, completed_at)
+
+    total_seen = run.get("total_seen", 0)
+    inserted_count = run.get("inserted_count", 0)
+    updated_count = run.get("updated_count", 0)
+    skipped_removed_count = run.get("skipped_removed_count", 0)
+    skipped_invalid_count = run.get("skipped_invalid_count", 0)
+    error_count = run.get("error_count", 0)
+
+    net_new_count = details.get("net_new_count", inserted_count) if isinstance(details, dict) else inserted_count
+    rediscovered_count = details.get("rediscovered_count", 0) if isinstance(details, dict) else 0
+    duplicate_in_run_count = details.get("duplicate_in_run_count", 0) if isinstance(details, dict) else 0
+
+    source_yield_top = details.get("source_yield_top", []) if isinstance(details, dict) else []
+    source_dominance = details.get("source_dominance", {}) if isinstance(details, dict) else {}
+
+    st.subheader("Last Run Monitor")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Run ID", run_id if run_id != "" else "Unknown")
+    col2.metric("Status", status.title() if status else "Unknown")
+    col3.metric("Ingest Duration", ingest_duration)
+
+    col4, col5, col6, col7 = st.columns(4)
+    col4.metric("Total Seen", total_seen)
+    col5.metric("Inserted", inserted_count)
+    col6.metric("Updated", updated_count)
+    col7.metric("Errors", error_count)
+
+    col8, col9, col10 = st.columns(3)
+    col8.metric("Net New", net_new_count)
+    col9.metric("Rediscovered", rediscovered_count)
+    col10.metric("Duplicate In Run", duplicate_in_run_count)
+
+    st.caption(f"Ingest started: {started_at or 'Unknown'} | Ingest completed: {completed_at or 'Unknown'}")
+
+    extra_summary = []
+    if skipped_removed_count:
+        extra_summary.append(f"Skipped removed: {skipped_removed_count}")
+    if skipped_invalid_count:
+        extra_summary.append(f"Skipped invalid: {skipped_invalid_count}")
+    if extra_summary:
+        st.caption(" | ".join(extra_summary))
+
+    if source_dominance.get("flag"):
+        st.warning(f"Dominance warning: {source_dominance.get('reason', '')}")
+    else:
+        top_source_root = ""
+        top_source_jobs = 0
+        if source_yield_top:
+            first = source_yield_top[0]
+            top_source_root = str(first.get("source_root", "") or "")
+            top_source_jobs = int(first.get("job_count", 0) or 0)
+        if top_source_root:
+            st.caption(f"Top source this run: {top_source_root} ({top_source_jobs} jobs)")
+
+    if source_yield_top:
+        st.markdown("**Top sources this run**")
+        for row in source_yield_top[:5]:
+            ats_type = str(row.get("ats_type", "Unknown") or "Unknown")
+            source_root = str(row.get("source_root", "unknown") or "unknown")
+            job_count = int(row.get("job_count", 0) or 0)
+            st.write(f"- {ats_type} | {source_root} | {job_count} jobs")
 
 
 def render_pipeline() -> None:
     _process_pending_action_before_render()
 
     st.subheader("Pipeline")
-    _render_first_run_pipeline_guidance()
-    _render_flash()
-    _render_search_summary()
-    _render_provider_summary()
-    _render_manual_fallback_links()
+    st.caption("Run discovery, import job links, and monitor the health of your source mix.")
 
-    st.markdown("### Find and Add Jobs")
-    st.caption("Searches for job links, validates them, and adds matching roles to your New Roles list.")
+    _render_last_run_monitor()
 
-    if st.button("Find and Add Jobs", use_container_width=True, type="primary", disabled=app_is_busy()):
-        queue_action("pipeline", "discover_and_ingest", {}, "Finding and adding jobs")
-        st.rerun()
+    if st.session_state.get("pipeline_run_active", False):
+        elapsed = _format_elapsed(st.session_state.get("pipeline_run_started_at", ""))
+        st.info(f"Run in progress | Elapsed: {elapsed} | Status: {st.session_state.get("pipeline_run_status", "Idle")}")
+        if elapsed >= "00:05:00":
+            st.warning("This run is taking longer than usual. If the UI appears stuck after a while, you can use Reset Run State below.")
 
-    st.markdown("---")
-    st.markdown("### Add Pasted Job Links")
-    st.caption("Paste one or more job links and add them directly into the app.")
-
-    manual_urls = st.text_area(
-        "Paste one job URL per line",
-        height=160,
-        key="pipeline_manual_urls",
-        disabled=app_is_busy(),
-    )
-
-    if st.button("Add Pasted Job Links", use_container_width=True, type="secondary", disabled=app_is_busy()):
-        if not manual_urls.strip():
-            st.warning("Paste at least one URL first.")
-        else:
-            queue_action("pipeline", "ingest_pasted", {"manual_urls": manual_urls}, "Adding pasted job links")
+        if st.button("Reset Run State", key="reset_pipeline_run_state"):
+            st.session_state.pipeline_run_active = False
+            st.session_state.pipeline_run_started_at = ""
+            st.session_state.pipeline_run_status = "Idle"
             st.rerun()
 
-    with st.expander("Advanced"):
-        st.markdown("### Saved Job Links")
-        st.caption(f"Uses the saved URL file at: {JOB_URLS_FILE}")
+    _render_flash()
+    _render_first_run_pipeline_guidance()
 
-        if _job_urls_file_exists():
-            st.success("Saved job link file found.")
-        else:
-            st.info("No saved job link file exists yet. Use Find Job Links Only or Find and Add Jobs first.")
+    busy = app_is_busy()
 
-        adv1, adv2 = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        if st.button("Find and Add Jobs", use_container_width=True, disabled=busy):
+            queue_action("pipeline", "discover_and_ingest", "Find and Add Jobs")
+            st.rerun()
+    with col2:
+        if st.button("Find Job Links Only", use_container_width=True, disabled=busy):
+            queue_action("pipeline", "discover_only", "Find Job Links Only")
+            st.rerun()
+    with col3:
+        if st.button("Add Saved Job Links", use_container_width=True, disabled=busy):
+            queue_action("pipeline", "ingest_saved", "Add Saved Job Links")
+            st.rerun()
+    with col4:
+        manual_urls = st.session_state.get("pipeline_manual_urls", "")
+        if st.button("Add Pasted Job Links", use_container_width=True, disabled=busy):
+            queue_action("pipeline", "ingest_pasted", "Add Pasted Job Links", payload={"manual_urls": manual_urls})
+            st.rerun()
 
-        with adv1:
-            if st.button("Add Saved Job Links", use_container_width=True, type="secondary", disabled=app_is_busy()):
-                if not _job_urls_file_exists():
-                    _set_flash("warning", "No saved job links file exists yet. Run discovery first or paste job links.")
-                    st.rerun()
-                queue_action("pipeline", "ingest_saved", {}, "Adding saved job links")
-                st.rerun()
+    st.text_area("Paste job links", key="pipeline_manual_urls", height=120, placeholder="Paste one job URL per line")
 
-        with adv2:
-            if st.button("Find Job Links Only", use_container_width=True, type="secondary", disabled=app_is_busy()):
-                queue_action("pipeline", "discover_only", {}, "Finding job links")
-                st.rerun()
+    last_result = st.session_state.get("pipeline_last_result")
+    if last_result:
+        with st.expander("Last pipeline result", expanded=False):
+            _render_result(last_result)
 
-    _render_last_run_details()
-
-    st.markdown("---")
-    render_run_history()
+    _render_search_summary()
+    _render_source_registry_visibility()
+    _render_recent_runs()
+    _render_google_search_links()
 
     _advance_pending_action_after_render()

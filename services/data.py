@@ -15,31 +15,49 @@ def load_sqlite_new_roles() -> pd.DataFrame:
     conn = sqlite3.connect(DATABASE_PATH)
     try:
         query = """
+        WITH latest_run AS (
+            SELECT COALESCE(MAX(id), 0) AS latest_run_id
+            FROM ingestion_runs
+        )
         SELECT
-            id AS "__job_id__",
-            company AS "Company",
-            title AS "Title",
-            location AS "Location",
-            fit_score AS "Fit Score",
-            compensation_raw AS "Compensation Raw",
-            job_posting_url AS "Job Posting URL",
-            duplicate_key AS "Duplicate Key",
-            cover_letter_path AS "Cover Letter Path",
-            workflow_status AS "Workflow Status",
-            active_status AS "Active Status",
-            date_found AS "Date Found",
-            source AS "Source"
+            jobs.id AS "__job_id__",
+            jobs.company AS "Company",
+            jobs.title AS "Title",
+            jobs.location AS "Location",
+            jobs.fit_score AS "Fit Score",
+            jobs.compensation_raw AS "Compensation Raw",
+            jobs.job_posting_url AS "Job Posting URL",
+            jobs.duplicate_key AS "Duplicate Key",
+            jobs.cover_letter_path AS "Cover Letter Path",
+            jobs.workflow_status AS "Workflow Status",
+            jobs.active_status AS "Active Status",
+            jobs.date_found AS "Date Found",
+            jobs.source AS "Source",
+            jobs.source_type AS "Source Type",
+            jobs.source_trust AS "Source Trust",
+            jobs.source_detail AS "Source Detail",
+            COALESCE(jobs.seen_count, 0) AS "__seen_count__",
+            COALESCE(jobs.last_seen_run_id, 0) AS "__last_seen_run_id__",
+            CASE
+                WHEN COALESCE(jobs.last_seen_run_id, 0) = (SELECT latest_run_id FROM latest_run)
+                     AND COALESCE(jobs.seen_count, 0) <= 1
+                    THEN 'Net New'
+                WHEN COALESCE(jobs.last_seen_run_id, 0) = (SELECT latest_run_id FROM latest_run)
+                     AND COALESCE(jobs.seen_count, 0) > 1
+                    THEN 'Rediscovered'
+                ELSE ''
+            END AS "Discovery State"
         FROM jobs
-        WHERE workflow_status = 'New'
-          AND COALESCE(active_status, 'Active') = 'Active'
+        WHERE jobs.workflow_status = 'New'
+          AND COALESCE(jobs.active_status, 'Active') = 'Active'
         ORDER BY
             CASE
-                WHEN fit_score IS NULL THEN 1
+                WHEN jobs.fit_score IS NULL THEN 1
                 ELSE 0
             END,
-            fit_score DESC,
-            company ASC,
-            title ASC
+            jobs.fit_score DESC,
+            jobs.company ASC,
+            jobs.title ASC
         """
         df = pd.read_sql_query(query, conn)
     finally:
@@ -255,12 +273,18 @@ def apply_new_role_filters(df: pd.DataFrame) -> pd.DataFrame:
     df_filtered = df.copy()
 
     min_fit = st.session_state.get("filter_min_fit", "Any")
+    discovery_state = st.session_state.get("filter_discovery_state", "All")
     remote_only = st.session_state.get("filter_remote_only", False)
     compensation_only = st.session_state.get("filter_compensation_only", False)
 
     if min_fit != "Any":
         df_filtered = df_filtered[
             df_filtered["Fit Score"].apply(normalize_fit_score) >= float(min_fit)
+        ]
+
+    if discovery_state != "All" and "Discovery State" in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered["Discovery State"].apply(safe_text) == discovery_state
         ]
 
     if remote_only:

@@ -122,7 +122,7 @@ def render_filter_bar() -> None:
     st.markdown('<div class="filters-shell">', unsafe_allow_html=True)
     st.markdown('<div class="filters-heading">Filters</div>', unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([1.2, 1, 1.2])
+    c1, c2, c3, c4 = st.columns([1.15, 1, 1.2, 1.1])
     nonce = _widget_nonce()
 
     with c1:
@@ -146,6 +146,27 @@ def render_filter_bar() -> None:
             st.rerun()
 
     with c2:
+        st.markdown('<div class="control-label">Discovery State</div>', unsafe_allow_html=True)
+
+        discovery_options = ["All", "Net New", "Rediscovered"]
+        current_discovery = st.session_state.get("filter_discovery_state", "All")
+        discovery_key = f"filter_discovery_state_selector_{nonce}"
+
+        selected_discovery = st.selectbox(
+            "Discovery State",
+            discovery_options,
+            index=discovery_options.index(current_discovery) if current_discovery in discovery_options else 0,
+            key=discovery_key,
+            label_visibility="collapsed",
+            disabled=app_is_busy(),
+        )
+
+        if selected_discovery != st.session_state.get("filter_discovery_state", "All"):
+            st.session_state["filter_discovery_state"] = selected_discovery
+            st.session_state["new_roles_current_page"] = 1
+            st.rerun()
+
+    with c3:
         st.markdown('<div class="control-label">Remote Only</div>', unsafe_allow_html=True)
         st.toggle(
             "Remote Only",
@@ -154,7 +175,7 @@ def render_filter_bar() -> None:
             disabled=app_is_busy(),
         )
 
-    with c3:
+    with c4:
         st.markdown('<div class="control-label">Compensation Available Only</div>', unsafe_allow_html=True)
         st.toggle(
             "Compensation Available Only",

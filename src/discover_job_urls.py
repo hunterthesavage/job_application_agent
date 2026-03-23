@@ -1,6 +1,7 @@
 import json
+import re
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -15,6 +16,14 @@ GREENHOUSE_BOARD_FILE = "greenhouse_boards.txt"
 LEVER_BOARD_FILE = "lever_boards.txt"
 OUTPUT_FILE = "job_urls.txt"
 RUNTIME_SETTINGS_FILE = "runtime_settings.json"
+
+MAX_GREENHOUSE_URLS = 5
+MAX_LEVER_URLS = 30
+MAX_SEARCH_URLS = 15
+
+MAX_GREENHOUSE_BOARDS_TO_SCAN = 10
+MAX_LEVER_BOARDS_TO_SCAN = 15
+SKIP_JOBGETHER_IN_FAST_MODE = True
 
 ALLOWED_JOB_DOMAINS = [
     "greenhouse.io",
@@ -49,8 +58,15 @@ SENIORITY_TERMS = [
 TITLE_QUERY_EXPANSIONS = {
     "analyst": [
         "analyst",
-        "data analyst",
+        "senior analyst",
         "business analyst",
+        "business systems analyst",
+        "data analyst",
+        "systems analyst",
+        "operations analyst",
+        "program analyst",
+        "product analyst",
+        "reporting analyst",
         "financial analyst",
         "bi analyst",
         "analytics analyst",
@@ -89,17 +105,82 @@ TITLE_QUERY_EXPANSIONS = {
 }
 
 STATE_ABBREVIATIONS = {
-    "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca",
-    "colorado": "co", "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga",
-    "hawaii": "hi", "idaho": "id", "illinois": "il", "indiana": "in", "iowa": "ia",
-    "kansas": "ks", "kentucky": "ky", "louisiana": "la", "maine": "me", "maryland": "md",
-    "massachusetts": "ma", "michigan": "mi", "minnesota": "mn", "mississippi": "ms",
-    "missouri": "mo", "montana": "mt", "nebraska": "ne", "nevada": "nv", "new hampshire": "nh",
-    "new jersey": "nj", "new mexico": "nm", "new york": "ny", "north carolina": "nc",
-    "north dakota": "nd", "ohio": "oh", "oklahoma": "ok", "oregon": "or", "pennsylvania": "pa",
-    "rhode island": "ri", "south carolina": "sc", "south dakota": "sd", "tennessee": "tn",
-    "texas": "tx", "utah": "ut", "vermont": "vt", "virginia": "va", "washington": "wa",
-    "west virginia": "wv", "wisconsin": "wi", "wyoming": "wy",
+    "alabama": "al",
+    "alaska": "ak",
+    "arizona": "az",
+    "arkansas": "ar",
+    "california": "ca",
+    "colorado": "co",
+    "connecticut": "ct",
+    "delaware": "de",
+    "florida": "fl",
+    "georgia": "ga",
+    "hawaii": "hi",
+    "idaho": "id",
+    "illinois": "il",
+    "indiana": "in",
+    "iowa": "ia",
+    "kansas": "ks",
+    "kentucky": "ky",
+    "louisiana": "la",
+    "maine": "me",
+    "maryland": "md",
+    "massachusetts": "ma",
+    "michigan": "mi",
+    "minnesota": "mn",
+    "mississippi": "ms",
+    "missouri": "mo",
+    "montana": "mt",
+    "nebraska": "ne",
+    "nevada": "nv",
+    "new hampshire": "nh",
+    "new jersey": "nj",
+    "new mexico": "nm",
+    "new york": "ny",
+    "north carolina": "nc",
+    "north dakota": "nd",
+    "ohio": "oh",
+    "oklahoma": "ok",
+    "oregon": "or",
+    "pennsylvania": "pa",
+    "rhode island": "ri",
+    "south carolina": "sc",
+    "south dakota": "sd",
+    "tennessee": "tn",
+    "texas": "tx",
+    "utah": "ut",
+    "vermont": "vt",
+    "virginia": "va",
+    "washington": "wa",
+    "west virginia": "wv",
+    "wisconsin": "wi",
+    "wyoming": "wy",
+}
+
+COUNTRY_ALIASES = {
+    "us": "United States",
+    "u.s.": "United States",
+    "usa": "United States",
+    "united states of america": "United States",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "england": "United Kingdom",
+}
+
+PROVINCE_ABBREVIATIONS = {
+    "alberta": "ab",
+    "british columbia": "bc",
+    "manitoba": "mb",
+    "new brunswick": "nb",
+    "newfoundland and labrador": "nl",
+    "nova scotia": "ns",
+    "ontario": "on",
+    "prince edward island": "pe",
+    "quebec": "qc",
+    "saskatchewan": "sk",
+    "northwest territories": "nt",
+    "nunavut": "nu",
+    "yukon": "yt",
 }
 
 
@@ -118,6 +199,21 @@ def parse_csv_text(value: str) -> list[str]:
     if not text:
         return []
     return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def parse_preferred_locations(value: str) -> list[str]:
+    text = safe_text(value)
+    if not text:
+        return []
+
+    if "\n" in text:
+        return [part.strip() for part in text.splitlines() if part.strip()]
+
+    if ";" in text:
+        return [part.strip() for part in text.split(";") if part.strip()]
+
+    text = re.sub(r"\s+", " ", text).strip()
+    return [text] if text else []
 
 
 def dedupe_preserve_order(items: list[str]) -> list[str]:
@@ -228,6 +324,53 @@ def expand_title_query_terms(target_titles: list[str]) -> list[str]:
     return list(dict.fromkeys([safe_text(x) for x in expanded if safe_text(x)]))
 
 
+def _normalize_location_part(value: str) -> str:
+    return " ".join(
+        safe_text(value)
+        .replace(",", " ")
+        .replace(".", " ")
+        .split()
+    ).strip()
+
+
+def _canonical_country(value: str) -> str:
+    normalized = normalize_text(value)
+    if not normalized:
+        return ""
+    if normalized in COUNTRY_ALIASES:
+        return COUNTRY_ALIASES[normalized]
+    if normalized in {"united states", "united kingdom", "canada"}:
+        return " ".join(word.capitalize() for word in normalized.split())
+    return ""
+
+
+def _canonical_region(value: str) -> str:
+    normalized = normalize_text(value)
+    if not normalized:
+        return ""
+
+    if normalized in STATE_ABBREVIATIONS:
+        return STATE_ABBREVIATIONS[normalized].upper()
+
+    if normalized in STATE_ABBREVIATIONS.values():
+        return normalized.upper()
+
+    if normalized in PROVINCE_ABBREVIATIONS:
+        return PROVINCE_ABBREVIATIONS[normalized].upper()
+
+    if normalized in PROVINCE_ABBREVIATIONS.values():
+        return normalized.upper()
+
+    return ""
+
+
+def _split_location_parts(value: str) -> list[str]:
+    raw = safe_text(value)
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 def expand_location_query_terms(preferred_locations: list[str], remote_only: bool) -> list[str]:
     if not preferred_locations:
         return ["remote"] if remote_only else ["remote", "United States"]
@@ -239,40 +382,57 @@ def expand_location_query_terms(preferred_locations: list[str], remote_only: boo
         if not location:
             continue
 
+        parts = _split_location_parts(location)
+        normalized_full = _normalize_location_part(location)
+
         expanded.append(location)
 
-        normalized = normalize_text(location)
-        tokens = [token for token in normalized.replace(",", " ").split() if token]
+        if normalized_full and normalized_full.lower() != location.lower():
+            expanded.append(normalized_full)
 
-        if len(tokens) >= 2:
-            expanded.append(" ".join(tokens))
-            expanded.append("-".join(tokens))
+        if parts:
+            city_like = parts[0]
+            region_like = parts[1] if len(parts) >= 2 else ""
+            country_like = parts[2] if len(parts) >= 3 else ""
 
-        for token in tokens:
-            if len(token) > 1:
-                expanded.append(token)
+            if city_like:
+                expanded.append(city_like)
 
-        if normalized in STATE_ABBREVIATIONS:
-            expanded.append(STATE_ABBREVIATIONS[normalized])
+            canonical_region = _canonical_region(region_like)
+            if city_like and canonical_region:
+                expanded.append(f"{city_like} {canonical_region}")
 
-        for state_name, abbr in STATE_ABBREVIATIONS.items():
-            if abbr == normalized:
-                expanded.append(state_name)
+            canonical_country = _canonical_country(country_like or region_like)
+            if city_like and canonical_country:
+                expanded.append(f"{city_like} {canonical_country}")
 
-    return list(dict.fromkeys([safe_text(x) for x in expanded if safe_text(x)]))
+            if canonical_country:
+                expanded.append(canonical_country)
+
+            # Only add a standalone region term when the location itself is region-only.
+            if canonical_region and not city_like:
+                expanded.append(canonical_region)
+
+        if remote_only:
+            expanded.append("remote")
+        else:
+            expanded.append("remote")
+            expanded.append("United States")
+
+    return dedupe_preserve_order([safe_text(x) for x in expanded if safe_text(x)])
 
 
 def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
     target_titles = parse_csv_text(settings.get("target_titles", ""))
-    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     include_keywords = parse_csv_text(settings.get("include_keywords", ""))
     remote_only = settings.get("remote_only", "false").lower() == "true"
 
     if not target_titles and not preferred_locations and not include_keywords:
-        return DEFAULT_GOOGLE_DISCOVERY_QUERIES
+        return DEFAULT_GOOGLE_DISCOVERY_QUERIES[:12]
 
     queries: list[str] = []
-    site_block = "(site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com OR site:ashbyhq.com OR site:smartrecruiters.com)"
+    ats_site_block = "(site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com OR site:ashbyhq.com OR site:smartrecruiters.com)"
 
     title_terms = expand_title_query_terms(target_titles or [
         "VP Technology",
@@ -281,68 +441,74 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
         "CTO",
         "Head of Technology",
     ])
-    title_terms = dedupe_preserve_order(title_terms)
+    title_terms = dedupe_preserve_order(title_terms)[:5]
 
     location_terms = dedupe_preserve_order(expand_location_query_terms(preferred_locations, remote_only))
-    keyword_terms = filter_keyword_terms(include_keywords[:6], title_terms)
+    normalized_locations = {normalize_text(x) for x in location_terms}
 
-    # Tier 1: precise but less brittle
-    for title in title_terms[:8]:
-        for location in location_terms[:5]:
+    strong_location_terms: list[str] = []
+    for loc in location_terms:
+        norm = normalize_text(loc)
+        if not norm:
+            continue
+        if norm in {"united states", "united kingdom"}:
+            continue
+        if len(norm) <= 2:
+            continue
+        strong_location_terms.append(loc)
+
+    strong_location_terms = dedupe_preserve_order(strong_location_terms)[:2]
+
+    if remote_only:
+        location_terms_for_search = ["remote"]
+    else:
+        location_terms_for_search = strong_location_terms[:]
+        if "remote" in normalized_locations or not location_terms_for_search:
+            location_terms_for_search.append("remote")
+
+    location_terms_for_search = dedupe_preserve_order(location_terms_for_search)[:3]
+    keyword_terms = filter_keyword_terms(include_keywords[:2], title_terms)
+
+    # Tier 1: strongest ATS-focused exact-ish queries
+    for title in title_terms:
+        for location in location_terms_for_search:
             parts = [f'"{title}"', f'"{location}"']
             if keyword_terms:
                 parts.append(f'"{keyword_terms[0]}"')
-            parts.append(site_block)
+            parts.append(ats_site_block)
             queries.append(" ".join(parts))
 
-    # Tier 2: broader token-style queries
-    for title in title_terms[:6]:
-        for location in location_terms[:4]:
-            parts = [title, location]
-            if keyword_terms:
-                parts.extend(keyword_terms[:2])
-            parts.append(site_block)
-            queries.append(" ".join(parts))
-
-    # Tier 3: family-style OR query for broader role matching
+    # Tier 2: compact OR query for title family
     if len(title_terms) > 1:
-        title_or = " OR ".join(f'"{title}"' for title in title_terms[:6])
-        for location in location_terms[:3]:
-            parts = [f"({title_or})", location]
+        title_or = " OR ".join(f'"{title}"' for title in title_terms[:4])
+        for location in location_terms_for_search[:2]:
+            parts = [f"({title_or})", f'"{location}"', ats_site_block]
             if keyword_terms:
-                parts.extend(keyword_terms[:2])
-            parts.append(site_block)
+                parts.insert(2, f'"{keyword_terms[0]}"')
             queries.append(" ".join(parts))
 
-    # Tier 4: title-only fallback if locations are too restrictive
-    for title in title_terms[:6]:
+    # Tier 3: title-only ATS fallback
+    for title in title_terms[:3]:
         parts = [f'"{title}"']
         if keyword_terms:
-            parts.extend(f'"{keyword}"' for keyword in keyword_terms[:2])
-        parts.append(site_block)
+            parts.append(f'"{keyword_terms[0]}"')
+        parts.append(ats_site_block)
         queries.append(" ".join(parts))
 
-    # Tier 5: keyword-location fallback for broad non-exec roles
-    if keyword_terms and location_terms:
-        for location in location_terms[:3]:
-            parts = [location]
-            parts.extend(keyword_terms[:2])
-            parts.append(site_block)
-            queries.append(" ".join(parts))
-
-    # Remote fallback
     if remote_only and not preferred_locations:
         queries.append(
-            f'("VP" OR "Vice President" OR "Head of" OR "Chief") ("Technology" OR "IT" OR "Digital" OR "Platform") "remote" {site_block}'
+            f'("VP" OR "Vice President" OR "Head of" OR "Chief") ("Technology" OR "IT" OR "Digital" OR "Platform") "remote" {ats_site_block}'
         )
 
-    return dedupe_preserve_order([query.strip() for query in queries if query.strip()])
+    queries = dedupe_preserve_order([query.strip() for query in queries if query.strip()])
+    return queries[:12]
+
 
 def build_search_plan(settings: dict[str, str]) -> list[str]:
     plan_lines = []
 
     target_titles = parse_csv_text(settings.get("target_titles", ""))
-    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     include_keywords = parse_csv_text(settings.get("include_keywords", ""))
     remote_only = settings.get("remote_only", "false").lower() == "true"
 
@@ -352,7 +518,7 @@ def build_search_plan(settings: dict[str, str]) -> list[str]:
         plan_lines.append("Titles: default senior tech leadership profile")
 
     if preferred_locations:
-        plan_lines.append(f"Locations: {', '.join(preferred_locations[:6])}")
+        plan_lines.append(f"Locations: {' | '.join(preferred_locations[:6])}")
     else:
         plan_lines.append(f"Locations: {'remote only' if remote_only else 'remote + United States fallback'}")
 
@@ -433,6 +599,71 @@ def is_allowed_job_url(url: str) -> bool:
     return any(domain in lowered for domain in ALLOWED_JOB_DOMAINS)
 
 
+def classify_job_url(url: str) -> tuple[bool, str]:
+    value = safe_text(url)
+    if not value:
+        return False, "blank_url"
+
+    lowered = value.lower()
+    parsed = urlparse(value)
+    host = parsed.netloc.lower()
+    path = parsed.path or ""
+    path_parts = [part for part in path.split("/") if part]
+
+    blocked_substrings = [
+        "?error=",
+        "?keyword=",
+        "/search",
+        "/jobs/search",
+    ]
+    for marker in blocked_substrings:
+        if marker in lowered:
+            return False, f"blocked_pattern:{marker}"
+
+    if not is_allowed_job_url(value):
+        return False, "blocked_domain"
+
+    if "jobs.lever.co" in host:
+        return (len(path_parts) >= 2, "lever_detail" if len(path_parts) >= 2 else "lever_board_root")
+
+    if "job-boards.greenhouse.io" in host:
+        if "jobs" in path_parts and len(path_parts) >= 2:
+            return True, "greenhouse_detail"
+        return False, "greenhouse_board_root"
+
+    if "boards.greenhouse.io" in host:
+        if "jobs" in path_parts and len(path_parts) >= 2:
+            return True, "greenhouse_detail"
+        return False, "greenhouse_board_root"
+
+    if "jobs.ashbyhq.com" in host:
+        return (len(path_parts) >= 2, "ashby_detail" if len(path_parts) >= 2 else "ashby_board_root")
+
+    if "jobs.smartrecruiters.com" in host:
+        return (len(path_parts) >= 2, "smartrecruiters_detail" if len(path_parts) >= 2 else "smartrecruiters_root")
+
+    if "myworkdayjobs.com" in host:
+        return ("/job/" in path.lower(), "workday_detail" if "/job/" in path.lower() else "workday_root")
+
+    return True, "unclassified"
+
+
+def filter_discovered_urls(urls: list[str], source_name: str, log_lines: list[str] | None = None) -> tuple[list[str], dict[str, int]]:
+    kept: list[str] = []
+    drop_counts: dict[str, int] = {}
+
+    for url in urls:
+        keep, reason = classify_job_url(url)
+        if keep:
+            kept.append(url)
+        else:
+            drop_counts[reason] = drop_counts.get(reason, 0) + 1
+            if log_lines is not None:
+                log_lines.append(f"Dropped {source_name} URL: {reason} | {url}")
+
+    return list(dict.fromkeys(kept)), drop_counts
+
+
 def extract_result_url(result: dict) -> str:
     for key in ["href", "url", "link"]:
         value = result.get(key, "")
@@ -472,9 +703,6 @@ def discover_google_style_urls(settings: dict[str, str], log_lines: list[str] | 
                     if not url:
                         continue
 
-                    if not is_allowed_job_url(url):
-                        continue
-
                     discovered.append(url)
 
             except Exception as exc:
@@ -501,8 +729,27 @@ def discover_urls(settings: dict[str, str] | None = None) -> dict:
     for line in build_search_plan(resolved_settings):
         log_lines.append(f"- {line}")
 
-    greenhouse_board_urls = load_board_urls(GREENHOUSE_BOARD_FILE)
-    lever_board_urls = load_board_urls(LEVER_BOARD_FILE)
+    all_greenhouse_board_urls = load_board_urls(GREENHOUSE_BOARD_FILE)
+    all_lever_board_urls = load_board_urls(LEVER_BOARD_FILE)
+
+    greenhouse_board_urls = all_greenhouse_board_urls[:MAX_GREENHOUSE_BOARDS_TO_SCAN] if MAX_GREENHOUSE_BOARDS_TO_SCAN > 0 else all_greenhouse_board_urls
+
+    lever_board_urls_raw = all_lever_board_urls[:MAX_LEVER_BOARDS_TO_SCAN] if MAX_LEVER_BOARDS_TO_SCAN > 0 else all_lever_board_urls
+
+    lever_board_urls = []
+    skipped_jobgether_boards = 0
+    for board_url in lever_board_urls_raw:
+        if SKIP_JOBGETHER_IN_FAST_MODE and "jobs.lever.co/jobgether" in board_url.lower():
+            skipped_jobgether_boards += 1
+            continue
+        lever_board_urls.append(board_url)
+
+    log_lines.append(
+        f"Greenhouse boards available: {len(all_greenhouse_board_urls)} | scanning: {len(greenhouse_board_urls)} | skipped by cap: {max(0, len(all_greenhouse_board_urls) - len(greenhouse_board_urls))}"
+    )
+    log_lines.append(
+        f"Lever boards available: {len(all_lever_board_urls)} | scanning candidate set: {len(lever_board_urls_raw)} | scanning after skips: {len(lever_board_urls)} | skipped by cap: {max(0, len(all_lever_board_urls) - len(lever_board_urls_raw))} | skipped jobgether: {skipped_jobgether_boards}"
+    )
 
     greenhouse_discovered = []
     lever_discovered = []
@@ -532,38 +779,65 @@ def discover_urls(settings: dict[str, str] | None = None) -> dict:
     lever_discovered = list(dict.fromkeys(lever_discovered))
     search_discovered = list(dict.fromkeys(search_discovered))
 
+    greenhouse_discovered, greenhouse_drop_counts = filter_discovered_urls(
+        greenhouse_discovered,
+        "Greenhouse",
+        log_lines=log_lines,
+    )
+    lever_discovered, lever_drop_counts = filter_discovered_urls(
+        lever_discovered,
+        "Lever",
+        log_lines=log_lines,
+    )
+    search_discovered, search_drop_counts = filter_discovered_urls(
+        search_discovered,
+        "Search",
+        log_lines=log_lines,
+    )
+
+    greenhouse_before_cap = len(greenhouse_discovered)
+    lever_before_cap = len(lever_discovered)
+    search_before_cap = len(search_discovered)
+
+    if MAX_GREENHOUSE_URLS > 0:
+        greenhouse_discovered = greenhouse_discovered[:MAX_GREENHOUSE_URLS]
+    if MAX_LEVER_URLS > 0:
+        lever_discovered = lever_discovered[:MAX_LEVER_URLS]
+    if MAX_SEARCH_URLS > 0:
+        search_discovered = search_discovered[:MAX_SEARCH_URLS]
+
     all_urls = list(dict.fromkeys(greenhouse_discovered + lever_discovered + search_discovered))
 
+    drop_summary = {
+        "greenhouse": greenhouse_drop_counts,
+        "lever": lever_drop_counts,
+        "search": search_drop_counts,
+    }
+
     log_lines.append("")
-    log_lines.append("Discovery complete.")
-    log_lines.append(f"Greenhouse URLs: {len(greenhouse_discovered)}")
-    log_lines.append(f"Lever URLs: {len(lever_discovered)}")
-    log_lines.append(f"Search URLs: {len(search_discovered)}")
-    log_lines.append(f"Unique total URLs: {len(all_urls)}")
+    log_lines.append(f"Greenhouse kept before cap: {greenhouse_before_cap}")
+    log_lines.append(f"Lever kept before cap: {lever_before_cap}")
+    log_lines.append(f"Search kept before cap: {search_before_cap}")
+    log_lines.append(f"Greenhouse kept after cap: {len(greenhouse_discovered)}")
+    log_lines.append(f"Lever kept after cap: {len(lever_discovered)}")
+    log_lines.append(f"Search kept after cap: {len(search_discovered)}")
+    log_lines.append(f"Total kept after source caps: {len(all_urls)}")
+    log_lines.append(
+        f"Source caps: greenhouse={MAX_GREENHOUSE_URLS}, lever={MAX_LEVER_URLS}, search={MAX_SEARCH_URLS}"
+    )
 
     return {
-        "settings": resolved_settings,
         "greenhouse_urls": greenhouse_discovered,
         "lever_urls": lever_discovered,
         "search_urls": search_discovered,
         "all_urls": all_urls,
-        "url_count": len(all_urls),
         "output": "\n".join(log_lines).strip(),
+        "drop_summary": drop_summary,
     }
 
 
-def main() -> None:
-    result = discover_urls()
-
-    urls = result.get("all_urls", [])
-    save_output_urls(OUTPUT_FILE, urls)
-
-    output = result.get("output", "").strip()
-    if output:
-        print(output)
-
-    print(f"Saved {len(urls)} URLs to {OUTPUT_FILE}")
-
-
 if __name__ == "__main__":
-    main()
+    settings = load_runtime_settings()
+    result = discover_urls(settings)
+    save_output_urls(OUTPUT_FILE, result.get("all_urls", []))
+    print(result.get("output", ""))

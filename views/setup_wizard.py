@@ -176,7 +176,7 @@ def _render_search_step() -> None:
                 "Preferred Locations",
                 value=st.session_state.get("wizard_preferred_locations", ""),
                 height=120,
-                help="Comma-separated values. Example: Dallas, Remote, Seattle",
+                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nYou can leave this blank only if Remote Only is turned on.",
             )
 
             include_keywords = st.text_area(

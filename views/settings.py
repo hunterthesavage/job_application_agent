@@ -358,7 +358,7 @@ def render_search_criteria_tab(settings: dict[str, str]) -> None:
                 "Preferred Locations",
                 value=settings.get("preferred_locations", ""),
                 height=100,
-                help="Comma-separated values",
+                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nUse full structured entries instead of comma-separated fragments.",
             )
 
             include_keywords = st.text_area(
