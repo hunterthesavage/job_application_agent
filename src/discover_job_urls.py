@@ -104,6 +104,27 @@ TITLE_QUERY_EXPANSIONS = {
     ],
 }
 
+GENERIC_SENIORITY_ONLY_TITLES = {
+    "vp",
+    "vice president",
+    "svp",
+    "senior vice president",
+    "head",
+    "head of",
+    "chief",
+    "executive",
+}
+
+TECH_EXEC_SEARCH_FALLBACK_TITLES = [
+    "VP Technology",
+    "VP IT",
+    "CIO",
+    "CTO",
+    "Head of Platform",
+    "Head of AI",
+    "Chief Digital Officer",
+]
+
 STATE_ABBREVIATIONS = {
     "alabama": "al",
     "alaska": "ak",
@@ -324,6 +345,46 @@ def expand_title_query_terms(target_titles: list[str]) -> list[str]:
     return list(dict.fromkeys([safe_text(x) for x in expanded if safe_text(x)]))
 
 
+def expand_search_title_terms(target_titles: list[str]) -> list[str]:
+    """
+    Discovery-search-specific expansion.
+
+    This is intentionally more opinionated than expand_title_query_terms().
+    It helps weak user inputs like 'vp' or 'chief' produce useful discovery
+    queries without changing title matching behavior elsewhere in the system.
+    """
+    expanded: list[str] = []
+
+    for raw_term in target_titles:
+        clean_term = safe_text(raw_term)
+        normalized = normalize_text(clean_term)
+        if not normalized:
+            continue
+
+        if normalized in GENERIC_SENIORITY_ONLY_TITLES:
+            expanded.extend(TECH_EXEC_SEARCH_FALLBACK_TITLES)
+            continue
+
+        if normalized in TITLE_QUERY_EXPANSIONS:
+            expanded.extend(TITLE_QUERY_EXPANSIONS[normalized])
+            continue
+
+        expanded.append(clean_term)
+
+    if not expanded:
+        expanded.extend(TECH_EXEC_SEARCH_FALLBACK_TITLES)
+
+    return dedupe_preserve_order([safe_text(x) for x in expanded if safe_text(x)])
+
+
+def has_generic_seniority_only_title(target_titles: list[str]) -> bool:
+    for raw_term in target_titles:
+        normalized = normalize_text(raw_term)
+        if normalized in GENERIC_SENIORITY_ONLY_TITLES:
+            return True
+    return False
+
+
 def _normalize_location_part(value: str) -> str:
     return " ".join(
         safe_text(value)
@@ -434,14 +495,16 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
     queries: list[str] = []
     ats_site_block = "(site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com OR site:ashbyhq.com OR site:smartrecruiters.com)"
 
-    title_terms = expand_title_query_terms(target_titles or [
+    generic_title_mode = has_generic_seniority_only_title(target_titles)
+
+    title_terms = expand_search_title_terms(target_titles or [
         "VP Technology",
         "VP IT",
         "CIO",
         "CTO",
         "Head of Technology",
     ])
-    title_terms = dedupe_preserve_order(title_terms)[:5]
+    title_terms = dedupe_preserve_order(title_terms)[:6]
 
     location_terms = dedupe_preserve_order(expand_location_query_terms(preferred_locations, remote_only))
     normalized_locations = {normalize_text(x) for x in location_terms}
@@ -470,8 +533,8 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
     keyword_terms = filter_keyword_terms(include_keywords[:2], title_terms)
 
     # Tier 1: strongest ATS-focused exact-ish queries
-    for title in title_terms:
-        for location in location_terms_for_search:
+    for title in title_terms[:4]:
+        for location in location_terms_for_search[:2]:
             parts = [f'"{title}"', f'"{location}"']
             if keyword_terms:
                 parts.append(f'"{keyword_terms[0]}"')
@@ -480,7 +543,7 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
 
     # Tier 2: compact OR query for title family
     if len(title_terms) > 1:
-        title_or = " OR ".join(f'"{title}"' for title in title_terms[:4])
+        title_or = " OR ".join(f'"{title}"' for title in title_terms[:5])
         for location in location_terms_for_search[:2]:
             parts = [f"({title_or})", f'"{location}"', ats_site_block]
             if keyword_terms:
@@ -494,6 +557,15 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
             parts.append(f'"{keyword_terms[0]}"')
         parts.append(ats_site_block)
         queries.append(" ".join(parts))
+
+    # Tier 4: generic-seniority rescue queries
+    if generic_title_mode:
+        domain_or = '"Technology" OR "IT" OR "Digital" OR "Platform" OR "Enterprise Systems" OR "AI"'
+        seniority_or = '"VP" OR "Vice President" OR "Chief" OR "Head of"'
+        for location in location_terms_for_search[:2]:
+            queries.append(
+                f"({seniority_or}) ({domain_or}) " + f'"{location}" {ats_site_block}'
+            )
 
     if remote_only and not preferred_locations:
         queries.append(
