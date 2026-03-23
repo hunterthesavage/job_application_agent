@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections import Counter
 from pathlib import Path
 from urllib.parse import urlparse
 from typing import Any
@@ -185,7 +186,6 @@ def is_probable_job_url(job_url: str) -> tuple[bool, str]:
 
     # Lever
     if "jobs.lever.co" in host:
-        # require at least org + posting slug, and avoid obvious wrappers
         if "jobgether" in lowered:
             return False, "blocked_jobgether_wrapper"
         return (len(path_parts) >= 2, "lever_detail" if len(path_parts) >= 2 else "lever_board_root")
@@ -499,7 +499,6 @@ def _extract_url_title_hint(job_url: str) -> str:
             return True
         return False
 
-    # For ATS URLs, the first meaningful segment is often the company slug.
     ats_hosts = (
         "jobs.lever.co",
         "job-boards.greenhouse.io",
@@ -518,7 +517,6 @@ def _extract_url_title_hint(job_url: str) -> str:
             if not normalized or normalized in ignored:
                 continue
             filtered.append(part)
-        # if the first remaining part looks like an org slug and there is more after it, drop it
         if len(filtered) >= 2:
             filtered = filtered[1:]
         candidate_parts = filtered
@@ -583,7 +581,6 @@ def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[
     normalized_hint = normalize_text(hint)
     hint_tokens = set(tokenize(hint))
 
-    # allow if any expanded target phrase appears in the hint
     for target in expanded_titles:
         normalized_target = normalize_text(target)
         if not normalized_target:
@@ -591,7 +588,6 @@ def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[
         if normalized_target in normalized_hint:
             return True, f"url title hint matched '{target}'"
 
-    # allow if at least one meaningful token overlaps
     target_token_pool = set()
     for target in expanded_titles:
         for token in tokenize(target):
@@ -604,6 +600,100 @@ def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[
 
     return False, f"url title prefilter mismatch: {hint}"
 
+
+def _normalize_preparse_skip_reason(gate_reason: str) -> str:
+    reason = safe_text(gate_reason).lower()
+    if not reason:
+        return "non_job_url"
+    if reason in {"blank_url", "unclassified_non_job"}:
+        return "non_job_url"
+    if reason.startswith("blocked_pattern:") or reason.startswith("blocked_path:"):
+        return "non_job_url"
+    if reason in {
+        "blocked_query_listing",
+        "lever_board_root",
+        "greenhouse_board_root",
+        "ashby_board_root",
+        "smartrecruiters_root",
+        "workday_root",
+        "blocked_generic_host",
+        "blocked_jobgether_wrapper",
+    }:
+        return "non_job_url"
+    return "non_job_url"
+
+
+def _normalize_match_skip_reason(match: dict[str, Any]) -> str:
+    breakdown = match.get("breakdown", {}) or {}
+    title_points = int(breakdown.get("title_points", 0) or 0)
+    exclude_points = int(breakdown.get("exclude_points", 0) or 0)
+    include_points = int(breakdown.get("include_points", 0) or 0)
+    location_passed = bool(match.get("location_filter_passed", False))
+    score = int(match.get("score", 0) or 0)
+
+    if not location_passed:
+        return "location_mismatch"
+    if exclude_points < 0:
+        return "excluded_keyword"
+    if title_points <= 0:
+        return "title_mismatch"
+    if include_points == 0 and score < AUTO_ACCEPT_SCORE:
+        return "below_threshold"
+    return "below_threshold"
+
+
+def _record_skip(
+    skip_counts: Counter,
+    skip_examples: dict[str, str],
+    reason: str,
+    detail: str = "",
+) -> None:
+    normalized = safe_text(reason) or "unknown_skip"
+    skip_counts[normalized] += 1
+    if normalized not in skip_examples and detail:
+        skip_examples[normalized] = safe_text(detail)
+
+
+def _append_skip_summary_lines(
+    output_lines: list[str],
+    skip_counts: Counter,
+    skip_examples: dict[str, str],
+) -> None:
+    if not skip_counts:
+        return
+
+    total_skipped = sum(skip_counts.values())
+    output_lines.append("")
+    output_lines.append("Skip summary:")
+    output_lines.append(f"Total skipped before ingest: {total_skipped}")
+
+    for reason, count in skip_counts.most_common(8):
+        example = safe_text(skip_examples.get(reason, ""))
+        if example:
+            output_lines.append(f"- {reason}: {count} | example: {example}")
+        else:
+            output_lines.append(f"- {reason}: {count}")
+
+
+def _append_discovery_drop_summary_lines(output_lines: list[str], discovery_result: dict[str, Any]) -> None:
+    drop_summary = discovery_result.get("drop_summary", {}) or {}
+    flattened: Counter = Counter()
+
+    for _, bucket in drop_summary.items():
+        if not isinstance(bucket, dict):
+            continue
+        for reason, count in bucket.items():
+            flattened[safe_text(reason)] += int(count or 0)
+
+    if not flattened:
+        return
+
+    output_lines.append("")
+    output_lines.append("Discovery URL drop summary:")
+    for reason, count in flattened.most_common(8):
+        output_lines.append(f"- {reason}: {count}")
+
+
 def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str) -> dict[str, Any]:
     settings = load_settings()
 
@@ -615,27 +705,46 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
     error_count = 0
     output_lines: list[str] = []
 
+    skip_counts: Counter = Counter()
+    skip_examples: dict[str, str] = {}
+
     build_started_at = time.perf_counter()
 
     for job_url in urls:
         output_lines.append(f"Processing: {job_url}")
 
+        current_stage = "url_gate"
         try:
             should_process, gate_reason = is_probable_job_url(job_url)
             if not should_process:
                 output_lines.append(f"Skipped URL quality gate: {gate_reason} | {job_url}")
                 skipped_count += 1
+                _record_skip(
+                    skip_counts,
+                    skip_examples,
+                    _normalize_preparse_skip_reason(gate_reason),
+                    detail=job_url,
+                )
                 continue
 
+            current_stage = "url_title_prefilter"
             title_prefilter_passed, title_prefilter_reason = _cheap_url_title_prefilter(job_url, settings)
             if not title_prefilter_passed:
                 output_lines.append(f"Skipped URL title prefilter: {title_prefilter_reason} | {job_url}")
                 skipped_title_prefilter_count += 1
+                _record_skip(
+                    skip_counts,
+                    skip_examples,
+                    "weak_url_title_match",
+                    detail=job_url,
+                )
                 continue
 
+            current_stage = "page_parse"
             job = create_job_record(job_url)
             setattr(job, "source", source_name)
 
+            current_stage = "match_score"
             match = score_job_match(job, settings)
 
             if not match["should_accept"] and should_force_accept_without_location(job, settings):
@@ -652,8 +761,15 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
                     f"Skipped by match score ({match['score']}): {match['reason_text']}"
                 )
                 skipped_count += 1
+                _record_skip(
+                    skip_counts,
+                    skip_examples,
+                    _normalize_match_skip_reason(match),
+                    detail=f"{safe_text(getattr(job, 'title', ''))} | {job_url}",
+                )
                 continue
 
+            current_stage = "payload_enrichment"
             payload = enrich_job_payload(
                 job,
                 source_hint=source_name,
@@ -674,6 +790,12 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
                         f"{safe_text(payload.get('title', ''))} | "
                         f"{safe_text(payload.get('location', ''))}"
                     )
+                    _record_skip(
+                        skip_counts,
+                        skip_examples,
+                        "duplicate_in_batch",
+                        detail=f"{safe_text(payload.get('title', ''))} | {safe_text(payload.get('job_posting_url', ''))}",
+                    )
                     continue
 
                 accepted_jobs_by_key[batch_key] = payload
@@ -689,6 +811,10 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
         except Exception as exc:
             output_lines.append(f"Error: {exc}")
             error_count += 1
+            if current_stage == "page_parse":
+                _record_skip(skip_counts, skip_examples, "parse_failed", detail=job_url)
+            else:
+                _record_skip(skip_counts, skip_examples, "processing_error", detail=job_url)
 
     build_seconds = time.perf_counter() - build_started_at
 
@@ -714,6 +840,8 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
     output_lines.append(f"Skipped removed: {summary['skipped_removed_count']}")
     output_lines.append(f"Build/validate seconds: {build_seconds:.2f}")
     output_lines.append(f"Ingest seconds: {ingest_seconds:.2f}")
+
+    _append_skip_summary_lines(output_lines, skip_counts, skip_examples)
 
     source_yield_top = summary.get("source_yield_top", [])
     if source_yield_top:
@@ -747,6 +875,7 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
         "error_count": error_count,
         "build_seconds": build_seconds,
         "ingest_seconds": ingest_seconds,
+        "skip_summary": dict(skip_counts),
     }
 
 
@@ -778,6 +907,7 @@ def discover_job_links() -> dict[str, Any]:
         },
         "queries": discover_module.build_google_discovery_queries(settings),
         "plan": discover_module.build_search_plan(settings),
+        "drop_summary": discovery_result.get("drop_summary", {}),
     }
 
 
@@ -807,6 +937,7 @@ def ingest_urls_from_file(file_path: str | Path) -> dict[str, Any]:
             "error_count": 0,
             "build_seconds": 0.0,
             "ingest_seconds": 0.0,
+            "skip_summary": {},
         }
 
     return _build_jobs_from_urls(urls, source_name="Local Pipeline", source_detail=str(path.resolve()))
@@ -843,16 +974,26 @@ def discover_and_ingest() -> dict[str, Any]:
     if discovery_result.get("output"):
         combined_output_parts.append(discovery_result["output"])
 
-    combined_output_parts.append(
-        f"Discovery seconds: {discovery_seconds:.2f}"
-    )
-    combined_output_parts.append(
-        f"Discovered URLs before cap: {original_discovered_count}"
-    )
+    discovery_summary_lines = [
+        f"Discovery seconds: {discovery_seconds:.2f}",
+        f"Discovered URLs before cap: {original_discovered_count}",
+    ]
     if MAX_URLS_PER_RUN > 0:
-        combined_output_parts.append(
+        discovery_summary_lines.append(
             f"URLs after cap: {len(discovered_urls)} (cap {MAX_URLS_PER_RUN})"
         )
+
+    providers = discovery_result.get("providers", {}) or {}
+    if providers:
+        discovery_summary_lines.append(
+            "Provider mix: "
+            f"Greenhouse {int(providers.get('greenhouse', 0) or 0)}, "
+            f"Lever {int(providers.get('lever', 0) or 0)}, "
+            f"Search {int(providers.get('search', 0) or 0)}"
+        )
+
+    _append_discovery_drop_summary_lines(discovery_summary_lines, discovery_result)
+    combined_output_parts.append("\n".join(discovery_summary_lines).strip())
 
     if not discovered_urls:
         combined_output_parts.append(
@@ -882,6 +1023,7 @@ def discover_and_ingest() -> dict[str, Any]:
                 "error_count": 0,
                 "build_seconds": 0.0,
                 "ingest_seconds": 0.0,
+                "skip_summary": {},
             },
         }
 

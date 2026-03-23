@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -12,9 +13,162 @@ from services.pipeline_runtime import (
     ingest_pasted_urls,
     ingest_urls_from_file,
 )
-from services.status import get_system_status
-from services.settings import DEFAULT_SETTINGS, load_settings, save_settings
-from services.ui_busy import app_is_busy, clear_action, get_action, move_action_to_execute, queue_action, stop_busy
+from services.settings import load_settings, save_settings
+from services.ui_busy import (
+    app_is_busy,
+    clear_action,
+    get_action,
+    move_action_to_execute,
+    queue_action,
+    stop_busy,
+)
+
+
+def _inject_pipeline_css() -> None:
+    st.markdown(
+        """
+        <style>
+            .pipeline-card {
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 22px;
+                background: linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.98) 100%);
+                box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+                padding: 1.15rem 1.15rem 1rem 1.15rem;
+                margin-bottom: 1rem;
+            }
+
+            .pipeline-ops-card {
+                position: relative;
+                overflow: hidden;
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 24px;
+                background:
+                    radial-gradient(circle at top right, rgba(59,130,246,0.16), transparent 28%),
+                    linear-gradient(180deg, rgba(15,22,38,0.98) 0%, rgba(9,13,22,0.99) 100%);
+                box-shadow: 0 20px 54px rgba(0,0,0,0.26);
+                padding: 1.25rem 1.25rem 1.05rem 1.25rem;
+                margin-bottom: 1rem;
+            }
+
+            .pipeline-ops-kicker {
+                font-size: 0.82rem;
+                font-weight: 800;
+                letter-spacing: 0.10em;
+                text-transform: uppercase;
+                color: rgba(147,197,253,0.94);
+                margin-bottom: 0.42rem;
+            }
+
+            .pipeline-ops-title {
+                font-size: 1.72rem;
+                font-weight: 840;
+                line-height: 1.02;
+                color: rgba(255,255,255,0.98);
+                letter-spacing: -0.03em;
+                margin-bottom: 0.35rem;
+            }
+
+            .pipeline-ops-copy {
+                font-size: 0.98rem;
+                line-height: 1.5;
+                color: rgba(255,255,255,0.76);
+                margin-bottom: 1rem;
+                max-width: 920px;
+            }
+
+            .pipeline-status-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 0.8rem;
+                margin-bottom: 0.8rem;
+            }
+
+            .pipeline-status-tile {
+                border-radius: 18px;
+                border: 1px solid rgba(255,255,255,0.07);
+                background: linear-gradient(180deg, rgba(17,24,39,0.94) 0%, rgba(11,16,26,0.98) 100%);
+                padding: 0.9rem 0.95rem 0.85rem 0.95rem;
+                box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+            }
+
+            .pipeline-status-label {
+                font-size: 0.80rem;
+                font-weight: 700;
+                color: rgba(255,255,255,0.68);
+                margin-bottom: 0.35rem;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+            }
+
+            .pipeline-status-value {
+                font-size: 1.30rem;
+                font-weight: 820;
+                color: rgba(255,255,255,0.98);
+                line-height: 1.05;
+                letter-spacing: -0.02em;
+            }
+
+            .pipeline-card-title {
+                font-size: 1.08rem;
+                font-weight: 800;
+                color: rgba(255,255,255,0.97);
+                margin-bottom: 0.15rem;
+                letter-spacing: -0.02em;
+            }
+
+            .pipeline-card-copy {
+                font-size: 0.93rem;
+                color: rgba(255,255,255,0.72);
+                margin-bottom: 0.85rem;
+            }
+
+            .pipeline-secondary-actions-note {
+                font-size: 0.86rem;
+                color: rgba(255,255,255,0.68);
+                margin-top: 0.1rem;
+                margin-bottom: 0.75rem;
+            }
+
+            .pipeline-diagnostic-line {
+                padding: 0.55rem 0.75rem;
+                border-radius: 14px;
+                background: rgba(255,255,255,0.03);
+                border: 1px solid rgba(255,255,255,0.06);
+                margin-bottom: 0.55rem;
+                color: rgba(255,255,255,0.90);
+                font-size: 0.92rem;
+            }
+
+            .pipeline-takeaway {
+                padding: 0.8rem 0.95rem;
+                border-radius: 16px;
+                background: rgba(59,130,246,0.10);
+                border: 1px solid rgba(59,130,246,0.20);
+                color: rgba(219,234,254,0.96);
+                font-size: 0.93rem;
+                margin-bottom: 0.75rem;
+            }
+
+            @media (max-width: 1100px) {
+                .pipeline-status-grid {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+            }
+
+            @media (max-width: 680px) {
+                .pipeline-status-grid {
+                    grid-template-columns: 1fr;
+                }
+
+                .pipeline-ops-title {
+                    font-size: 1.38rem;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def _str_to_bool(value: str, default: bool = False) -> bool:
     if value is None:
@@ -37,70 +191,6 @@ def _humanize_pipeline_status(value: str) -> str:
     if normalized in mapping:
         return mapping[normalized]
     return str(value or "Idle").replace("_", " ").strip().title() or "Idle"
-
-
-def _render_run_inputs() -> None:
-    settings = load_settings()
-
-    with st.form("pipeline_run_inputs_form"):
-        st.markdown("### Run Inputs")
-        st.caption("Update the search inputs used by Find and Add Jobs and Find Job Links Only.")
-
-        c1, c2 = st.columns(2)
-
-        with c1:
-            target_titles = st.text_area(
-                "Target Titles",
-                value=settings.get("target_titles", ""),
-                height=100,
-                help="Comma-separated values",
-            )
-
-            preferred_locations = st.text_area(
-                "Preferred Locations",
-                value=settings.get("preferred_locations", ""),
-                height=100,
-                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nUse full structured entries instead of comma-separated fragments.",
-            )
-
-            include_keywords = st.text_area(
-                "Include Keywords",
-                value=settings.get("include_keywords", ""),
-                height=100,
-                help="Comma-separated values",
-            )
-
-        with c2:
-            exclude_keywords = st.text_area(
-                "Exclude Keywords",
-                value=settings.get("exclude_keywords", ""),
-                height=100,
-                help="Comma-separated values",
-            )
-
-            remote_only = st.toggle(
-                "Remote Only",
-                value=_str_to_bool(settings.get("remote_only", "true"), default=True),
-                help="Include only roles that appear remote-friendly.",
-            )
-
-            st.caption("Minimum Compensation is not shown here yet because it is not currently a primary live run control in this workflow.")
-
-        save_run_inputs = st.form_submit_button("Save Run Inputs", type="primary", use_container_width=False)
-
-        if save_run_inputs:
-            save_settings(
-                {
-                    "target_titles": target_titles,
-                    "preferred_locations": preferred_locations,
-                    "include_keywords": include_keywords,
-                    "exclude_keywords": exclude_keywords,
-                    "remote_only": "true" if remote_only else "false",
-                }
-            )
-            st.success("Run inputs saved.")
-            st.rerun()
-
 
 
 def _set_flash(level: str, message: str) -> None:
@@ -138,27 +228,9 @@ def _job_urls_file_exists() -> bool:
 
 
 def _is_first_run_pipeline_state() -> bool:
-    status = get_system_status()
-    jobs_total = str(status.get("jobs_total", "0")).strip()
-    last_import_at = str(status.get("last_import_at", "—")).strip()
-    return jobs_total == "0" and last_import_at == "—"
-
-
-def _render_first_run_pipeline_guidance() -> None:
-    if not _is_first_run_pipeline_state():
-        return
-
-    st.info(
-        """
-No jobs have been added yet.
-
-A good first step is:
-1. Review or update the Run Inputs below
-2. Click **Find and Add Jobs**
-3. Review the Search Summary
-4. Or paste a few job URLs manually to seed your list
-        """
-    )
+    last_result = st.session_state.get("pipeline_last_result")
+    latest_run = _get_latest_run()
+    return not bool(last_result) and latest_run is None
 
 
 def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
@@ -259,10 +331,8 @@ def _build_ingest_flash(result: dict, source_label: str) -> tuple[str, str]:
 
 def _build_discover_only_flash(result: dict) -> tuple[str, str]:
     url_count = int(result.get("url_count", 0) or 0)
-
     if url_count > 0:
         return "success", f"✓ Job link discovery complete: {url_count} URLs found"
-
     return "warning", "No job URLs were discovered."
 
 
@@ -406,7 +476,6 @@ def _render_recent_runs() -> None:
         trust_text = ", ".join([f"{k}: {v}" for k, v in trust_counts.items()])
 
         inserted_count = int(run.get("inserted_count", 0) or 0)
-        updated_count = int(run.get("updated_count", 0) or 0)
         net_new_count = int(summary.get("net_new_count", inserted_count) or 0)
         rediscovered_count = int(summary.get("rediscovered_count", 0) or 0)
         duplicate_in_run_count = int(summary.get("duplicate_in_run_count", 0) or 0)
@@ -448,21 +517,7 @@ def _format_elapsed(start_iso: str) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def _ensure_pipeline_run_state() -> None:
-    if "pipeline_run_active" not in st.session_state:
-        st.session_state.pipeline_run_active = False
-    if "pipeline_run_started_at" not in st.session_state:
-        st.session_state.pipeline_run_started_at = ""
-    if "pipeline_run_status" not in st.session_state:
-        st.session_state.pipeline_run_status = "Idle"
-    if "pipeline_run_output" not in st.session_state:
-        st.session_state.pipeline_run_output = ""
-
-
-
 def _parse_sqlite_datetime(value: str):
-    from datetime import datetime as _dt
-
     text = str(value or "").strip()
     if not text:
         return None
@@ -476,7 +531,7 @@ def _parse_sqlite_datetime(value: str):
 
     for candidate in candidates:
         try:
-            return _dt.fromisoformat(candidate)
+            return datetime.fromisoformat(candidate)
         except Exception:
             pass
 
@@ -488,24 +543,11 @@ def _parse_sqlite_datetime(value: str):
     ]
     for fmt in formats:
         try:
-            return _dt.strptime(text, fmt)
+            return datetime.strptime(text, fmt)
         except Exception:
             pass
 
     return None
-
-
-
-def _format_seconds_duration(value) -> str:
-    try:
-        total_seconds = max(0, int(value or 0))
-    except Exception:
-        return "Unknown"
-
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 def _format_run_duration(started_at: str, completed_at: str) -> str:
@@ -525,6 +567,349 @@ def _format_run_duration(started_at: str, completed_at: str) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
+def _get_latest_run() -> dict | None:
+    runs = get_recent_ingestion_runs(limit=1)
+    if not runs:
+        return None
+    return runs[0]
+
+
+def _extract_line_items(output: str, header: str) -> list[str]:
+    lines = output.splitlines()
+    collected: list[str] = []
+    active = False
+
+    for raw in lines:
+        line = str(raw).rstrip()
+        if not active:
+            if line.strip() == header:
+                active = True
+            continue
+
+        if not line.strip():
+            break
+
+        if not line.lstrip().startswith("- "):
+            break
+
+        collected.append(line.strip()[2:])
+
+    return collected
+
+
+def _build_diagnostics_from_last_result() -> dict[str, Any]:
+    last_result = st.session_state.get("pipeline_last_result") or {}
+    output = str(last_result.get("output", "") or "")
+
+    discovery_lines = _extract_line_items(output, "Discovery URL drop summary:")
+    skip_lines = _extract_line_items(output, "Skip summary:")
+
+    takeaway = ""
+    lower_output = output.lower()
+
+    if any("location_mismatch" in line for line in skip_lines):
+        takeaway = "Most post-parse rejects came from location mismatch. That suggests the run was limited more by location strictness than by title relevance."
+    elif any("title_mismatch" in line for line in skip_lines):
+        takeaway = "Most post-parse rejects came from title mismatch. That suggests the search is discovering jobs, but they are drifting off your intended role family."
+    elif any("weak_url_title_match" in line for line in skip_lines):
+        takeaway = "A meaningful share of candidates are being dropped by the URL title prefilter. That suggests the current prefilter may be too brittle for some ATS URL patterns."
+    elif "blocked_domain" in lower_output:
+        takeaway = "Discovery is still pulling in wrapper and ad-style links from search. The main discovery issue in this run appears to be noisy source quality before parsing."
+    elif discovery_lines or skip_lines:
+        takeaway = "The run completed, but the biggest limiter is still hidden in the skip and drop mix rather than in ingest errors."
+
+    return {
+        "discovery_lines": discovery_lines[:5],
+        "skip_lines": skip_lines[:5],
+        "takeaway": takeaway,
+    }
+
+
+def _render_pipeline_operations_card() -> None:
+    latest_run = _get_latest_run()
+    busy = app_is_busy()
+
+    current_status = "Running" if busy else "Ready"
+    current_action = ""
+    elapsed = "—"
+
+    if busy:
+        current_action = _humanize_pipeline_status(st.session_state.get("_app_busy_label", "Working"))
+        elapsed = _format_elapsed(st.session_state.get("pipeline_run_started_at", ""))
+    elif latest_run:
+        current_action = _humanize_pipeline_status(latest_run.get("status", "Idle"))
+        elapsed = _format_run_duration(
+            str(latest_run.get("started_at", "") or ""),
+            str(latest_run.get("completed_at", "") or ""),
+        )
+    else:
+        current_action = "Waiting for first run"
+
+    seen = 0
+    net_new = 0
+    errors = 0
+
+    if latest_run:
+        details = latest_run.get("details", {}) or {}
+        seen = int(latest_run.get("total_seen", 0) or 0)
+        net_new = int(details.get("net_new_count", latest_run.get("inserted_count", 0) or 0) or 0)
+        errors = int(latest_run.get("error_count", 0) or 0)
+
+    st.markdown(
+        """
+        <div class="pipeline-ops-card">
+            <div class="pipeline-ops-kicker">Pipeline operations</div>
+            <div class="pipeline-ops-title">Run discovery, review signal quality, and keep your search moving.</div>
+            <div class="pipeline-ops-copy">
+                This page is your command center for finding new roles, importing job links, and checking whether the latest run produced useful results.
+            </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div class="pipeline-status-grid">
+            <div class="pipeline-status-tile">
+                <div class="pipeline-status-label">Current state</div>
+                <div class="pipeline-status-value">{current_status}</div>
+            </div>
+            <div class="pipeline-status-tile">
+                <div class="pipeline-status-label">Run focus</div>
+                <div class="pipeline-status-value">{current_action}</div>
+            </div>
+            <div class="pipeline-status-tile">
+                <div class="pipeline-status-label">Last duration</div>
+                <div class="pipeline-status-value">{elapsed}</div>
+            </div>
+            <div class="pipeline-status-tile">
+                <div class="pipeline-status-label">Last run health</div>
+                <div class="pipeline-status-value">{net_new} net new / {errors} errors</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if busy:
+        st.info(f"Working: {current_action} | Elapsed: {elapsed}")
+        if elapsed >= "00:05:00":
+            st.warning("This run is taking longer than usual. If the UI appears stuck after a while, you can use Reset Run State below.")
+        if st.button("Reset Run State", key="reset_pipeline_run_state_ops"):
+            st.session_state["pipeline_run_started_at"] = ""
+            stop_busy()
+            clear_action("pipeline")
+            st.rerun()
+    else:
+        st.caption(f"Latest processed URLs: {seen}")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_first_run_pipeline_guidance() -> None:
+    if not _is_first_run_pipeline_state():
+        return
+
+    st.info(
+        """
+No jobs have been added yet.
+
+A good first step is:
+1. Review or update the Run Inputs below
+2. Click **Find and Add Jobs**
+3. Review the diagnostics and search summary
+4. Or paste a few job URLs manually to seed your list
+        """
+    )
+
+
+def _render_run_inputs() -> None:
+    settings = load_settings()
+
+    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
+    st.markdown('<div class="pipeline-card-title">Run Inputs</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="pipeline-card-copy">Update the search inputs used by Find and Add Jobs and Find Job Links Only.</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.form("pipeline_run_inputs_form"):
+        c1, c2 = st.columns(2)
+
+        with c1:
+            target_titles = st.text_area(
+                "Target Titles",
+                value=settings.get("target_titles", ""),
+                height=100,
+                help="Comma-separated values",
+            )
+
+            preferred_locations = st.text_area(
+                "Preferred Locations",
+                value=settings.get("preferred_locations", ""),
+                height=100,
+                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nUse full structured entries instead of comma-separated fragments.",
+            )
+
+            include_keywords = st.text_area(
+                "Include Keywords",
+                value=settings.get("include_keywords", ""),
+                height=100,
+                help="Comma-separated values",
+            )
+
+        with c2:
+            exclude_keywords = st.text_area(
+                "Exclude Keywords",
+                value=settings.get("exclude_keywords", ""),
+                height=100,
+                help="Comma-separated values",
+            )
+
+            remote_only = st.toggle(
+                "Remote Only",
+                value=_str_to_bool(settings.get("remote_only", "true"), default=True),
+                help="Include only roles that appear remote-friendly.",
+            )
+
+            st.caption("Minimum Compensation is not shown here yet because it is not currently a primary live run control in this workflow.")
+
+        save_run_inputs = st.form_submit_button("Save Run Inputs", type="primary", use_container_width=False)
+
+        if save_run_inputs:
+            save_settings(
+                {
+                    "target_titles": target_titles,
+                    "preferred_locations": preferred_locations,
+                    "include_keywords": include_keywords,
+                    "exclude_keywords": exclude_keywords,
+                    "remote_only": "true" if remote_only else "false",
+                }
+            )
+            st.success("Run inputs saved.")
+            st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_action_deck() -> None:
+    busy = app_is_busy()
+    manual_urls = st.session_state.get("pipeline_manual_urls", "")
+
+    left, right = st.columns([1.25, 1])
+
+    with left:
+        st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
+        st.markdown('<div class="pipeline-card-title">Primary Run Action</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="pipeline-card-copy">Use this when you want the app to discover job links, validate them, score them, and add matching roles into your local system.</div>',
+            unsafe_allow_html=True,
+        )
+
+        if st.button("Find and Add Jobs", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
+            st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+            queue_action("pipeline", "discover_and_ingest", label="Find and Add Jobs")
+            st.rerun()
+
+        st.markdown(
+            '<div class="pipeline-secondary-actions-note">Default path for most runs. Best for normal day-to-day discovery.</div>',
+            unsafe_allow_html=True,
+        )
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Find Job Links Only", use_container_width=True, disabled=busy, key="pipeline_discover_only"):
+                st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+                queue_action("pipeline", "discover_only", label="Find Job Links Only")
+                st.rerun()
+        with c2:
+            if st.button("Add Saved Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_saved"):
+                st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+                queue_action("pipeline", "ingest_saved", label="Add Saved Job Links")
+                st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
+        st.markdown('<div class="pipeline-card-title">Manual Import</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="pipeline-card-copy">Paste one job URL per line when you want to seed the system manually or test specific postings.</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.text_area(
+            "Paste job links",
+            key="pipeline_manual_urls",
+            height=170,
+            placeholder="Paste one job URL per line",
+        )
+
+        if st.button("Add Pasted Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_pasted"):
+            st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+            queue_action(
+                "pipeline",
+                "ingest_pasted",
+                payload={"manual_urls": manual_urls},
+                label="Add Pasted Job Links",
+            )
+            st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_run_diagnostics_card() -> None:
+    last_result = st.session_state.get("pipeline_last_result")
+    if not last_result:
+        return
+
+    diagnostics = _build_diagnostics_from_last_result()
+    discovery_lines = diagnostics.get("discovery_lines", [])
+    skip_lines = diagnostics.get("skip_lines", [])
+    takeaway = diagnostics.get("takeaway", "")
+
+    if not discovery_lines and not skip_lines and not takeaway:
+        return
+
+    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
+    st.markdown('<div class="pipeline-card-title">Run Diagnostics</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="pipeline-card-copy">A cleaner summary of what held the most recent run back.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if takeaway:
+        st.markdown(f'<div class="pipeline-takeaway">{takeaway}</div>', unsafe_allow_html=True)
+
+    if discovery_lines:
+        st.markdown("**Top discovery drop reasons**")
+        for line in discovery_lines:
+            st.markdown(f'<div class="pipeline-diagnostic-line">{line}</div>', unsafe_allow_html=True)
+
+    if skip_lines:
+        st.markdown("**Top post-parse skip reasons**")
+        for line in skip_lines:
+            st.markdown(f'<div class="pipeline-diagnostic-line">{line}</div>', unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_last_result_card() -> None:
+    last_result = st.session_state.get("pipeline_last_result")
+    if not last_result:
+        return
+
+    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
+    st.markdown('<div class="pipeline-card-title">Last Pipeline Result</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="pipeline-card-copy">Expanded raw output from the most recent pipeline action.</div>',
+        unsafe_allow_html=True,
+    )
+    with st.expander("Open last result", expanded=False):
+        _render_result(last_result)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def _render_last_run_monitor() -> None:
     runs = get_recent_ingestion_runs(limit=1)
     if not runs:
@@ -542,8 +927,6 @@ def _render_last_run_monitor() -> None:
     total_seen = run.get("total_seen", 0)
     inserted_count = run.get("inserted_count", 0)
     updated_count = run.get("updated_count", 0)
-    skipped_removed_count = run.get("skipped_removed_count", 0)
-    skipped_invalid_count = run.get("skipped_invalid_count", 0)
     error_count = run.get("error_count", 0)
 
     net_new_count = details.get("net_new_count", inserted_count) if isinstance(details, dict) else inserted_count
@@ -553,110 +936,77 @@ def _render_last_run_monitor() -> None:
     source_yield_top = details.get("source_yield_top", []) if isinstance(details, dict) else []
     source_dominance = details.get("source_dominance", {}) if isinstance(details, dict) else {}
 
-    with st.expander("Last Run Monitor", expanded=False):
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Run ID", run_id if run_id != "" else "Unknown")
-        col2.metric("Status", _humanize_pipeline_status(status))
-        col3.metric("Ingest Duration", ingest_duration)
+    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
+    st.markdown('<div class="pipeline-card-title">Last Run Monitor</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="pipeline-card-copy">Core ingest metrics and source mix from the most recent completed run.</div>',
+        unsafe_allow_html=True,
+    )
 
-        col4, col5, col6, col7 = st.columns(4)
-        col4.metric("Total Seen", total_seen)
-        col5.metric("Inserted", inserted_count)
-        col6.metric("Updated", updated_count)
-        col7.metric("Errors", error_count)
+    top1, top2, top3 = st.columns(3)
+    top1.metric("Run ID", run_id if run_id != "" else "Unknown")
+    top2.metric("Status", _humanize_pipeline_status(status))
+    top3.metric("Duration", ingest_duration)
 
-        col8, col9, col10 = st.columns(3)
-        col8.metric("Net New", net_new_count)
-        col9.metric("Rediscovered", rediscovered_count)
-        col10.metric("Duplicate In Run", duplicate_in_run_count)
+    mid1, mid2, mid3, mid4 = st.columns(4)
+    mid1.metric("Total Seen", total_seen)
+    mid2.metric("Inserted", inserted_count)
+    mid3.metric("Updated", updated_count)
+    mid4.metric("Errors", error_count)
 
-        st.caption(f"Ingest started: {started_at or 'Unknown'} | Ingest completed: {completed_at or 'Unknown'}")
+    low1, low2, low3 = st.columns(3)
+    low1.metric("Net New", net_new_count)
+    low2.metric("Rediscovered", rediscovered_count)
+    low3.metric("Duplicate In Run", duplicate_in_run_count)
 
-        extra_summary = []
-        if skipped_removed_count:
-            extra_summary.append(f"Skipped removed: {skipped_removed_count}")
-        if skipped_invalid_count:
-            extra_summary.append(f"Skipped invalid: {skipped_invalid_count}")
-        if extra_summary:
-            st.caption(" | ".join(extra_summary))
+    st.caption(f"Ingest started: {started_at or 'Unknown'} | Ingest completed: {completed_at or 'Unknown'}")
 
-        if source_dominance.get("flag"):
-            st.warning(f"Dominance warning: {source_dominance.get('reason', '')}")
-        else:
-            top_source_root = ""
-            top_source_jobs = 0
-            if source_yield_top:
-                first = source_yield_top[0]
-                top_source_root = str(first.get("source_root", "") or "")
-                top_source_jobs = int(first.get("job_count", 0) or 0)
-            if top_source_root:
-                st.caption(f"Top source this run: {top_source_root} ({top_source_jobs} jobs)")
+    if source_dominance.get("flag"):
+        st.warning(f"Dominance warning: {source_dominance.get('reason', '')}")
+    elif source_yield_top:
+        first = source_yield_top[0]
+        top_source_root = str(first.get("source_root", "") or "")
+        top_source_jobs = int(first.get("job_count", 0) or 0)
+        if top_source_root:
+            st.caption(f"Top source this run: {top_source_root} ({top_source_jobs} jobs)")
 
-        if source_yield_top:
-            st.markdown("**Top sources this run**")
+    if source_yield_top:
+        with st.expander("Top sources this run", expanded=False):
             for row in source_yield_top[:5]:
                 ats_type = str(row.get("ats_type", "Unknown") or "Unknown")
                 source_root = str(row.get("source_root", "unknown") or "unknown")
                 job_count = int(row.get("job_count", 0) or 0)
                 st.write(f"- {ats_type} | {source_root} | {job_count} jobs")
 
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 def render_pipeline() -> None:
     _process_pending_action_before_render()
+    _inject_pipeline_css()
 
     st.subheader("Pipeline")
-    st.caption("Run discovery, import job links, and monitor the health of your source mix.")
+    st.caption("Control discovery, imports, diagnostics, and run visibility from one place.")
 
-    _render_last_run_monitor()
-
-    if st.session_state.get("pipeline_run_active", False):
-        elapsed = _format_elapsed(st.session_state.get("pipeline_run_started_at", ""))
-        current_status = _humanize_pipeline_status(st.session_state.get("pipeline_run_status", "Idle"))
-        st.info(f"Working: {current_status} | Elapsed: {elapsed}")
-        if elapsed >= "00:05:00":
-            st.warning("This run is taking longer than usual. If the UI appears stuck after a while, you can use Reset Run State below.")
-
-        if st.button("Reset Run State", key="reset_pipeline_run_state"):
-            st.session_state.pipeline_run_active = False
-            st.session_state.pipeline_run_started_at = ""
-            st.session_state.pipeline_run_status = "Idle"
-            st.rerun()
-
+    _render_pipeline_operations_card()
     _render_flash()
     _render_first_run_pipeline_guidance()
+    _render_action_deck()
+    _render_run_diagnostics_card()
     _render_run_inputs()
+    _render_last_run_monitor()
+    _render_last_result_card()
 
-    busy = app_is_busy()
+    with st.expander("Search Summary", expanded=False):
+        _render_search_summary()
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        if st.button("Find and Add Jobs", use_container_width=True, disabled=busy):
-            queue_action("pipeline", "discover_and_ingest", label="Find and Add Jobs")
-            st.rerun()
-    with col2:
-        if st.button("Find Job Links Only", use_container_width=True, disabled=busy):
-            queue_action("pipeline", "discover_only", label="Find Job Links Only")
-            st.rerun()
-    with col3:
-        if st.button("Add Saved Job Links", use_container_width=True, disabled=busy):
-            queue_action("pipeline", "ingest_saved", label="Add Saved Job Links")
-            st.rerun()
-    with col4:
-        manual_urls = st.session_state.get("pipeline_manual_urls", "")
-        if st.button("Add Pasted Job Links", use_container_width=True, disabled=busy):
-            queue_action("pipeline", "ingest_pasted", payload={"manual_urls": manual_urls}, label="Add Pasted Job Links")
-            st.rerun()
+    with st.expander("Source Registry", expanded=False):
+        _render_source_registry_visibility()
 
-    st.text_area("Paste job links", key="pipeline_manual_urls", height=120, placeholder="Paste one job URL per line")
+    with st.expander("Recent Job Runs", expanded=False):
+        _render_recent_runs()
 
-    last_result = st.session_state.get("pipeline_last_result")
-    if last_result:
-        with st.expander("Last pipeline result", expanded=False):
-            _render_result(last_result)
-
-    _render_search_summary()
-    _render_source_registry_visibility()
-    _render_recent_runs()
-    _render_google_search_links()
+    with st.expander("Fallback Search Links", expanded=False):
+        _render_google_search_links()
 
     _advance_pending_action_after_render()
