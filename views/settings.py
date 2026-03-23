@@ -4,7 +4,7 @@ import subprocess
 
 import streamlit as st
 
-from config import BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
+from config import APP_NAME, APP_VERSION, BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
 from services.backup import backup_database, restore_latest_backup
 from services.health import run_health_check
 from services.openai_key import (
@@ -366,6 +366,7 @@ def render_system_status() -> None:
     status = get_system_status()
 
     st.markdown("### System Status")
+    st.caption(f"{APP_NAME} version {APP_VERSION}")
     st.caption(f"Database path: {DATABASE_PATH}")
 
     c1, c2, c3, c4 = st.columns(4)

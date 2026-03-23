@@ -3,7 +3,7 @@ import os
 
 
 APP_NAME = "Job Application Agent"
-APP_VERSION = "v1.3"
+APP_VERSION = "1.0.0"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
