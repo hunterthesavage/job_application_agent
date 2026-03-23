@@ -142,74 +142,7 @@ def initialize_app_once() -> None:
 
 
 def maybe_run_wizard_discovery_bootstrap() -> None:
-    if not st.session_state.get("_wizard_run_discovery_on_load", False):
-        return
-
-    before_status = get_system_status()
-    before_jobs = _safe_int(before_status.get("jobs_total", 0))
-
-    st.markdown(
-        """
-        <div style="
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 22px;
-            background: linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.98) 100%);
-            box-shadow: 0 18px 48px rgba(0,0,0,0.24);
-            padding: 1.25rem 1.35rem;
-            margin-top: 0.6rem;
-            margin-bottom: 1rem;
-        ">
-            <div style="font-size:1.25rem;font-weight:800;color:rgba(255,255,255,0.96);margin-bottom:0.35rem;">
-                Casting the net and shaking the ATS trees...
-            </div>
-            <div style="font-size:0.98rem;color:rgba(255,255,255,0.78);">
-                Running your first discovery and import now.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.spinner("Finding and adding jobs..."):
-        result = subprocess.run(
-            [sys.executable, "-m", "src.discover_and_ingest"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-    after_status = get_system_status()
-    after_jobs = _safe_int(after_status.get("jobs_total", 0))
-    added_count = max(after_jobs - before_jobs, 0)
-
-    st.session_state["_wizard_run_discovery_on_load"] = False
-
-    if result.returncode == 0:
-        if after_jobs > 0:
-            display_count = added_count if added_count > 0 else after_jobs
-            st.session_state["_post_wizard_run_message"] = {
-                "kind": "success",
-                "text": f"First discovery finished. {display_count} job(s) are ready to review.",
-            }
-            st.session_state["top_nav_selection"] = "New Roles"
-        else:
-            st.session_state["_post_wizard_run_message"] = {
-                "kind": "info",
-                "text": "Discovery finished, but no jobs were added yet. Review Pipeline results, adjust Run Inputs in Pipeline, or try manual URLs.",
-            }
-            st.session_state["top_nav_selection"] = "Pipeline"
-    else:
-        stderr_text = (result.stderr or "").strip()
-        stdout_text = (result.stdout or "").strip()
-        detail = stderr_text or stdout_text or "Unknown discovery error."
-
-        st.session_state["_post_wizard_run_message"] = {
-            "kind": "error",
-            "text": f"Discovery failed. {detail}",
-        }
-        st.session_state["top_nav_selection"] = "Pipeline"
-
-    st.rerun()
+    return
 
 
 def render_post_wizard_message() -> None:
@@ -260,10 +193,6 @@ def main() -> None:
 
     initialize_top_nav(default_value="New Roles")
     selected_view = render_top_nav()
-
-    if selected_view == "Pipeline" and st.session_state.get("_wizard_run_discovery_on_load", False):
-        maybe_run_wizard_discovery_bootstrap()
-        return
 
     render_post_wizard_message()
 
