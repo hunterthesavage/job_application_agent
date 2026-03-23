@@ -172,82 +172,6 @@ def infer_role_family(title: str) -> str:
     return "Adjacent Near-Exec"
 
 
-def passes_seniority_gate(title: str) -> bool:
-    lowered = title.lower()
-    seniority_terms = [
-        "vp",
-        "vice president",
-        "svp",
-        "senior vice president",
-        "head of",
-        "chief",
-        "cto",
-        "cio",
-        "coo",
-    ]
-    return any(term in lowered for term in seniority_terms)
-
-
-def passes_domain_gate(title: str) -> bool:
-    lowered = title.lower()
-    domain_terms = [
-        "technology",
-        "it",
-        "information",
-        "digital",
-        "platform",
-        "ai",
-        "artificial intelligence",
-        "product technology",
-        "enterprise systems",
-        "enterprise applications",
-        "business technology",
-        "business systems",
-        "information security",
-        "cybersecurity",
-        "security",
-        "data",
-        "machine learning",
-        "ml",
-        "applications",
-        "infrastructure",
-        "engineering platform",
-    ]
-    return any(term in lowered for term in domain_terms)
-
-
-def passes_strict_title_gate(title: str) -> bool:
-    lowered = title.lower()
-
-    rejected_terms = [
-        "director",
-        "senior director",
-        "manager",
-        "principal",
-        "lead",
-        "staff ",
-        "counsel",
-        "recruiting",
-        "sales",
-        "tax",
-        "design",
-        "safety",
-    ]
-    if any(term in lowered for term in rejected_terms):
-        return False
-
-    return passes_seniority_gate(title) and passes_domain_gate(title)
-
-
-def passes_settings_title_gate(title: str, settings: dict[str, str]) -> bool:
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
-    if not target_titles:
-        return True
-
-    lowered = title.lower()
-    return any(term.lower() in lowered for term in target_titles)
-
-
 def extract_json_ld_candidates(soup: BeautifulSoup) -> list[dict]:
     candidates = []
 
@@ -286,7 +210,6 @@ def flatten_location_value(value) -> list[str]:
         return results
 
     if isinstance(value, dict):
-        # Common JobPosting patterns
         address = value.get("address")
         if isinstance(address, dict):
             parts = [
@@ -536,69 +459,19 @@ def infer_dfw_match(location: str) -> str:
     return "No"
 
 
-def passes_strict_location_gate(location: str) -> bool:
-    remote_type = infer_remote_type(location)
-
-    if remote_type in {"Fully Remote", "Dallas / DFW"}:
-        return True
-
-    if location == "Unknown":
-        return True
-
-    return False
-
-
-def passes_settings_location_gate(location: str, settings: dict[str, str]) -> bool:
-    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
-    remote_only = settings.get("remote_only", "false").lower() == "true"
-
-    lowered = location.lower()
-
-    if remote_only:
-        if "remote" in lowered:
-            return True
-        if location == "Unknown":
-            return True
-        return False
-
-    if preferred_locations:
-        if any(term.lower() in lowered for term in preferred_locations):
-            return True
-        return False
-
-    return True
-
-
-def passes_settings_exclude_gate(title: str, company: str, location: str, text: str, settings: dict[str, str]) -> bool:
-    exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
-    if not exclude_keywords:
-        return True
-
-    searchable_text = " ".join([title, company, location, text]).lower()
-    return not any(keyword.lower() in searchable_text for keyword in exclude_keywords)
-
-
 def infer_validation_status(title: str, location: str) -> tuple[str, str]:
+    """
+    Lightweight parse-quality signal, not final acceptance policy.
+
+    This answers:
+    - Did we extract a plausible title?
+    - Did we extract a plausible location or remote signal?
+
+    Final candidate acceptance belongs to pipeline_runtime.py.
+    """
     normalized = normalize_title(title)
-    role_family = infer_role_family(title)
-
-    allowed_role_families = {
-        "VP Technology",
-        "VP IT",
-        "CIO",
-        "COO",
-        "Head of AI",
-        "Head of Platform",
-        "VP Product Technology",
-        "Chief Digital Officer",
-        "CTO",
-        "SVP Technology",
-        "SVP IT",
-        "Adjacent Near-Exec",
-    }
-
+    valid_title = len(normalized) > 3
     valid_location = infer_remote_type(location) in {"Fully Remote", "Dallas / DFW"} or location == "Unknown"
-    valid_title = role_family in allowed_role_families and len(normalized) > 3
 
     if valid_title and valid_location:
         return "Validated", "Medium"
@@ -654,6 +527,12 @@ def evaluate_compensation_status(comp_text: str) -> str:
 
 
 def rough_fit_score(title: str, location: str, url: str, text: str) -> tuple[int, str, str]:
+    """
+    Lightweight descriptive fit signal for the record.
+
+    This is not the final acceptance engine. Final policy belongs in
+    services/pipeline_runtime.py.
+    """
     score = 0
     reasons = []
     risks = []
@@ -730,6 +609,26 @@ def rough_fit_score(title: str, location: str, url: str, text: str) -> tuple[int
     return min(score, 100), tier, rationale + " | Risks: " + risk_flags
 
 
+def infer_parse_confidence(title: str, location: str, company: str) -> str:
+    score = 0
+
+    if len(normalize_title(title)) > 3:
+        score += 1
+
+    cleaned_location = clean_location_candidate(location)
+    if cleaned_location and cleaned_location != "Unknown":
+        score += 1
+
+    if safe_text(company) and safe_text(company).lower() != "unknown":
+        score += 1
+
+    if score >= 3:
+        return "High"
+    if score == 2:
+        return "Medium"
+    return "Low"
+
+
 def build_duplicate_key(company: str, title: str, location: str, req_id: str = "") -> str:
     company_part = re.sub(r"[^a-z0-9]", "", company.lower())
     title_part = re.sub(r"[^a-z0-9]", "", normalize_title(title))
@@ -739,6 +638,12 @@ def build_duplicate_key(company: str, title: str, location: str, req_id: str = "
 
 
 def create_job_record(job_url: str) -> JobRecord:
+    """
+    Parser-first record creation.
+
+    This function should extract and infer structured fields from a URL and page.
+    Final accept/reject policy should live in services/pipeline_runtime.py.
+    """
     title, extracted_location, text, final_url = parse_page(job_url)
 
     company = infer_company_from_domain(final_url)
@@ -754,10 +659,16 @@ def create_job_record(job_url: str) -> JobRecord:
 
     validation_status, validation_confidence = infer_validation_status(title, location)
     fit_score, fit_tier, rationale_with_risks = rough_fit_score(title, location, final_url, text)
+    parse_confidence = infer_parse_confidence(title, location, company)
 
     compensation_raw, compensation_status = extract_compensation(text)
     ai_priority = "High" if "ai" in text.lower() else "Medium"
-    risk_flags = "Compensation not disclosed" if compensation_status == "Not Disclosed" else ""
+    risk_flags = []
+    if compensation_status == "Not Disclosed":
+        risk_flags.append("Compensation not disclosed")
+    if parse_confidence == "Low":
+        risk_flags.append("Low parse confidence")
+
     application_angle = (
         "Emphasize enterprise technology leadership, transformation experience, "
         "and ability to align strategy with execution."
@@ -796,7 +707,7 @@ def create_job_record(job_url: str) -> JobRecord:
         fit_tier=fit_tier,
         ai_priority=ai_priority,
         match_rationale=rationale_with_risks,
-        risk_flags=risk_flags,
+        risk_flags="; ".join(risk_flags),
         application_angle=application_angle,
         cover_letter_starter=cover_letter_starter,
         status="New",
@@ -815,6 +726,131 @@ def load_job_urls_from_file(file_path: str) -> list[str]:
                 urls.append(line)
 
     return urls
+
+
+# ---------------------------------------------------------------------------
+# Legacy CLI-only gates below
+# ---------------------------------------------------------------------------
+# These are retained for backwards compatibility with the standalone CLI flow.
+# The app’s main acceptance policy should live in services/pipeline_runtime.py.
+# ---------------------------------------------------------------------------
+
+def passes_seniority_gate(title: str) -> bool:
+    lowered = title.lower()
+    seniority_terms = [
+        "vp",
+        "vice president",
+        "svp",
+        "senior vice president",
+        "head of",
+        "chief",
+        "cto",
+        "cio",
+        "coo",
+    ]
+    return any(term in lowered for term in seniority_terms)
+
+
+def passes_domain_gate(title: str) -> bool:
+    lowered = title.lower()
+    domain_terms = [
+        "technology",
+        "it",
+        "information",
+        "digital",
+        "platform",
+        "ai",
+        "artificial intelligence",
+        "product technology",
+        "enterprise systems",
+        "enterprise applications",
+        "business technology",
+        "business systems",
+        "information security",
+        "cybersecurity",
+        "security",
+        "data",
+        "machine learning",
+        "ml",
+        "applications",
+        "infrastructure",
+        "engineering platform",
+    ]
+    return any(term in lowered for term in domain_terms)
+
+
+def passes_strict_title_gate(title: str) -> bool:
+    lowered = title.lower()
+
+    rejected_terms = [
+        "director",
+        "senior director",
+        "manager",
+        "principal",
+        "lead",
+        "staff ",
+        "counsel",
+        "recruiting",
+        "sales",
+        "tax",
+        "design",
+        "safety",
+    ]
+    if any(term in lowered for term in rejected_terms):
+        return False
+
+    return passes_seniority_gate(title) and passes_domain_gate(title)
+
+
+def passes_settings_title_gate(title: str, settings: dict[str, str]) -> bool:
+    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    if not target_titles:
+        return True
+
+    lowered = title.lower()
+    return any(term.lower() in lowered for term in target_titles)
+
+
+def passes_strict_location_gate(location: str) -> bool:
+    remote_type = infer_remote_type(location)
+
+    if remote_type in {"Fully Remote", "Dallas / DFW"}:
+        return True
+
+    if location == "Unknown":
+        return True
+
+    return False
+
+
+def passes_settings_location_gate(location: str, settings: dict[str, str]) -> bool:
+    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    remote_only = settings.get("remote_only", "false").lower() == "true"
+
+    lowered = location.lower()
+
+    if remote_only:
+        if "remote" in lowered:
+            return True
+        if location == "Unknown":
+            return True
+        return False
+
+    if preferred_locations:
+        if any(term.lower() in lowered for term in preferred_locations):
+            return True
+        return False
+
+    return True
+
+
+def passes_settings_exclude_gate(title: str, company: str, location: str, text: str, settings: dict[str, str]) -> bool:
+    exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
+    if not exclude_keywords:
+        return True
+
+    searchable_text = " ".join([title, company, location, text]).lower()
+    return not any(keyword.lower() in searchable_text for keyword in exclude_keywords)
 
 
 def main() -> None:
@@ -847,6 +883,9 @@ def main() -> None:
     compensation_skip_count = 0
     expired_skip_count = 0
     settings_skip_count = 0
+
+    print("Running legacy CLI validation flow.")
+    print("App acceptance policy is now expected to live primarily in services/pipeline_runtime.py.")
 
     for job_url in job_urls:
         print(f"\nProcessing: {job_url}")
@@ -929,6 +968,7 @@ def main() -> None:
             print(f"Title: {job.title}")
             print(f"Location: {job.location}")
             print(f"Validation: {job.validation_status}")
+            print(f"Validation Confidence: {job.validation_confidence}")
             print(f"Fit Score: {job.fit_score}")
 
             added_count += 1
