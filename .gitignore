@@ -47,3 +47,8 @@ backups/*
 !backups/.gitkeep
 data/*
 !data/.gitkeep
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
