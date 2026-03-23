@@ -4,7 +4,7 @@ import subprocess
 
 import streamlit as st
 
-from config import DATABASE_PATH, OPENAI_API_KEY_FILE
+from config import BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
 from services.backup import backup_database, restore_latest_backup
 from services.health import run_health_check
 from services.openai_key import (
@@ -23,7 +23,6 @@ from ui.navigation import initialize_nav_state, render_button_nav
 
 SETTINGS_NAV_OPTIONS = [
     "Configuration",
-    "Search Criteria",
     "Profile Context",
     "OpenAI API",
 ]
@@ -32,6 +31,13 @@ SETTINGS_NAV_OPTIONS = [
 
 FIT_OPTIONS = ["Any", "60", "70", "75", "80", "85", "90"]
 PAGE_SIZE_OPTIONS = ["5", "10", "20", "500"]
+NEW_ROLES_SORT_OPTIONS = [
+    "Newest First",
+    "Highest Fit Score",
+    "Highest Compensation",
+    "Highest Source Trust",
+    "Company A-Z",
+]
 
 
 def str_to_bool(value: str, default: bool = False) -> bool:
@@ -165,6 +171,197 @@ def apply_configuration_defaults_to_session(
     ) + 1
 
 
+def _label_from_health_status(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"ok", "healthy", "ready", "pass", "passed"}:
+        return "Ready"
+    if normalized in {"warning", "warn", "degraded"}:
+        return "Warning"
+    if normalized in {"error", "failed", "fail", "unhealthy"}:
+        return "Needs Attention"
+    return "Unknown"
+
+
+def _render_health_check_result(result: dict) -> None:
+    status_label = _label_from_health_status(result.get("status", ""))
+    status_value = str(result.get("status", "") or "").strip().lower()
+
+    if status_value in {"ok", "healthy", "ready", "pass", "passed"}:
+        st.success("Health Check: Ready")
+    elif status_value in {"warning", "warn", "degraded"}:
+        st.warning("Health Check: Warning")
+    else:
+        st.warning("Health Check: Needs Attention")
+
+    st.markdown("#### Health Check Summary")
+
+    checks = result.get("checks", {}) if isinstance(result.get("checks", {}), dict) else {}
+    issues = result.get("issues", []) if isinstance(result.get("issues", []), list) else []
+    errors = result.get("errors", []) if isinstance(result.get("errors", []), list) else []
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Overall Status", status_label)
+    c2.metric("Checks Reported", len(checks))
+    c3.metric("Issues Found", len(issues) + len(errors))
+
+    if issues:
+        st.markdown("**What needs attention**")
+        for item in issues:
+            st.write(f"- {item}")
+
+    if errors:
+        st.markdown("**Errors**")
+        for item in errors:
+            st.write(f"- {item}")
+
+    if checks:
+        st.markdown("**Check Results**")
+        for key, value in checks.items():
+            pretty_key = str(key).replace("_", " ").strip().title()
+            if isinstance(value, bool):
+                pretty_value = "Ready" if value else "Needs Attention"
+            else:
+                pretty_value = str(value)
+            st.write(f"- {pretty_key}: {pretty_value}")
+
+    extra_items = {
+        key: value
+        for key, value in result.items()
+        if key not in {"status", "checks", "issues", "errors"}
+    }
+    if extra_items:
+        with st.expander("Technical details", expanded=False):
+            st.json(result)
+
+
+
+def _safe_unlink(path: Path, removed: list[str], failed: list[str]) -> None:
+    try:
+        if path.exists() and path.is_file():
+            path.unlink()
+            removed.append(str(path))
+    except Exception as exc:
+        failed.append(f"{path}: {exc}")
+
+
+def _clear_directory_contents(directory: Path, removed: list[str], failed: list[str]) -> None:
+    try:
+        if not directory.exists():
+            return
+        for child in directory.iterdir():
+            if child.name == ".gitkeep":
+                continue
+            if child.is_file() or child.is_symlink():
+                try:
+                    child.unlink()
+                    removed.append(str(child))
+                except Exception as exc:
+                    failed.append(f"{child}: {exc}")
+            elif child.is_dir():
+                try:
+                    import shutil
+                    shutil.rmtree(child)
+                    removed.append(str(child))
+                except Exception as exc:
+                    failed.append(f"{child}: {exc}")
+    except Exception as exc:
+        failed.append(f"{directory}: {exc}")
+
+
+def _reset_app_data() -> tuple[list[str], list[str]]:
+    removed: list[str] = []
+    failed: list[str] = []
+
+    targets = [
+        DATABASE_PATH,
+        OPENAI_API_KEY_FILE,
+        DATA_DIR / "openai_api_key.meta.json",
+        DATA_DIR / "openai_api_state.json",
+        JOB_URLS_FILE,
+        MANUAL_URLS_FILE,
+        PROJECT_ROOT / "runtime_settings.json",
+    ]
+
+    for target in targets:
+        _safe_unlink(Path(target), removed, failed)
+
+    _clear_directory_contents(BACKUPS_DIR, removed, failed)
+    _clear_directory_contents(LOGS_DIR, removed, failed)
+    _clear_directory_contents(DATA_DIR, removed, failed)
+
+    return removed, failed
+
+
+def _render_reset_app_section() -> None:
+    st.markdown("---")
+    st.markdown("### Reset App / Remove All Data")
+    st.warning(
+        "This will remove local app data and restart the product as if it were opened for the first time on this machine. "
+        "That includes your local database, saved settings, saved OpenAI key, manual URL lists, logs, and backups."
+    )
+    st.caption("This does not delete the source code. It resets the local app state and sends you back to Setup Wizard.")
+
+    confirm_value = st.text_input(
+        "Type RESET to confirm",
+        key="settings_reset_app_confirmation",
+        help="This action is destructive and cannot be undone.",
+    )
+
+    reset_disabled = str(confirm_value or "").strip() != "RESET"
+
+    if st.button(
+        "Reset App / Remove All Data",
+        type="secondary",
+        use_container_width=False,
+        disabled=reset_disabled,
+        key="settings_reset_app_button",
+    ):
+        removed, failed = _reset_app_data()
+
+        st.cache_data.clear()
+
+        for key in list(st.session_state.keys()):
+            if key.startswith("wizard_") or key.startswith("settings_"):
+                st.session_state.pop(key, None)
+
+        st.session_state["_app_initialized"] = False
+        st.session_state["_wizard_run_discovery_on_load"] = False
+        st.session_state["top_nav_selection"] = "New Roles"
+        st.session_state["settings_subnav_selection"] = "Configuration"
+        st.session_state["reset_notice"] = {
+            "removed_count": len(removed),
+            "failed_count": len(failed),
+        }
+
+        if failed:
+            st.session_state["reset_notice_details"] = failed
+        else:
+            st.session_state.pop("reset_notice_details", None)
+
+        st.rerun()
+
+
+def _render_reset_notice() -> None:
+    notice = st.session_state.pop("reset_notice", None)
+    if not isinstance(notice, dict):
+        return
+
+    removed_count = int(notice.get("removed_count", 0) or 0)
+    failed_count = int(notice.get("failed_count", 0) or 0)
+
+    if failed_count:
+        st.warning(
+            f"App reset completed with some cleanup issues. Removed {removed_count} item(s), with {failed_count} item(s) needing manual review."
+        )
+        details = st.session_state.pop("reset_notice_details", [])
+        if details:
+            with st.expander("Reset details", expanded=False):
+                for item in details:
+                    st.write(f"- {item}")
+    else:
+        st.success(f"App reset complete. Removed {removed_count} local item(s). Setup Wizard is ready again.")
+
+
 def render_system_status() -> None:
     status = get_system_status()
 
@@ -177,11 +374,13 @@ def render_system_status() -> None:
     c3.metric("Applied", status["jobs_applied"])
     c4.metric("Removed", status["removed_total"])
 
-    st.caption(f"Latest backup: {status.get('latest_backup_path', '—')}")
-    st.caption(f"OpenAI API key: {status.get('openai_api_key_status', 'Unknown')} | {status.get('openai_api_key_masked', 'Not saved')}")
-    st.caption(f"Last cover letter: {status['last_cover_letter_path']}")
-    st.caption(f"Last cover letter time: {status['last_cover_letter_at']}")
-    st.caption(f"Last import: {status['last_import_at']} | status: {status['last_import_status']}")
+    st.markdown("#### Current App Status")
+    st.write(f"- Latest backup: {status.get('latest_backup_path', '—')}")
+    st.write(f"- OpenAI API key: {status.get('openai_api_key_status', 'Unknown')} | {status.get('openai_api_key_masked', 'Not saved')}")
+    st.write(f"- Last cover letter: {status['last_cover_letter_path']}")
+    st.write(f"- Last cover letter time: {status['last_cover_letter_at']}")
+    st.write(f"- Last import: {status['last_import_at']}")
+    st.write(f"- Last import status: {status['last_import_status']}")
 
     st.markdown("### Backup and Health Tools")
     b1, b2, b3 = st.columns(3)
@@ -204,12 +403,8 @@ def render_system_status() -> None:
             with st.spinner("Running health check..."):
                 result = run_health_check()
 
-            if result["status"] == "ok":
-                st.success("Health check passed.")
-            else:
-                st.warning("Health check found issues.")
-
-            st.json(result)
+            st.session_state["settings_last_health_check_result"] = result
+            st.rerun()
 
     with b3:
         if st.button("Restore Latest Backup", use_container_width=True, type="secondary"):
@@ -224,6 +419,11 @@ def render_system_status() -> None:
             except Exception as exc:
                 st.error("Restore failed.")
                 st.text(str(exc))
+
+    last_health_check_result = st.session_state.get("settings_last_health_check_result")
+    if isinstance(last_health_check_result, dict):
+        st.markdown("---")
+        _render_health_check_result(last_health_check_result)
 
 
 def render_configuration_tab(settings: dict[str, str]) -> None:
@@ -296,7 +496,7 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
         st.markdown("---")
         st.markdown("### Page Defaults")
 
-        d1, d2 = st.columns(2)
+        d1, d2, d3 = st.columns(3)
 
         current_fit = str(settings.get("default_min_fit_score", "75"))
         if current_fit not in FIT_OPTIONS:
@@ -313,11 +513,23 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
                 index=FIT_OPTIONS.index(current_fit),
             )
 
+        current_new_roles_sort = str(settings.get("default_new_roles_sort", "Newest First"))
+        if current_new_roles_sort not in NEW_ROLES_SORT_OPTIONS:
+            current_new_roles_sort = "Newest First"
+
         with d2:
             default_jobs_per_page = st.selectbox(
                 "Default Jobs Per Page",
                 PAGE_SIZE_OPTIONS,
                 index=PAGE_SIZE_OPTIONS.index(current_page_size),
+            )
+
+        with d3:
+            default_new_roles_sort = st.selectbox(
+                "Default New Roles Sort",
+                NEW_ROLES_SORT_OPTIONS,
+                index=NEW_ROLES_SORT_OPTIONS.index(current_new_roles_sort),
+                help="Controls the default sort used when you open New Roles.",
             )
 
         save_main = st.form_submit_button("Save Configuration", type="primary", use_container_width=False)
@@ -328,6 +540,7 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
                     {
                         "default_min_fit_score": str(default_min_fit_score),
                         "default_jobs_per_page": str(default_jobs_per_page),
+                        "default_new_roles_sort": str(default_new_roles_sort),
                     }
                 )
 
@@ -339,68 +552,7 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             st.success("Configuration saved.")
             st.rerun()
 
-
-def render_search_criteria_tab(settings: dict[str, str]) -> None:
-    with st.form("settings_search_criteria_form"):
-        st.markdown("### Search Criteria")
-
-        c1, c2 = st.columns(2)
-
-        with c1:
-            target_titles = st.text_area(
-                "Target Titles",
-                value=settings.get("target_titles", ""),
-                height=100,
-                help="Comma-separated values",
-            )
-
-            preferred_locations = st.text_area(
-                "Preferred Locations",
-                value=settings.get("preferred_locations", ""),
-                height=100,
-                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nUse full structured entries instead of comma-separated fragments.",
-            )
-
-            include_keywords = st.text_area(
-                "Include Keywords",
-                value=settings.get("include_keywords", ""),
-                height=100,
-                help="Comma-separated values",
-            )
-
-        with c2:
-            exclude_keywords = st.text_area(
-                "Exclude Keywords",
-                value=settings.get("exclude_keywords", ""),
-                height=100,
-                help="Comma-separated values",
-            )
-
-            remote_only = st.toggle(
-                "Remote Only",
-                value=str_to_bool(settings.get("remote_only", "true"), default=True),
-            )
-
-            minimum_compensation = st.text_input(
-                "Minimum Compensation",
-                value=settings.get("minimum_compensation", "200000"),
-            )
-
-        save_search = st.form_submit_button("Save Search Criteria", type="primary", use_container_width=False)
-
-        if save_search:
-            save_settings(
-                {
-                    "target_titles": target_titles,
-                    "preferred_locations": preferred_locations,
-                    "include_keywords": include_keywords,
-                    "exclude_keywords": exclude_keywords,
-                    "remote_only": "true" if remote_only else "false",
-                    "minimum_compensation": minimum_compensation,
-                }
-            )
-            st.success("Search criteria saved.")
-            st.rerun()
+    _render_reset_app_section()
 
 
 def render_profile_context_tab(settings: dict[str, str]) -> None:
@@ -527,6 +679,8 @@ def render_openai_api_tab() -> None:
 def render_settings() -> None:
     st.subheader("Settings")
 
+    _render_reset_notice()
+
     settings = load_settings()
     initialize_settings_state(settings)
     initialize_nav_state("settings_subnav_selection", "Configuration")
@@ -542,8 +696,6 @@ def render_settings() -> None:
 
     if selected_section == "Configuration":
         render_configuration_tab(settings)
-    elif selected_section == "Search Criteria":
-        render_search_criteria_tab(settings)
     elif selected_section == "Profile Context":
         render_profile_context_tab(settings)
     else:
