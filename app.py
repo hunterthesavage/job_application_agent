@@ -195,7 +195,7 @@ def maybe_run_wizard_discovery_bootstrap() -> None:
         else:
             st.session_state["_post_wizard_run_message"] = {
                 "kind": "info",
-                "text": "Discovery finished, but no jobs were added yet. Review Pipeline results, adjust Search Criteria, or try manual URLs.",
+                "text": "Discovery finished, but no jobs were added yet. Review Pipeline results, adjust Run Inputs in Pipeline, or try manual URLs.",
             }
             st.session_state["top_nav_selection"] = "Pipeline"
     else:

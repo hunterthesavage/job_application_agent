@@ -18,6 +18,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "minimum_compensation": "",
     "default_min_fit_score": "Any",
     "default_jobs_per_page": "10",
+    "default_new_roles_sort": "Newest First",
     "openai_api_key_validated": "false",
     "openai_api_key_last_validated_at": "",
     "openai_api_key_validated_hash": "",

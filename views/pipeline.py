@@ -13,7 +13,94 @@ from services.pipeline_runtime import (
     ingest_urls_from_file,
 )
 from services.status import get_system_status
+from services.settings import DEFAULT_SETTINGS, load_settings, save_settings
 from services.ui_busy import app_is_busy, clear_action, get_action, move_action_to_execute, queue_action, stop_busy
+
+def _str_to_bool(value: str, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"true", "1", "yes", "y", "on"}
+
+
+def _humanize_pipeline_status(value: str) -> str:
+    mapping = {
+        "idle": "Idle",
+        "discover_and_ingest": "Discover and Ingest Jobs",
+        "discover_only": "Find Job Links Only",
+        "ingest_saved": "Add Saved Job Links",
+        "ingest_pasted": "Add Pasted Job Links",
+        "completed": "Completed",
+        "running": "Running",
+        "error": "Needs Attention",
+    }
+    normalized = str(value or "").strip().lower()
+    if normalized in mapping:
+        return mapping[normalized]
+    return str(value or "Idle").replace("_", " ").strip().title() or "Idle"
+
+
+def _render_run_inputs() -> None:
+    settings = load_settings()
+
+    with st.form("pipeline_run_inputs_form"):
+        st.markdown("### Run Inputs")
+        st.caption("Update the search inputs used by Find and Add Jobs and Find Job Links Only.")
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+            target_titles = st.text_area(
+                "Target Titles",
+                value=settings.get("target_titles", ""),
+                height=100,
+                help="Comma-separated values",
+            )
+
+            preferred_locations = st.text_area(
+                "Preferred Locations",
+                value=settings.get("preferred_locations", ""),
+                height=100,
+                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nUse full structured entries instead of comma-separated fragments.",
+            )
+
+            include_keywords = st.text_area(
+                "Include Keywords",
+                value=settings.get("include_keywords", ""),
+                height=100,
+                help="Comma-separated values",
+            )
+
+        with c2:
+            exclude_keywords = st.text_area(
+                "Exclude Keywords",
+                value=settings.get("exclude_keywords", ""),
+                height=100,
+                help="Comma-separated values",
+            )
+
+            remote_only = st.toggle(
+                "Remote Only",
+                value=_str_to_bool(settings.get("remote_only", "true"), default=True),
+                help="Include only roles that appear remote-friendly.",
+            )
+
+            st.caption("Minimum Compensation is not shown here yet because it is not currently a primary live run control in this workflow.")
+
+        save_run_inputs = st.form_submit_button("Save Run Inputs", type="primary", use_container_width=False)
+
+        if save_run_inputs:
+            save_settings(
+                {
+                    "target_titles": target_titles,
+                    "preferred_locations": preferred_locations,
+                    "include_keywords": include_keywords,
+                    "exclude_keywords": exclude_keywords,
+                    "remote_only": "true" if remote_only else "false",
+                }
+            )
+            st.success("Run inputs saved.")
+            st.rerun()
+
 
 
 def _set_flash(level: str, message: str) -> None:
@@ -66,9 +153,9 @@ def _render_first_run_pipeline_guidance() -> None:
 No jobs have been added yet.
 
 A good first step is:
-1. Add your search preferences in Settings
-2. Review the search summary below
-3. Click **Find and Add Jobs**
+1. Review or update the Run Inputs below
+2. Click **Find and Add Jobs**
+3. Review the Search Summary
 4. Or paste a few job URLs manually to seed your list
         """
     )
@@ -111,7 +198,7 @@ def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
         return "warning", "No job URLs were discovered. Try the fallback search links below or broaden your criteria."
 
     if accepted_jobs == 0 and skipped_count > 0:
-        return "warning", f"{seen_urls} URLs were found, but none matched your current Settings filters."
+        return "warning", f"{seen_urls} URLs were found, but none matched your current run inputs."
 
     if accepted_jobs > 0 and changed_count == 0:
         if duplicate_in_run_count > 0:
@@ -159,7 +246,7 @@ def _build_ingest_flash(result: dict, source_label: str) -> tuple[str, str]:
         return "warning", f"No job URLs were available for {source_label.lower()}."
 
     if accepted_jobs == 0 and skipped_count > 0:
-        return "warning", f"{seen_urls} URLs were reviewed for {source_label.lower()}, but none matched your current Settings filters."
+        return "warning", f"{seen_urls} URLs were reviewed for {source_label.lower()}, but none matched your current run inputs."
 
     if duplicate_in_run_count > 0:
         return "warning", f"{source_label} completed, but only duplicate-in-run matches were found."
@@ -225,7 +312,7 @@ def _process_pending_action_before_render() -> None:
                 _set_flash(level, message)
 
     except Exception as exc:
-        _set_flash("error", f"Pipeline action failed: {exc}")
+        _set_flash("error", f"That action could not finish: {exc}")
     finally:
         clear_action("pipeline")
         stop_busy()
@@ -441,7 +528,6 @@ def _format_run_duration(started_at: str, completed_at: str) -> str:
 def _render_last_run_monitor() -> None:
     runs = get_recent_ingestion_runs(limit=1)
     if not runs:
-        st.info("No pipeline runs recorded yet.")
         return
 
     run = runs[0]
@@ -467,53 +553,52 @@ def _render_last_run_monitor() -> None:
     source_yield_top = details.get("source_yield_top", []) if isinstance(details, dict) else []
     source_dominance = details.get("source_dominance", {}) if isinstance(details, dict) else {}
 
-    st.subheader("Last Run Monitor")
+    with st.expander("Last Run Monitor", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Run ID", run_id if run_id != "" else "Unknown")
+        col2.metric("Status", _humanize_pipeline_status(status))
+        col3.metric("Ingest Duration", ingest_duration)
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Run ID", run_id if run_id != "" else "Unknown")
-    col2.metric("Status", status.title() if status else "Unknown")
-    col3.metric("Ingest Duration", ingest_duration)
+        col4, col5, col6, col7 = st.columns(4)
+        col4.metric("Total Seen", total_seen)
+        col5.metric("Inserted", inserted_count)
+        col6.metric("Updated", updated_count)
+        col7.metric("Errors", error_count)
 
-    col4, col5, col6, col7 = st.columns(4)
-    col4.metric("Total Seen", total_seen)
-    col5.metric("Inserted", inserted_count)
-    col6.metric("Updated", updated_count)
-    col7.metric("Errors", error_count)
+        col8, col9, col10 = st.columns(3)
+        col8.metric("Net New", net_new_count)
+        col9.metric("Rediscovered", rediscovered_count)
+        col10.metric("Duplicate In Run", duplicate_in_run_count)
 
-    col8, col9, col10 = st.columns(3)
-    col8.metric("Net New", net_new_count)
-    col9.metric("Rediscovered", rediscovered_count)
-    col10.metric("Duplicate In Run", duplicate_in_run_count)
+        st.caption(f"Ingest started: {started_at or 'Unknown'} | Ingest completed: {completed_at or 'Unknown'}")
 
-    st.caption(f"Ingest started: {started_at or 'Unknown'} | Ingest completed: {completed_at or 'Unknown'}")
+        extra_summary = []
+        if skipped_removed_count:
+            extra_summary.append(f"Skipped removed: {skipped_removed_count}")
+        if skipped_invalid_count:
+            extra_summary.append(f"Skipped invalid: {skipped_invalid_count}")
+        if extra_summary:
+            st.caption(" | ".join(extra_summary))
 
-    extra_summary = []
-    if skipped_removed_count:
-        extra_summary.append(f"Skipped removed: {skipped_removed_count}")
-    if skipped_invalid_count:
-        extra_summary.append(f"Skipped invalid: {skipped_invalid_count}")
-    if extra_summary:
-        st.caption(" | ".join(extra_summary))
+        if source_dominance.get("flag"):
+            st.warning(f"Dominance warning: {source_dominance.get('reason', '')}")
+        else:
+            top_source_root = ""
+            top_source_jobs = 0
+            if source_yield_top:
+                first = source_yield_top[0]
+                top_source_root = str(first.get("source_root", "") or "")
+                top_source_jobs = int(first.get("job_count", 0) or 0)
+            if top_source_root:
+                st.caption(f"Top source this run: {top_source_root} ({top_source_jobs} jobs)")
 
-    if source_dominance.get("flag"):
-        st.warning(f"Dominance warning: {source_dominance.get('reason', '')}")
-    else:
-        top_source_root = ""
-        top_source_jobs = 0
         if source_yield_top:
-            first = source_yield_top[0]
-            top_source_root = str(first.get("source_root", "") or "")
-            top_source_jobs = int(first.get("job_count", 0) or 0)
-        if top_source_root:
-            st.caption(f"Top source this run: {top_source_root} ({top_source_jobs} jobs)")
-
-    if source_yield_top:
-        st.markdown("**Top sources this run**")
-        for row in source_yield_top[:5]:
-            ats_type = str(row.get("ats_type", "Unknown") or "Unknown")
-            source_root = str(row.get("source_root", "unknown") or "unknown")
-            job_count = int(row.get("job_count", 0) or 0)
-            st.write(f"- {ats_type} | {source_root} | {job_count} jobs")
+            st.markdown("**Top sources this run**")
+            for row in source_yield_top[:5]:
+                ats_type = str(row.get("ats_type", "Unknown") or "Unknown")
+                source_root = str(row.get("source_root", "unknown") or "unknown")
+                job_count = int(row.get("job_count", 0) or 0)
+                st.write(f"- {ats_type} | {source_root} | {job_count} jobs")
 
 
 def render_pipeline() -> None:
@@ -526,7 +611,8 @@ def render_pipeline() -> None:
 
     if st.session_state.get("pipeline_run_active", False):
         elapsed = _format_elapsed(st.session_state.get("pipeline_run_started_at", ""))
-        st.info(f"Run in progress | Elapsed: {elapsed} | Status: {st.session_state.get("pipeline_run_status", "Idle")}")
+        current_status = _humanize_pipeline_status(st.session_state.get("pipeline_run_status", "Idle"))
+        st.info(f"Working: {current_status} | Elapsed: {elapsed}")
         if elapsed >= "00:05:00":
             st.warning("This run is taking longer than usual. If the UI appears stuck after a while, you can use Reset Run State below.")
 
@@ -538,26 +624,27 @@ def render_pipeline() -> None:
 
     _render_flash()
     _render_first_run_pipeline_guidance()
+    _render_run_inputs()
 
     busy = app_is_busy()
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("Find and Add Jobs", use_container_width=True, disabled=busy):
-            queue_action("pipeline", "discover_and_ingest", "Find and Add Jobs")
+            queue_action("pipeline", "discover_and_ingest", label="Find and Add Jobs")
             st.rerun()
     with col2:
         if st.button("Find Job Links Only", use_container_width=True, disabled=busy):
-            queue_action("pipeline", "discover_only", "Find Job Links Only")
+            queue_action("pipeline", "discover_only", label="Find Job Links Only")
             st.rerun()
     with col3:
         if st.button("Add Saved Job Links", use_container_width=True, disabled=busy):
-            queue_action("pipeline", "ingest_saved", "Add Saved Job Links")
+            queue_action("pipeline", "ingest_saved", label="Add Saved Job Links")
             st.rerun()
     with col4:
         manual_urls = st.session_state.get("pipeline_manual_urls", "")
         if st.button("Add Pasted Job Links", use_container_width=True, disabled=busy):
-            queue_action("pipeline", "ingest_pasted", "Add Pasted Job Links", payload={"manual_urls": manual_urls})
+            queue_action("pipeline", "ingest_pasted", payload={"manual_urls": manual_urls}, label="Add Pasted Job Links")
             st.rerun()
 
     st.text_area("Paste job links", key="pipeline_manual_urls", height=120, placeholder="Paste one job URL per line")

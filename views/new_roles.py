@@ -1,3 +1,5 @@
+import re
+
 import streamlit as st
 
 from services.cover_letters import generate_cover_letter_for_job_id
@@ -28,6 +30,13 @@ from ui.components import (
 
 VALID_FIT_OPTIONS = ["Any", 60, 70, 75, 80, 85, 90]
 TRUST_FILTER_OPTIONS = ["All", "ATS Confirmed", "Career Site Confirmed", "Web Discovered", "Third-Party Listing", "Unknown"]
+NEW_ROLES_SORT_OPTIONS = [
+    "Newest First",
+    "Highest Fit Score",
+    "Highest Compensation",
+    "Highest Source Trust",
+    "Company A-Z",
+]
 
 
 def _set_flash(level: str, message: str) -> None:
@@ -122,6 +131,115 @@ def _advance_pending_action_after_render() -> None:
         st.rerun()
 
 
+def _parse_compensation_value(value) -> float:
+    text = str(value or "").strip()
+    if not text or text.lower() == "nan":
+        return -1.0
+
+    normalized = text.replace(",", "")
+    numbers = re.findall(r"\d+(?:\.\d+)?", normalized)
+    if not numbers:
+        return -1.0
+
+    values = []
+    for item in numbers:
+        try:
+            values.append(float(item))
+        except Exception:
+            continue
+
+    if not values:
+        return -1.0
+
+    return max(values)
+
+
+def _get_first_existing_column(df, candidates: list[str]) -> str | None:
+    for candidate in candidates:
+        if candidate in df.columns:
+            return candidate
+    return None
+
+
+def _apply_new_roles_sort(df, sort_label: str):
+    sort_label = str(sort_label or "Newest First").strip()
+    if df.empty:
+        return df
+
+    if sort_label == "Highest Fit Score":
+        fit_col = _get_first_existing_column(df, ["Fit Score", "fit_score"])
+        if fit_col:
+            df["_fit_sort"] = df[fit_col].apply(normalize_fit_score)
+            df = df.sort_values(by="_fit_sort", ascending=False, kind="stable").drop(columns=["_fit_sort"])
+        return df
+
+    if sort_label == "Highest Compensation":
+        comp_col = _get_first_existing_column(
+            df,
+            ["Compensation", "compensation", "Compensation Raw", "compensation_raw", "Compensation Max", "compensation_max"],
+        )
+        if comp_col:
+            df["_comp_sort"] = df[comp_col].apply(_parse_compensation_value)
+            df = df.sort_values(by="_comp_sort", ascending=False, kind="stable").drop(columns=["_comp_sort"])
+        return df
+
+    if sort_label == "Highest Source Trust":
+        trust_col = _get_first_existing_column(df, ["Source Trust", "source_trust"])
+        if trust_col:
+            trust_rank = {
+                "ATS Confirmed": 4,
+                "Career Site Confirmed": 3,
+                "Web Discovered": 2,
+                "Third-Party Listing": 1,
+                "Unknown": 0,
+                "": 0,
+            }
+            df["_trust_sort"] = (
+                df[trust_col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .map(lambda value: trust_rank.get(value, 0))
+            )
+            df = df.sort_values(by="_trust_sort", ascending=False, kind="stable").drop(columns=["_trust_sort"])
+        return df
+
+    if sort_label == "Company A-Z":
+        company_col = _get_first_existing_column(df, ["Company", "company"])
+        if company_col:
+            df["_company_sort"] = df[company_col].fillna("").astype(str).str.lower().str.strip()
+            df = df.sort_values(by="_company_sort", ascending=True, kind="stable").drop(columns=["_company_sort"])
+        return df
+
+    newest_col = _get_first_existing_column(
+        df,
+        ["Date Found", "date_found", "first_seen_at", "created_at", "Date Last Validated", "date_last_validated"],
+    )
+    if newest_col:
+        try:
+            import pandas as pd
+            df["_newest_sort"] = pd.to_datetime(df[newest_col], errors="coerce")
+            df = df.sort_values(by="_newest_sort", ascending=False, kind="stable").drop(columns=["_newest_sort"])
+            return df
+        except Exception:
+            pass
+
+    return df
+
+
+def _render_sort_controls() -> None:
+    left, right = st.columns([1.2, 3])
+    with left:
+        st.selectbox(
+            "Sort jobs by",
+            NEW_ROLES_SORT_OPTIONS,
+            key="new_roles_sort",
+            help="Choose how the New Roles list is ordered.",
+        )
+    with right:
+        st.caption("Newest First is the default unless you change it in Settings.")
+
+
 def initialize_filter_state_from_settings(settings: dict) -> None:
     raw_fit = settings.get("default_min_fit_score", "Any")
 
@@ -149,18 +267,21 @@ def initialize_filter_state_from_settings(settings: dict) -> None:
     if "filter_source_trust" not in st.session_state:
         st.session_state["filter_source_trust"] = "All"
 
+    default_sort = str(settings.get("default_new_roles_sort", "Newest First") or "Newest First").strip()
+    if default_sort not in NEW_ROLES_SORT_OPTIONS:
+        default_sort = "Newest First"
+
+    if "new_roles_sort" not in st.session_state:
+        st.session_state["new_roles_sort"] = default_sort
+
 
 def _render_trust_filter() -> None:
-    left, right = st.columns([1, 3])
-    with left:
-        st.selectbox(
-            "Source trust",
-            TRUST_FILTER_OPTIONS,
-            key="filter_source_trust",
-            help="Filter jobs by how directly the source was confirmed.",
-        )
-    with right:
-        st.caption("Use this to quickly separate ATS-confirmed jobs from broader web discovery.")
+    st.selectbox(
+        "Source trust",
+        TRUST_FILTER_OPTIONS,
+        key="filter_source_trust",
+        help="Use this to quickly separate ATS-confirmed jobs from broader web discovery.",
+    )
 
 
 def _apply_source_trust_filter(df):
@@ -187,7 +308,6 @@ def render_new_roles() -> None:
     _process_pending_action_before_render()
 
     st.subheader("New Roles")
-    st.caption("Each role now shows both fit and source trust so broader discovery is easier to interpret.")
 
     settings = load_settings()
     initialize_filter_state_from_settings(settings)
@@ -212,17 +332,19 @@ def render_new_roles() -> None:
         if col not in df_display.columns:
             df_display[col] = ""
 
-    if "Fit Score" in df_display.columns:
-        df_display["_fit_sort"] = df_display["Fit Score"].apply(normalize_fit_score)
-        df_display = df_display.sort_values(by="_fit_sort", ascending=False).drop(columns=["_fit_sort"])
-
     kpis = calculate_kpis(df, df_applied)
     render_kpis(kpis)
     render_filter_bar()
-    _render_trust_filter()
+
+    sort_col, trust_col = st.columns(2)
+    with sort_col:
+        _render_sort_controls()
+    with trust_col:
+        _render_trust_filter()
 
     df_filtered = apply_new_role_filters(df_display)
     df_filtered = _apply_source_trust_filter(df_filtered)
+    df_filtered = _apply_new_roles_sort(df_filtered, st.session_state.get("new_roles_sort", "Newest First"))
 
     default_jobs_per_page = int(settings.get("default_jobs_per_page", "10"))
     page_size = get_page_size("new_roles_page_size", default=default_jobs_per_page)
