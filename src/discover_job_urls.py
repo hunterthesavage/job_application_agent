@@ -337,7 +337,8 @@ def expand_search_title_terms(
         if safe_text(title)
     ]
 
-    combined = dedupe_preserve_order(base_titles + suggested_titles)
+    limited_suggested_titles = suggested_titles[:4]
+    combined = dedupe_preserve_order(base_titles + limited_suggested_titles)[:6]
 
     if log_lines is not None:
         added_count = max(0, len(combined) - len(base_titles))
@@ -350,7 +351,7 @@ def expand_search_title_terms(
         if notes:
             log_lines.append(f"AI title expansion notes: {notes}")
 
-    return combined[:10]
+    return combined
 
 
 
@@ -475,10 +476,19 @@ def build_google_discovery_queries(
         use_ai_expansion=use_ai_expansion,
         log_lines=log_lines,
     )
-    title_terms = dedupe_preserve_order(title_terms)[:8]
+    title_terms = dedupe_preserve_order(title_terms)[:6]
 
     if not title_terms and target_titles:
-        title_terms = dedupe_preserve_order(target_titles)[:8]
+        title_terms = dedupe_preserve_order(target_titles)[:6]
+
+    exact_title_terms = title_terms[:]
+    if generic_title_mode:
+        exact_title_terms = [
+            title for title in title_terms
+            if normalize_text(title) not in GENERIC_SENIORITY_ONLY_TITLES
+        ]
+        if log_lines is not None and len(exact_title_terms) != len(title_terms):
+            log_lines.append("Generic seniority input detected: skipping exact queries for raw seniority-only titles.")
 
     location_terms = dedupe_preserve_order(expand_location_query_terms(preferred_locations, remote_only))
     normalized_locations = {normalize_text(x) for x in location_terms}
@@ -506,16 +516,7 @@ def build_google_discovery_queries(
     location_terms_for_search = dedupe_preserve_order(location_terms_for_search)[:3]
     keyword_terms = filter_keyword_terms(include_keywords[:2], title_terms)
 
-    # Tier 1: strongest ATS-focused exact-ish queries
-    for title in title_terms[:5]:
-        for location in location_terms_for_search[:2]:
-            parts = [f'"{title}"', f'"{location}"']
-            if keyword_terms:
-                parts.append(f'"{keyword_terms[0]}"')
-            parts.append(ats_site_block)
-            queries.append(" ".join(parts))
-
-    # Tier 2: compact OR query for title family
+    # Tier 1: compact OR query for title family first
     if len(title_terms) > 1:
         title_or = " OR ".join(f'"{title}"' for title in title_terms[:6])
         for location in location_terms_for_search[:2]:
@@ -524,8 +525,17 @@ def build_google_discovery_queries(
                 parts.insert(2, f'"{keyword_terms[0]}"')
             queries.append(" ".join(parts))
 
-    # Tier 3: title-only ATS fallback
-    for title in title_terms[:3]:
+    # Tier 2: strongest ATS-focused exact-ish queries, but only for non-generic titles
+    for title in exact_title_terms[:3]:
+        for location in location_terms_for_search[:2]:
+            parts = [f'"{title}"', f'"{location}"']
+            if keyword_terms:
+                parts.append(f'"{keyword_terms[0]}"')
+            parts.append(ats_site_block)
+            queries.append(" ".join(parts))
+
+    # Tier 3: title-only ATS fallback, only for non-generic titles
+    for title in exact_title_terms[:2]:
         parts = [f'"{title}"']
         if keyword_terms:
             parts.append(f'"{keyword_terms[0]}"')
