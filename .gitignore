@@ -52,3 +52,8 @@ data/*
 *.db
 *.sqlite
 *.sqlite3
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
