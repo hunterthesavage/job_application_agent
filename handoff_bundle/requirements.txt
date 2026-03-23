@@ -1,9 +1,0 @@
-streamlit
-openai
-pytest
-requests
-beautifulsoup4
-lxml
-ddgs
-gspread
-google-auth
