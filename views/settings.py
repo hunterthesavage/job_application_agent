@@ -182,6 +182,17 @@ def _label_from_health_status(value: str) -> str:
     return "Unknown"
 
 
+def _badge_for_check_status(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"ok", "healthy", "ready", "pass", "passed"}:
+        return "✅"
+    if normalized in {"warning", "warn", "degraded"}:
+        return "⚠️"
+    if normalized in {"error", "failed", "fail", "unhealthy"}:
+        return "❌"
+    return "•"
+
+
 def _render_health_check_result(result: dict) -> None:
     status_label = _label_from_health_status(result.get("status", ""))
     status_value = str(result.get("status", "") or "").strip().lower()
@@ -191,7 +202,7 @@ def _render_health_check_result(result: dict) -> None:
     elif status_value in {"warning", "warn", "degraded"}:
         st.warning("Health Check: Warning")
     else:
-        st.warning("Health Check: Needs Attention")
+        st.error("Health Check: Needs Attention")
 
     st.markdown("#### Health Check Summary")
 
@@ -199,10 +210,23 @@ def _render_health_check_result(result: dict) -> None:
     issues = result.get("issues", []) if isinstance(result.get("issues", []), list) else []
     errors = result.get("errors", []) if isinstance(result.get("errors", []), list) else []
 
-    c1, c2, c3 = st.columns(3)
+    ready_count = 0
+    warning_count = 0
+    error_count = 0
+    for item in checks.values():
+        item_status = str((item or {}).get("status", "") if isinstance(item, dict) else "").strip().lower()
+        if item_status in {"ok", "healthy", "ready", "pass", "passed"}:
+            ready_count += 1
+        elif item_status in {"warning", "warn", "degraded"}:
+            warning_count += 1
+        elif item_status in {"error", "failed", "fail", "unhealthy"}:
+            error_count += 1
+
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Overall Status", status_label)
-    c2.metric("Checks Reported", len(checks))
-    c3.metric("Issues Found", len(issues) + len(errors))
+    c2.metric("Ready", ready_count)
+    c3.metric("Warnings", warning_count)
+    c4.metric("Errors", error_count)
 
     if issues:
         st.markdown("**What needs attention**")
@@ -216,22 +240,21 @@ def _render_health_check_result(result: dict) -> None:
 
     if checks:
         st.markdown("**Check Results**")
-        for key, value in checks.items():
-            pretty_key = str(key).replace("_", " ").strip().title()
-            if isinstance(value, bool):
-                pretty_value = "Ready" if value else "Needs Attention"
+        for _, value in checks.items():
+            if isinstance(value, dict):
+                pretty_key = str(value.get("label", "Check")).strip() or "Check"
+                item_status = str(value.get("status", "")).strip().lower()
+                message = str(value.get("message", "")).strip()
+                badge = _badge_for_check_status(item_status)
+                if message:
+                    st.write(f"- {badge} **{pretty_key}**: {message}")
+                else:
+                    st.write(f"- {badge} **{pretty_key}**")
             else:
-                pretty_value = str(value)
-            st.write(f"- {pretty_key}: {pretty_value}")
+                st.write(f"- • {value}")
 
-    extra_items = {
-        key: value
-        for key, value in result.items()
-        if key not in {"status", "checks", "issues", "errors"}
-    }
-    if extra_items:
-        with st.expander("Technical details", expanded=False):
-            st.json(result)
+    with st.expander("Technical details", expanded=False):
+        st.json(result)
 
 
 
