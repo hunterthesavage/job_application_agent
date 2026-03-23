@@ -11,6 +11,11 @@ try:
 except ImportError:
     DDGS = None
 
+try:
+    from services.openai_title_suggestions import suggest_titles_with_openai
+except ImportError:
+    suggest_titles_with_openai = None
+
 
 GREENHOUSE_BOARD_FILE = "greenhouse_boards.txt"
 LEVER_BOARD_FILE = "lever_boards.txt"
@@ -55,55 +60,6 @@ SENIORITY_TERMS = [
     "coo",
 ]
 
-TITLE_QUERY_EXPANSIONS = {
-    "analyst": [
-        "analyst",
-        "senior analyst",
-        "business analyst",
-        "business systems analyst",
-        "data analyst",
-        "systems analyst",
-        "operations analyst",
-        "program analyst",
-        "product analyst",
-        "reporting analyst",
-        "financial analyst",
-        "bi analyst",
-        "analytics analyst",
-    ],
-    "nurse": [
-        "nurse",
-        "registered nurse",
-        "rn",
-        "nurse practitioner",
-        "clinical nurse",
-    ],
-    "engineer": [
-        "engineer",
-        "software engineer",
-        "data engineer",
-        "platform engineer",
-        "cloud engineer",
-    ],
-    "manager": [
-        "manager",
-        "program manager",
-        "project manager",
-        "operations manager",
-        "product manager",
-    ],
-    "scrum": [
-        "scrum",
-        "scrum master",
-        "senior scrum master",
-        "agile coach",
-        "agile delivery lead",
-        "delivery manager",
-        "program manager",
-        "technical program manager",
-    ],
-}
-
 GENERIC_SENIORITY_ONLY_TITLES = {
     "vp",
     "vice president",
@@ -114,16 +70,6 @@ GENERIC_SENIORITY_ONLY_TITLES = {
     "chief",
     "executive",
 }
-
-TECH_EXEC_SEARCH_FALLBACK_TITLES = [
-    "VP Technology",
-    "VP IT",
-    "CIO",
-    "CTO",
-    "Head of Platform",
-    "Head of AI",
-    "Chief Digital Officer",
-]
 
 STATE_ABBREVIATIONS = {
     "alabama": "al",
@@ -330,51 +276,7 @@ def title_matches_settings(title: str, settings: dict[str, str]) -> bool:
 
 
 def expand_title_query_terms(target_titles: list[str]) -> list[str]:
-    expanded: list[str] = []
-
-    for raw_term in target_titles:
-        term = normalize_text(raw_term)
-        if not term:
-            continue
-
-        if term in TITLE_QUERY_EXPANSIONS:
-            expanded.extend(TITLE_QUERY_EXPANSIONS[term])
-        else:
-            expanded.append(raw_term.strip())
-
-    return list(dict.fromkeys([safe_text(x) for x in expanded if safe_text(x)]))
-
-
-def expand_search_title_terms(target_titles: list[str]) -> list[str]:
-    """
-    Discovery-search-specific expansion.
-
-    This is intentionally more opinionated than expand_title_query_terms().
-    It helps weak user inputs like 'vp' or 'chief' produce useful discovery
-    queries without changing title matching behavior elsewhere in the system.
-    """
-    expanded: list[str] = []
-
-    for raw_term in target_titles:
-        clean_term = safe_text(raw_term)
-        normalized = normalize_text(clean_term)
-        if not normalized:
-            continue
-
-        if normalized in GENERIC_SENIORITY_ONLY_TITLES:
-            expanded.extend(TECH_EXEC_SEARCH_FALLBACK_TITLES)
-            continue
-
-        if normalized in TITLE_QUERY_EXPANSIONS:
-            expanded.extend(TITLE_QUERY_EXPANSIONS[normalized])
-            continue
-
-        expanded.append(clean_term)
-
-    if not expanded:
-        expanded.extend(TECH_EXEC_SEARCH_FALLBACK_TITLES)
-
-    return dedupe_preserve_order([safe_text(x) for x in expanded if safe_text(x)])
+    return dedupe_preserve_order([safe_text(x) for x in target_titles if safe_text(x)])
 
 
 def has_generic_seniority_only_title(target_titles: list[str]) -> bool:
@@ -383,6 +285,73 @@ def has_generic_seniority_only_title(target_titles: list[str]) -> bool:
         if normalized in GENERIC_SENIORITY_ONLY_TITLES:
             return True
     return False
+
+
+def expand_search_title_terms(
+    settings: dict[str, str],
+    use_ai_expansion: bool = False,
+    log_lines: list[str] | None = None,
+) -> list[str]:
+    """
+    Discovery-search-specific expansion.
+
+    Rules:
+    - Preserve the user's entered titles as the base truth.
+    - Use AI only to broaden discovery query coverage.
+    - Do not call AI during passive preview/render flows.
+    - Fall back to the raw user titles if AI is unavailable or fails.
+    """
+    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    base_titles = dedupe_preserve_order(target_titles)
+
+    if not base_titles:
+        return []
+
+    if not use_ai_expansion:
+        return base_titles
+
+    if suggest_titles_with_openai is None:
+        if log_lines is not None:
+            log_lines.append("AI title expansion unavailable: import failed.")
+        return base_titles
+
+    profile_summary = safe_text(settings.get("profile_summary", ""))
+    resume_text = safe_text(settings.get("resume_text", ""))
+    include_keywords = safe_text(settings.get("include_keywords", ""))
+
+    result = suggest_titles_with_openai(
+        current_titles=", ".join(base_titles),
+        profile_summary=profile_summary,
+        resume_text=resume_text,
+        include_keywords=include_keywords,
+    )
+
+    if not result.get("ok"):
+        if log_lines is not None:
+            log_lines.append(f"AI title expansion not used: {safe_text(result.get('error', 'Unknown error'))}")
+        return base_titles
+
+    suggested_titles = [
+        safe_text(title)
+        for title in result.get("titles", [])
+        if safe_text(title)
+    ]
+
+    combined = dedupe_preserve_order(base_titles + suggested_titles)
+
+    if log_lines is not None:
+        added_count = max(0, len(combined) - len(base_titles))
+        model = safe_text(result.get("model", ""))
+        notes = safe_text(result.get("notes", ""))
+        log_lines.append(
+            f"AI title expansion applied: base {len(base_titles)} | added {added_count} | total {len(combined)}"
+            + (f" | model {model}" if model else "")
+        )
+        if notes:
+            log_lines.append(f"AI title expansion notes: {notes}")
+
+    return combined[:10]
+
 
 
 def _normalize_location_part(value: str) -> str:
@@ -483,7 +452,11 @@ def expand_location_query_terms(preferred_locations: list[str], remote_only: boo
     return dedupe_preserve_order([safe_text(x) for x in expanded if safe_text(x)])
 
 
-def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
+def build_google_discovery_queries(
+    settings: dict[str, str],
+    use_ai_expansion: bool = False,
+    log_lines: list[str] | None = None,
+) -> list[str]:
     target_titles = parse_csv_text(settings.get("target_titles", ""))
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     include_keywords = parse_csv_text(settings.get("include_keywords", ""))
@@ -497,14 +470,15 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
 
     generic_title_mode = has_generic_seniority_only_title(target_titles)
 
-    title_terms = expand_search_title_terms(target_titles or [
-        "VP Technology",
-        "VP IT",
-        "CIO",
-        "CTO",
-        "Head of Technology",
-    ])
-    title_terms = dedupe_preserve_order(title_terms)[:6]
+    title_terms = expand_search_title_terms(
+        settings=settings,
+        use_ai_expansion=use_ai_expansion,
+        log_lines=log_lines,
+    )
+    title_terms = dedupe_preserve_order(title_terms)[:8]
+
+    if not title_terms and target_titles:
+        title_terms = dedupe_preserve_order(target_titles)[:8]
 
     location_terms = dedupe_preserve_order(expand_location_query_terms(preferred_locations, remote_only))
     normalized_locations = {normalize_text(x) for x in location_terms}
@@ -533,7 +507,7 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
     keyword_terms = filter_keyword_terms(include_keywords[:2], title_terms)
 
     # Tier 1: strongest ATS-focused exact-ish queries
-    for title in title_terms[:4]:
+    for title in title_terms[:5]:
         for location in location_terms_for_search[:2]:
             parts = [f'"{title}"', f'"{location}"']
             if keyword_terms:
@@ -543,7 +517,7 @@ def build_google_discovery_queries(settings: dict[str, str]) -> list[str]:
 
     # Tier 2: compact OR query for title family
     if len(title_terms) > 1:
-        title_or = " OR ".join(f'"{title}"' for title in title_terms[:5])
+        title_or = " OR ".join(f'"{title}"' for title in title_terms[:6])
         for location in location_terms_for_search[:2]:
             parts = [f"({title_or})", f'"{location}"', ats_site_block]
             if keyword_terms:
@@ -751,7 +725,7 @@ def discover_google_style_urls(settings: dict[str, str], log_lines: list[str] | 
         return []
 
     discovered = []
-    queries = build_google_discovery_queries(settings)
+    queries = build_google_discovery_queries(settings, use_ai_expansion=True, log_lines=log_lines)
 
     with DDGS() as ddgs:
         for query in queries:
