@@ -10,6 +10,7 @@ except ImportError:
 
 
 ATS_SITE_BLOCK = "(site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com OR site:ashbyhq.com OR site:smartrecruiters.com)"
+CAREER_SIGNAL_BLOCK = '("jobs" OR "careers" OR "hiring")'
 
 
 def safe_text(value: Any) -> str:
@@ -25,6 +26,7 @@ def normalize_text(value: str) -> str:
         .replace("/", " ")
         .replace("-", " ")
         .replace(",", " ")
+        .replace("&", " and ")
         .split()
     )
 
@@ -101,6 +103,7 @@ class SearchPlan:
     include_keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
     remote_only: bool = False
+    query_tiers: list[dict[str, Any]] = field(default_factory=list)
     queries: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
@@ -113,8 +116,7 @@ def _build_location_terms(preferred_locations: list[str], remote_only: bool) -> 
         return ["remote"]
 
     if preferred_locations:
-        terms = dedupe_preserve_order(preferred_locations[:2] + ["remote"])
-        return terms[:3]
+        return dedupe_preserve_order(preferred_locations[:2] + ["remote"])[:3]
 
     return ["remote"]
 
@@ -137,48 +139,6 @@ def _build_keyword_terms(include_keywords: list[str], effective_titles: list[str
         filtered.append(keyword)
 
     return dedupe_preserve_order(filtered)[:2]
-
-
-def _build_queries(
-    effective_titles: list[str],
-    location_terms: list[str],
-    include_keywords: list[str],
-) -> list[str]:
-    queries: list[str] = []
-
-    if not effective_titles:
-        return queries
-
-    keyword_terms = _build_keyword_terms(include_keywords, effective_titles)
-
-    # grouped title query first
-    if len(effective_titles) > 1:
-        title_or = " OR ".join(f'"{title}"' for title in effective_titles[:6])
-        for location in location_terms[:2]:
-            parts = [f"({title_or})", f'"{location}"']
-            if keyword_terms:
-                parts.append(f'"{keyword_terms[0]}"')
-            parts.append(ATS_SITE_BLOCK)
-            queries.append(" ".join(parts))
-
-    # exact-ish title queries next
-    for title in effective_titles[:4]:
-        for location in location_terms[:2]:
-            parts = [f'"{title}"', f'"{location}"']
-            if keyword_terms:
-                parts.append(f'"{keyword_terms[0]}"')
-            parts.append(ATS_SITE_BLOCK)
-            queries.append(" ".join(parts))
-
-    # title-only fallback
-    for title in effective_titles[:2]:
-        parts = [f'"{title}"']
-        if keyword_terms:
-            parts.append(f'"{keyword_terms[0]}"')
-        parts.append(ATS_SITE_BLOCK)
-        queries.append(" ".join(parts))
-
-    return dedupe_preserve_order([q.strip() for q in queries if q.strip()])[:12]
 
 
 def _expand_titles_with_ai(plan_input: SearchPlanInput) -> tuple[list[str], list[str]]:
@@ -222,6 +182,86 @@ def _expand_titles_with_ai(plan_input: SearchPlanInput) -> tuple[list[str], list
     return effective_titles, notes
 
 
+def _build_query_tiers(
+    effective_titles: list[str],
+    location_terms: list[str],
+    include_keywords: list[str],
+) -> list[dict[str, Any]]:
+    tiers: list[dict[str, Any]] = []
+    if not effective_titles:
+        return tiers
+
+    keyword_terms = _build_keyword_terms(include_keywords, effective_titles)
+    keyword_fragment = f' "{keyword_terms[0]}"' if keyword_terms else ""
+
+    # Tier 1: grouped ATS query first
+    grouped_queries: list[str] = []
+    if len(effective_titles) > 1:
+        title_or = " OR ".join(f'"{title}"' for title in effective_titles[:6])
+        for location in location_terms[:2]:
+            grouped_queries.append(
+                f"({title_or}) \"{location}\"{keyword_fragment} {ATS_SITE_BLOCK}"
+            )
+    if grouped_queries:
+        tiers.append(
+            {
+                "name": "ats_grouped",
+                "label": "ATS grouped",
+                "queries": dedupe_preserve_order(grouped_queries)[:4],
+            }
+        )
+
+    # Tier 2: exact ATS queries
+    strict_queries: list[str] = []
+    for title in effective_titles[:4]:
+        for location in location_terms[:2]:
+            strict_queries.append(
+                f"\"{title}\" \"{location}\"{keyword_fragment} {ATS_SITE_BLOCK}"
+            )
+    if strict_queries:
+        tiers.append(
+            {
+                "name": "ats_strict",
+                "label": "ATS strict",
+                "queries": dedupe_preserve_order(strict_queries)[:8],
+            }
+        )
+
+    # Tier 3: looser ATS queries, fewer quotes
+    loose_queries: list[str] = []
+    for title in effective_titles[:3]:
+        for location in location_terms[:2]:
+            loose_queries.append(
+                f"{title} {location}{keyword_fragment} {ATS_SITE_BLOCK}"
+            )
+    if loose_queries:
+        tiers.append(
+            {
+                "name": "ats_loose",
+                "label": "ATS loose",
+                "queries": dedupe_preserve_order(loose_queries)[:6],
+            }
+        )
+
+    # Tier 4: broader career-web discovery
+    career_queries: list[str] = []
+    for title in effective_titles[:2]:
+        for location in location_terms[:2]:
+            career_queries.append(
+                f"\"{title}\" \"{location}\" {CAREER_SIGNAL_BLOCK}"
+            )
+    if career_queries:
+        tiers.append(
+            {
+                "name": "career_web",
+                "label": "Career web",
+                "queries": dedupe_preserve_order(career_queries)[:4],
+            }
+        )
+
+    return tiers
+
+
 def build_search_plan(
     settings: dict[str, Any],
     use_ai_expansion: bool = False,
@@ -245,11 +285,17 @@ def build_search_plan(
         remote_only=plan_input.remote_only,
     )
 
-    queries = _build_queries(
+    query_tiers = _build_query_tiers(
         effective_titles=effective_titles,
         location_terms=location_terms,
         include_keywords=plan_input.include_keywords,
     )
+
+    queries: list[str] = []
+    for tier in query_tiers:
+        queries.extend(tier.get("queries", []))
+
+    queries = dedupe_preserve_order(queries)[:18]
 
     return SearchPlan(
         base_titles=base_titles,
@@ -259,6 +305,7 @@ def build_search_plan(
         include_keywords=plan_input.include_keywords,
         exclude_keywords=plan_input.exclude_keywords,
         remote_only=plan_input.remote_only,
+        query_tiers=query_tiers,
         queries=queries,
         notes=notes,
     )

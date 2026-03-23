@@ -17,6 +17,7 @@ from services.location_matching import (
 from services.matching_profiles import expand_title_terms
 from services.settings import load_settings
 from services.source_trust import enrich_job_payload
+from services.job_qualifier import qualify_job
 from src import discover_job_urls as discover_module
 from src.validate_job_url import create_job_record
 
@@ -372,20 +373,28 @@ def score_job_match(job, settings: dict[str, str]) -> dict[str, Any]:
     company = safe_text(getattr(job, "company", ""))
     location = safe_text(getattr(job, "location", ""))
     compensation_raw = safe_text(getattr(job, "compensation_raw", ""))
+    existing_rationale = safe_text(getattr(job, "match_rationale", ""))
 
-    searchable = " ".join([title, company, location, compensation_raw])
+    qualification_text = " ".join(
+        [
+            title,
+            company,
+            location,
+            compensation_raw,
+            existing_rationale,
+        ]
+    ).strip()
 
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    qualification = qualify_job(
+        job_title=title,
+        company=company,
+        location=location,
+        job_text=qualification_text,
+        settings=settings,
+    )
+
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
-    include_keywords = parse_csv_text(settings.get("include_keywords", ""))
-    exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "true")).lower() == "true"
-
-    title_points, title_reasons = title_match_score(title, target_titles)
-    location_points, location_reasons = location_match_score(location, preferred_locations, remote_only)
-    include_points, include_reasons = include_keywords_score(searchable, include_keywords)
-    exclude_points, exclude_reasons = exclude_keywords_penalty(searchable, exclude_keywords)
-    remote_points, remote_reasons = remote_preference_score(location, remote_only)
 
     location_filter_passed, location_filter_reason = evaluate_location_filters(
         job_location=location,
@@ -393,36 +402,30 @@ def score_job_match(job, settings: dict[str, str]) -> dict[str, Any]:
         remote_only=remote_only,
     )
 
-    total_score = title_points + location_points + include_points + exclude_points + remote_points
-
     hard_reject = not location_filter_passed
-    should_accept = (total_score >= AUTO_ACCEPT_SCORE) and not hard_reject
+    should_accept = bool(qualification.should_accept) and not hard_reject
 
-    reasons = []
-    reasons.extend(title_reasons)
-    reasons.extend(location_reasons)
-    reasons.extend(include_reasons)
-    reasons.extend(exclude_reasons)
-    reasons.extend(remote_reasons)
-
+    reason_parts = []
+    if safe_text(qualification.rationale):
+        reason_parts.append(safe_text(qualification.rationale))
+    if safe_text(qualification.reject_reason):
+        reason_parts.append(f"qualifier reject: {safe_text(qualification.reject_reason)}")
     if hard_reject and location_filter_reason:
-        reasons.append(f"hard reject: {location_filter_reason}")
+        reason_parts.append(f"hard reject: {location_filter_reason}")
 
     return {
-        "score": total_score,
+        "score": int(qualification.score),
         "should_accept": should_accept,
-        "reason_text": "; ".join([reason for reason in reasons if reason]),
+        "reason_text": "; ".join([part for part in reason_parts if part]),
         "breakdown": {
-            "title_points": title_points,
-            "location_points": location_points,
-            "include_points": include_points,
-            "exclude_points": exclude_points,
-            "remote_points": remote_points,
+            "qualification_score": int(qualification.score),
         },
         "hard_reject": hard_reject,
         "location_filter_passed": location_filter_passed,
         "location_filter_reason": location_filter_reason,
+        "qualification": qualification.to_dict(),
     }
+
 
 
 def _batch_dedupe_key(payload: dict[str, Any]) -> str:
@@ -624,22 +627,27 @@ def _normalize_preparse_skip_reason(gate_reason: str) -> str:
 
 
 def _normalize_match_skip_reason(match: dict[str, Any]) -> str:
-    breakdown = match.get("breakdown", {}) or {}
-    title_points = int(breakdown.get("title_points", 0) or 0)
-    exclude_points = int(breakdown.get("exclude_points", 0) or 0)
-    include_points = int(breakdown.get("include_points", 0) or 0)
+    qualification = match.get("qualification", {}) or {}
+    reject_reason = safe_text(qualification.get("reject_reason", "")).lower()
     location_passed = bool(match.get("location_filter_passed", False))
-    score = int(match.get("score", 0) or 0)
 
     if not location_passed:
         return "location_mismatch"
-    if exclude_points < 0:
+
+    if "excluded keyword" in reject_reason or "matched excluded keywords" in reject_reason:
         return "excluded_keyword"
-    if title_points <= 0:
+
+    if "title mismatch" in reject_reason:
         return "title_mismatch"
-    if include_points == 0 and score < AUTO_ACCEPT_SCORE:
-        return "below_threshold"
+
+    if "location mismatch" in reject_reason or "not remote" in reject_reason:
+        return "location_mismatch"
+
+    if "missing job title" in reject_reason:
+        return "parse_failed"
+
     return "below_threshold"
+
 
 
 def _record_skip(

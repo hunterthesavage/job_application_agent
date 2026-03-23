@@ -11,10 +11,7 @@ try:
 except ImportError:
     DDGS = None
 
-try:
-    from services.openai_title_suggestions import suggest_titles_with_openai
-except ImportError:
-    suggest_titles_with_openai = None
+from services.search_plan import build_search_plan as build_structured_search_plan
 
 
 GREENHOUSE_BOARD_FILE = "greenhouse_boards.txt"
@@ -59,17 +56,6 @@ SENIORITY_TERMS = [
     "cio",
     "coo",
 ]
-
-GENERIC_SENIORITY_ONLY_TITLES = {
-    "vp",
-    "vice president",
-    "svp",
-    "senior vice president",
-    "head",
-    "head of",
-    "chief",
-    "executive",
-}
 
 STATE_ABBREVIATIONS = {
     "alabama": "al",
@@ -275,17 +261,6 @@ def title_matches_settings(title: str, settings: dict[str, str]) -> bool:
     return any(term.lower() in lowered for term in target_titles)
 
 
-def expand_title_query_terms(target_titles: list[str]) -> list[str]:
-    return dedupe_preserve_order([safe_text(x) for x in target_titles if safe_text(x)])
-
-
-def has_generic_seniority_only_title(target_titles: list[str]) -> bool:
-    for raw_term in target_titles:
-        normalized = normalize_text(raw_term)
-        if normalized in GENERIC_SENIORITY_ONLY_TITLES:
-            return True
-    return False
-
 
 def expand_search_title_terms(
     settings: dict[str, str],
@@ -458,131 +433,51 @@ def build_google_discovery_queries(
     use_ai_expansion: bool = False,
     log_lines: list[str] | None = None,
 ) -> list[str]:
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
-    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
-    include_keywords = parse_csv_text(settings.get("include_keywords", ""))
-    remote_only = settings.get("remote_only", "false").lower() == "true"
-
-    if not target_titles and not preferred_locations and not include_keywords:
-        return DEFAULT_GOOGLE_DISCOVERY_QUERIES[:12]
-
-    queries: list[str] = []
-    ats_site_block = "(site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com OR site:ashbyhq.com OR site:smartrecruiters.com)"
-
-    generic_title_mode = has_generic_seniority_only_title(target_titles)
-
-    title_terms = expand_search_title_terms(
+    plan = build_structured_search_plan(
         settings=settings,
         use_ai_expansion=use_ai_expansion,
-        log_lines=log_lines,
     )
-    title_terms = dedupe_preserve_order(title_terms)[:6]
 
-    if not title_terms and target_titles:
-        title_terms = dedupe_preserve_order(target_titles)[:6]
+    if log_lines is not None:
+        for note in plan.notes:
+            if safe_text(note):
+                log_lines.append(safe_text(note))
 
-    exact_title_terms = title_terms[:]
-    if generic_title_mode:
-        exact_title_terms = [
-            title for title in title_terms
-            if normalize_text(title) not in GENERIC_SENIORITY_ONLY_TITLES
-        ]
-        if log_lines is not None and len(exact_title_terms) != len(title_terms):
-            log_lines.append("Generic seniority input detected: skipping exact queries for raw seniority-only titles.")
+    return plan.queries[:12]
 
-    location_terms = dedupe_preserve_order(expand_location_query_terms(preferred_locations, remote_only))
-    normalized_locations = {normalize_text(x) for x in location_terms}
-
-    strong_location_terms: list[str] = []
-    for loc in location_terms:
-        norm = normalize_text(loc)
-        if not norm:
-            continue
-        if norm in {"united states", "united kingdom"}:
-            continue
-        if len(norm) <= 2:
-            continue
-        strong_location_terms.append(loc)
-
-    strong_location_terms = dedupe_preserve_order(strong_location_terms)[:2]
-
-    if remote_only:
-        location_terms_for_search = ["remote"]
-    else:
-        location_terms_for_search = strong_location_terms[:]
-        if "remote" in normalized_locations or not location_terms_for_search:
-            location_terms_for_search.append("remote")
-
-    location_terms_for_search = dedupe_preserve_order(location_terms_for_search)[:3]
-    keyword_terms = filter_keyword_terms(include_keywords[:2], title_terms)
-
-    # Tier 1: compact OR query for title family first
-    if len(title_terms) > 1:
-        title_or = " OR ".join(f'"{title}"' for title in title_terms[:6])
-        for location in location_terms_for_search[:2]:
-            parts = [f"({title_or})", f'"{location}"', ats_site_block]
-            if keyword_terms:
-                parts.insert(2, f'"{keyword_terms[0]}"')
-            queries.append(" ".join(parts))
-
-    # Tier 2: strongest ATS-focused exact-ish queries, but only for non-generic titles
-    for title in exact_title_terms[:3]:
-        for location in location_terms_for_search[:2]:
-            parts = [f'"{title}"', f'"{location}"']
-            if keyword_terms:
-                parts.append(f'"{keyword_terms[0]}"')
-            parts.append(ats_site_block)
-            queries.append(" ".join(parts))
-
-    # Tier 3: title-only ATS fallback, only for non-generic titles
-    for title in exact_title_terms[:2]:
-        parts = [f'"{title}"']
-        if keyword_terms:
-            parts.append(f'"{keyword_terms[0]}"')
-        parts.append(ats_site_block)
-        queries.append(" ".join(parts))
-
-    # Tier 4: generic-seniority rescue queries
-    if generic_title_mode:
-        domain_or = '"Technology" OR "IT" OR "Digital" OR "Platform" OR "Enterprise Systems" OR "AI"'
-        seniority_or = '"VP" OR "Vice President" OR "Chief" OR "Head of"'
-        for location in location_terms_for_search[:2]:
-            queries.append(
-                f"({seniority_or}) ({domain_or}) " + f'"{location}" {ats_site_block}'
-            )
-
-    if remote_only and not preferred_locations:
-        queries.append(
-            f'("VP" OR "Vice President" OR "Head of" OR "Chief") ("Technology" OR "IT" OR "Digital" OR "Platform") "remote" {ats_site_block}'
-        )
-
-    queries = dedupe_preserve_order([query.strip() for query in queries if query.strip()])
-    return queries[:12]
 
 
 def build_search_plan(settings: dict[str, str]) -> list[str]:
-    plan_lines = []
+    plan = build_structured_search_plan(
+        settings=settings,
+        use_ai_expansion=False,
+    )
 
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
-    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
-    include_keywords = parse_csv_text(settings.get("include_keywords", ""))
-    remote_only = settings.get("remote_only", "false").lower() == "true"
+    plan_lines: list[str] = []
 
-    if target_titles:
-        plan_lines.append(f"Titles: {', '.join(target_titles[:8])}")
+    if plan.base_titles:
+        plan_lines.append(f"Base titles: {', '.join(plan.base_titles[:8])}")
     else:
-        plan_lines.append("Titles: default senior tech leadership profile")
+        plan_lines.append("Base titles: none provided")
 
-    if preferred_locations:
-        plan_lines.append(f"Locations: {' | '.join(preferred_locations[:6])}")
+    if plan.expanded_titles:
+        plan_lines.append(f"Expanded titles: {', '.join(plan.expanded_titles[:8])}")
     else:
-        plan_lines.append(f"Locations: {'remote only' if remote_only else 'remote + United States fallback'}")
+        plan_lines.append("Expanded titles: none")
 
-    if include_keywords:
-        plan_lines.append(f"Include keywords: {', '.join(include_keywords[:6])}")
+    if plan.preferred_locations:
+        plan_lines.append(f"Locations: {' | '.join(plan.preferred_locations[:6])}")
+    else:
+        plan_lines.append(f"Locations: {'remote only' if plan.remote_only else 'no location preference'}")
 
-    plan_lines.append(f"Remote only: {'true' if remote_only else 'false'}")
+    if plan.include_keywords:
+        plan_lines.append(f"Include keywords: {', '.join(plan.include_keywords[:6])}")
+
+    plan_lines.append(f"Remote only: {'true' if plan.remote_only else 'false'}")
+    plan_lines.append(f"Generated queries: {len(plan.queries)}")
+
     return plan_lines
+
 
 
 def discover_greenhouse_jobs(board_url: str, settings: dict[str, str]) -> list[str]:
