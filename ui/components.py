@@ -63,6 +63,28 @@ def _get_openai_badge() -> tuple[str, str]:
     return "OpenAI: Not Configured", "not-configured"
 
 
+def _split_semicolon_text(value: str) -> list[str]:
+    items: list[str] = []
+    for part in str(value or "").replace(";", "\n").splitlines():
+        cleaned = part.strip(" -")
+        if cleaned:
+            items.append(cleaned)
+    return items
+
+
+def _split_scrub_corrections(risk_flags: str) -> tuple[list[str], list[str]]:
+    corrections: list[str] = []
+    remaining_risks: list[str] = []
+
+    for item in _split_semicolon_text(risk_flags):
+        if item.lower().startswith("ai scrub corrected "):
+            corrections.append(item)
+        else:
+            remaining_risks.append(item)
+
+    return corrections, remaining_risks
+
+
 def _render_ai_button_chip() -> None:
     st.markdown(
         '<div class="ai-button-chip-wrap"><span class="ai-button-chip" title="Uses OpenAI">AI</span></div>',
@@ -328,6 +350,7 @@ def render_job_card(
     discovery_state = safe_value(row, "Discovery State")
     compensation_raw = safe_value(row, "Compensation Raw")
     job_url = safe_value(row, "Job Posting URL")
+    scrub_corrections, display_risks = _split_scrub_corrections(risk_flags)
 
     display_title = clean_display_title(company, title)
     apply_ready_key = f"apply_ready_{job_id}"
@@ -369,9 +392,14 @@ def render_job_card(
                     st.markdown("**Why it matches**")
                     st.write(match_rationale)
 
-                if risk_flags:
+                if scrub_corrections:
+                    st.markdown("**AI corrections**")
+                    for part in scrub_corrections:
+                        st.write(f"• {part}")
+
+                if display_risks:
                     st.markdown("**Risks / gaps**")
-                    for part in [item.strip(" -") for item in str(risk_flags).replace(";", "\n").splitlines() if item.strip()]:
+                    for part in display_risks:
                         st.write(f"• {part}")
 
                 if application_angle:
