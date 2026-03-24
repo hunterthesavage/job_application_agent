@@ -19,6 +19,7 @@ from services.ai_job_scrub import (
 )
 from services.ingestion import ingest_job_records
 from services.job_store import (
+    count_jobs_for_rescoring,
     list_jobs_for_rescoring,
     update_job_scoring_fields,
 )
@@ -1094,9 +1095,11 @@ def ingest_pasted_urls(text_value: str) -> dict[str, Any]:
     )
 
 
-def rescore_existing_jobs(limit: int = 0) -> dict[str, Any]:
+def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]:
     started_at = time.perf_counter()
     resume_profile_text, resume_profile_source = load_scoring_profile_text()
+    stale_days = int(stale_days or 0)
+    stale_policy_label = "All ages" if stale_days <= 0 else f"Older than {stale_days} days"
 
     if not resume_profile_text:
         output = (
@@ -1113,10 +1116,12 @@ def rescore_existing_jobs(limit: int = 0) -> dict[str, Any]:
             "total_considered": 0,
         }
 
-    rows = list_jobs_for_rescoring(limit=limit or None)
+    matching_count = count_jobs_for_rescoring(stale_days=stale_days or None)
+    rows = list_jobs_for_rescoring(limit=limit or None, stale_days=stale_days or None)
     if not rows:
         output = (
             f"AI job scoring profile: {resume_profile_source}\n\n"
+            f"Rescore age filter: {stale_policy_label}\n\n"
             "No existing jobs were available to rescore."
         )
         return {
@@ -1136,6 +1141,8 @@ def rescore_existing_jobs(limit: int = 0) -> dict[str, Any]:
     output_lines = [
         f"AI job scoring profile: {resume_profile_source}",
         f"Rescore limit: {'All active jobs' if not limit else limit}",
+        f"Rescore age filter: {stale_policy_label}",
+        f"Existing jobs matching filter: {matching_count}",
         f"Existing jobs selected for rescore: {len(rows)}",
         "",
     ]
@@ -1190,6 +1197,7 @@ def rescore_existing_jobs(limit: int = 0) -> dict[str, Any]:
         [
             "",
             "Rescore summary:",
+            f"- Existing jobs matching filter: {matching_count}",
             f"- Existing jobs considered: {len(rows)}",
             f"- Successfully rescored: {rescored_count}",
             f"- Changed after rescore: {changed_count}",

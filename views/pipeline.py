@@ -19,6 +19,7 @@ from services.pipeline_runtime import (
     ingest_urls_from_file,
     rescore_existing_jobs,
 )
+from services.job_store import count_jobs_for_rescoring
 from services.settings import load_settings, save_settings
 from services.ui_busy import (
     app_is_busy,
@@ -36,6 +37,20 @@ RESCORE_LIMIT_OPTIONS = [
     ("100", 100),
     ("All", 0),
 ]
+
+RESCORE_STALE_OPTIONS = [
+    ("All ages", 0),
+    ("Older than 7 days", 7),
+    ("Older than 14 days", 14),
+    ("Older than 30 days", 30),
+]
+
+
+def _render_ai_button_chip() -> None:
+    st.markdown(
+        '<div class="ai-button-chip-wrap"><span class="ai-button-chip" title="Uses OpenAI">AI</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _inject_pipeline_css() -> None:
@@ -431,7 +446,10 @@ def _process_pending_action_before_render() -> None:
                 _set_flash(level, message)
 
             elif action_type == "rescore_existing_jobs":
-                result = rescore_existing_jobs(limit=int(payload.get("limit", 0) or 0))
+                result = rescore_existing_jobs(
+                    limit=int(payload.get("limit", 0) or 0),
+                    stale_days=int(payload.get("stale_days", 0) or 0),
+                )
                 st.session_state["pipeline_last_result"] = result
                 _persist_pipeline_output(result)
                 level, message = _build_rescore_flash(result)
@@ -871,6 +889,7 @@ def _render_action_deck() -> None:
             unsafe_allow_html=True,
         )
 
+        _render_ai_button_chip()
         if st.button("Find and Add Jobs", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
             st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
             queue_action("pipeline", "discover_and_ingest", label="Find and Add Jobs")
@@ -883,11 +902,13 @@ def _render_action_deck() -> None:
 
         c1, c2 = st.columns(2)
         with c1:
+            _render_ai_button_chip()
             if st.button("Find Job Links Only", use_container_width=True, disabled=busy, key="pipeline_discover_only"):
                 st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
                 queue_action("pipeline", "discover_only", label="Find Job Links Only")
                 st.rerun()
         with c2:
+            _render_ai_button_chip()
             if st.button("Add Saved Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_saved"):
                 st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
                 queue_action("pipeline", "ingest_saved", label="Add Saved Job Links")
@@ -910,6 +931,7 @@ def _render_action_deck() -> None:
             placeholder="Paste one job URL per line",
         )
 
+        _render_ai_button_chip()
         if st.button("Add Pasted Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_pasted"):
             st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
             queue_action(
@@ -926,23 +948,44 @@ def _render_action_deck() -> None:
             unsafe_allow_html=True,
         )
 
-        selected_rescore_label = st.selectbox(
-            "Rescore Range",
-            options=[label for label, _ in RESCORE_LIMIT_OPTIONS],
-            index=1,
-            disabled=busy,
-            key="pipeline_rescore_limit",
-            help="Use a smaller batch for faster maintenance runs. Choose All only when you want to refresh the full backlog.",
-        )
+        rescore_left, rescore_right = st.columns(2)
+        with rescore_left:
+            selected_rescore_label = st.selectbox(
+                "Rescore Range",
+                options=[label for label, _ in RESCORE_LIMIT_OPTIONS],
+                index=1,
+                disabled=busy,
+                key="pipeline_rescore_limit",
+                help="Use a smaller batch for faster maintenance runs. Choose All only when you want to refresh the full backlog.",
+            )
         selected_rescore_limit = dict(RESCORE_LIMIT_OPTIONS).get(selected_rescore_label, 50)
 
+        with rescore_right:
+            selected_stale_label = st.selectbox(
+                "Rescore Age",
+                options=[label for label, _ in RESCORE_STALE_OPTIONS],
+                index=1,
+                disabled=busy,
+                key="pipeline_rescore_stale_age",
+                help="Use this to avoid spending AI calls on jobs that were refreshed recently.",
+            )
+        selected_stale_days = dict(RESCORE_STALE_OPTIONS).get(selected_stale_label, 7)
+
+        matching_jobs = count_jobs_for_rescoring(stale_days=selected_stale_days or None)
+        selected_jobs = matching_jobs if selected_rescore_limit == 0 else min(matching_jobs, selected_rescore_limit)
+        st.caption(
+            f"Current rescore policy matches {matching_jobs} jobs. "
+            f"This run will process {selected_jobs}."
+        )
+
+        _render_ai_button_chip()
         if st.button("Rescore Existing Jobs", use_container_width=True, disabled=busy, key="pipeline_rescore_existing"):
             st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
             queue_action(
                 "pipeline",
                 "rescore_existing_jobs",
-                payload={"limit": selected_rescore_limit},
-                label=f"Rescore Existing Jobs ({selected_rescore_label})",
+                payload={"limit": selected_rescore_limit, "stale_days": selected_stale_days},
+                label=f"Rescore Existing Jobs ({selected_rescore_label}, {selected_stale_label})",
             )
             st.rerun()
 

@@ -166,6 +166,7 @@ Current pipeline actions:
 - `discover_only`
 - `ingest_saved`
 - `ingest_pasted`
+- `rescore_existing_jobs`
 
 ### Other main views
 - `views/new_roles.py` renders review workflow for newly found roles
@@ -233,6 +234,106 @@ Key decision points in runtime:
 - location hard reject behavior
 - batch dedupe preference
 - run cap via `MAX_URLS_PER_RUN`
+
+## OpenAI by user action
+
+This app now uses OpenAI in a few distinct places. The important distinction is that some UI actions always call OpenAI, while others only call OpenAI as one optional part of a larger flow.
+
+### Buttons that always call OpenAI
+
+#### `New Roles` → `✍ Cover Letter`
+Primary OpenAI behavior:
+- calls `services.cover_letters.generate_cover_letter_for_job_id`
+- builds a prompt from:
+  - Settings → Profile Context
+  - current job data from SQLite
+  - saved cover letter voice
+- sends one OpenAI `responses.create(...)` request
+- writes the generated cover letter to the local filesystem
+- records the output in `cover_letter_artifacts`
+
+This is a direct AI generation action.
+
+#### `Pipeline` → `Rescore Existing Jobs`
+Primary OpenAI behavior for each selected job:
+- loads the current scoring profile, preferring Settings → Profile Context
+- calls `services.ai_job_scoring.score_accepted_job`
+- applies requirement-based scoring into:
+  - `fit_score`
+  - `fit_tier`
+  - `ai_priority`
+  - `match_rationale`
+  - `risk_flags`
+  - `application_angle`
+- then calls `services.ai_job_scrub.scrub_accepted_job`
+- writes the updated scoring fields back into `jobs`
+
+This is a direct AI maintenance action and can make many OpenAI calls in one batch.
+
+### Buttons that may call OpenAI as part of a larger flow
+
+#### `Pipeline` → `Find and Add Jobs`
+Potential OpenAI behavior:
+- discovery can use AI title expansion to broaden the search title list conservatively
+- after jobs are accepted by heuristics, each accepted job can go through:
+  - AI job scoring
+  - AI scrub or validation
+
+Non-AI work in the same flow:
+- URL discovery
+- URL filtering
+- ATS parsing
+- heuristic qualification
+- source trust enrichment
+- SQLite ingestion
+
+So this button is a mixed pipeline action, not a pure AI action.
+
+#### `Pipeline` → `Find Job Links Only`
+Potential OpenAI behavior:
+- discovery can use AI title expansion to broaden discovery queries
+
+What it does not do:
+- no job scoring
+- no AI scrub
+- no ingestion of jobs into SQLite
+
+This is the lightest Pipeline action that can still touch OpenAI.
+
+#### `Pipeline` → `Add Saved Job Links`
+Potential OpenAI behavior:
+- parses saved URLs into job records
+- for accepted jobs, runs:
+  - AI job scoring
+  - AI scrub or validation
+
+What it does not do:
+- no discovery step
+- no AI title expansion
+
+This button is an ingest and evaluate action, not a discovery action.
+
+#### `Pipeline` → `Add Pasted Job Links`
+Potential OpenAI behavior:
+- same AI path as `Add Saved Job Links`
+- for accepted jobs, runs:
+  - AI job scoring
+  - AI scrub or validation
+
+What it does not do:
+- no discovery step
+- no AI title expansion
+
+### Buttons that do not call OpenAI
+
+Examples:
+- `Apply`
+- `Mark as Applied`
+- `Remove Job`
+- `Save Run Inputs`
+- most filter and sort controls
+
+These are local UI or SQLite workflow actions only.
 
 ### `services/ingestion.py`
 Purpose:

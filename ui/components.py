@@ -63,6 +63,13 @@ def _get_openai_badge() -> tuple[str, str]:
     return "OpenAI: Not Configured", "not-configured"
 
 
+def _render_ai_button_chip() -> None:
+    st.markdown(
+        '<div class="ai-button-chip-wrap"><span class="ai-button-chip" title="Uses OpenAI">AI</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_hero() -> None:
     badge_text, badge_class = _get_openai_badge()
 
@@ -397,6 +404,7 @@ def render_job_card(
         )
 
         with btn1:
+            _render_ai_button_chip()
             if st.button(
                 "✍️ Cover Letter",
                 key=f"generate_cover_{job_id}",

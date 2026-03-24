@@ -40,6 +40,7 @@ Current capabilities:
 - Find Job Links Only
 - Add Saved Job Links
 - Add Pasted Job Links
+- Rescore Existing Jobs
 - View search summary
 - View generated search queries
 - View fallback Google search links
@@ -59,6 +60,25 @@ Current pipeline flow:
 8. Dedupe accepted items within the run
 9. Ingest accepted jobs into SQLite
 10. Persist run history and source registry updates
+
+### OpenAI-backed actions in the current UI
+Current user-visible actions that can call OpenAI:
+- `✍ Cover Letter`
+- `Find and Add Jobs`
+- `Find Job Links Only`
+- `Add Saved Job Links`
+- `Add Pasted Job Links`
+- `Rescore Existing Jobs`
+
+Important distinction:
+- `Cover Letter` and `Rescore Existing Jobs` are direct OpenAI actions
+- the Pipeline run buttons are mixed flows where OpenAI is only one part of the overall process
+
+Current OpenAI usage in those flows:
+- title expansion during discovery
+- requirement-based AI job scoring for accepted jobs
+- AI scrub or validation pass after scoring
+- cover letter generation from Profile Context plus job data
 
 ### Local storage
 The app is currently SQLite-first.

@@ -355,6 +355,36 @@ def inject_custom_css() -> None:
                 border-radius: 14px;
             }
 
+            .ai-button-chip-wrap {
+                position: relative;
+                z-index: 2;
+                display: flex;
+                justify-content: flex-end;
+                pointer-events: none;
+                margin-bottom: -0.95rem;
+                padding-right: 0.45rem;
+            }
+
+            .ai-button-chip {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 1.8rem;
+                height: 1.2rem;
+                padding: 0 0.38rem;
+                border-radius: 999px;
+                border: 1px solid rgba(125, 211, 252, 0.28);
+                background: linear-gradient(180deg, rgba(22, 78, 99, 0.92), rgba(15, 52, 67, 0.96));
+                color: rgba(224, 242, 254, 0.92);
+                font-size: 0.62rem;
+                font-weight: 800;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                box-shadow:
+                    0 6px 14px rgba(6, 24, 31, 0.22),
+                    inset 0 1px 0 rgba(255,255,255,0.06);
+            }
+
             .control-label {
                 font-size: 0.92rem;
                 font-weight: 650;

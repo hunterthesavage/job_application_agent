@@ -280,14 +280,26 @@ def get_existing_job_by_posting_url(job_posting_url: str):
 
     return None
 
-
-def list_jobs_for_rescoring(limit: int | None = None) -> list[Any]:
-    ensure_job_columns()
-
-    query = """
-        SELECT *
+def _build_rescore_selection_query(
+    *,
+    select_clause: str,
+    stale_days: int | None = None,
+) -> tuple[str, tuple[Any, ...]]:
+    query = f"""
+        {select_clause}
         FROM jobs
         WHERE active_status != 'Removed'
+    """
+    params: list[Any] = []
+
+    if stale_days is not None and int(stale_days) > 0:
+        query += """
+          AND datetime(COALESCE(NULLIF(updated_at, ''), CURRENT_TIMESTAMP))
+              <= datetime('now', ?)
+        """
+        params.append(f"-{int(stale_days)} days")
+
+    query += """
         ORDER BY
             CASE
                 WHEN workflow_status = 'New' THEN 0
@@ -297,11 +309,34 @@ def list_jobs_for_rescoring(limit: int | None = None) -> list[Any]:
             updated_at DESC,
             id DESC
     """
-    params: tuple[Any, ...] = ()
+    return query, tuple(params)
+
+
+def count_jobs_for_rescoring(stale_days: int | None = None) -> int:
+    ensure_job_columns()
+    query, params = _build_rescore_selection_query(
+        select_clause="SELECT COUNT(*) AS rescore_count",
+        stale_days=stale_days,
+    )
+
+    with db_connection() as conn:
+        row = conn.execute(query, params).fetchone()
+        if row is None:
+            return 0
+        return int(row[0] or 0)
+
+
+def list_jobs_for_rescoring(limit: int | None = None, stale_days: int | None = None) -> list[Any]:
+    ensure_job_columns()
+
+    query, params = _build_rescore_selection_query(
+        select_clause="SELECT *",
+        stale_days=stale_days,
+    )
 
     if limit is not None and int(limit) > 0:
         query += "\nLIMIT ?"
-        params = (int(limit),)
+        params = (*params, int(limit))
 
     with db_connection() as conn:
         return conn.execute(query, params).fetchall()
