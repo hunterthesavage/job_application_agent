@@ -584,34 +584,67 @@ def update_existing_job(existing_id: int, payload: dict[str, Any], preserve_appl
         return was_promoted
 
 
-def update_job_scoring_fields(job_id: int, payload: dict[str, Any]) -> None:
+def update_job_scoring_fields(job_id: int, payload: dict[str, Any], *, include_core_fields: bool = False) -> None:
     ensure_job_columns()
     coerced = coerce_job_payload(payload)
 
     with db_connection() as conn:
-        conn.execute(
-            """
-            UPDATE jobs
-            SET
-                fit_score = ?,
-                fit_tier = ?,
-                ai_priority = ?,
-                match_rationale = ?,
-                risk_flags = ?,
-                application_angle = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (
-                coerced["fit_score"],
-                coerced["fit_tier"],
-                coerced["ai_priority"],
-                coerced["match_rationale"],
-                coerced["risk_flags"],
-                coerced["application_angle"],
-                int(job_id),
-            ),
-        )
+        if include_core_fields:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET
+                    company = ?,
+                    title = ?,
+                    location = ?,
+                    compensation_raw = ?,
+                    fit_score = ?,
+                    fit_tier = ?,
+                    ai_priority = ?,
+                    match_rationale = ?,
+                    risk_flags = ?,
+                    application_angle = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    coerced["company"],
+                    coerced["title"],
+                    coerced["location"],
+                    coerced["compensation_raw"],
+                    coerced["fit_score"],
+                    coerced["fit_tier"],
+                    coerced["ai_priority"],
+                    coerced["match_rationale"],
+                    coerced["risk_flags"],
+                    coerced["application_angle"],
+                    int(job_id),
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET
+                    fit_score = ?,
+                    fit_tier = ?,
+                    ai_priority = ?,
+                    match_rationale = ?,
+                    risk_flags = ?,
+                    application_angle = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    coerced["fit_score"],
+                    coerced["fit_tier"],
+                    coerced["ai_priority"],
+                    coerced["match_rationale"],
+                    coerced["risk_flags"],
+                    coerced["application_angle"],
+                    int(job_id),
+                ),
+            )
 
 
 def upsert_job(job: Any, run_id: int | None = None) -> dict[str, Any]:

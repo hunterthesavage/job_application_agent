@@ -1,4 +1,5 @@
 from src import validate_job_url as validator
+from bs4 import BeautifulSoup
 
 
 def should_pass_title_gate(title: str, settings: dict[str, str]) -> bool:
@@ -62,3 +63,51 @@ def test_infer_location_recognizes_remote_us() -> None:
 def test_infer_location_recognizes_dallas() -> None:
     text = "Primary Location: Dallas, TX"
     assert validator.infer_location(text) == "Dallas, TX"
+
+
+def test_infer_company_from_workday_tenant_uses_tenant_name() -> None:
+    url = "https://harriscomputer.wd3.myworkdayjobs.com/en-US/1/job/SVP-Technology---Engineering_R0040737"
+    assert validator.infer_company_from_domain(url) == "Harris Computer"
+
+
+def test_extract_company_from_json_ld_prefers_hiring_organization_name() -> None:
+    soup = BeautifulSoup(
+        """
+        <html>
+          <head>
+            <script type="application/ld+json">
+              {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "SVP Technology & Engineering",
+                "hiringOrganization": {
+                  "@type": "Organization",
+                  "name": "Xapo Bank"
+                }
+              }
+            </script>
+          </head>
+        </html>
+        """,
+        "lxml",
+    )
+
+    assert validator.extract_company_from_json_ld(soup) == "Xapo Bank"
+
+
+def test_choose_best_company_name_cleans_title_like_company_candidate() -> None:
+    chosen = validator.choose_best_company_name(
+        extracted_company="Work from Anywhere) at Xapo Bank",
+        fallback_company="Xapo61",
+        url="https://job-boards.greenhouse.io/xapo61/jobs/7596633003",
+    )
+    assert chosen == "Xapo Bank"
+
+
+def test_choose_best_company_name_prefers_workday_tenant_brand_over_legal_entity_name() -> None:
+    chosen = validator.choose_best_company_name(
+        extracted_company="New Ultimate Billing, LLC",
+        fallback_company="Harris Computer",
+        url="https://harriscomputer.wd3.myworkdayjobs.com/en-US/1/job/SVP-Technology---Engineering_R0040737",
+    )
+    assert chosen == "Harris Computer"

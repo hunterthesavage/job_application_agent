@@ -40,6 +40,40 @@ def safe_text(value: object) -> str:
     return str(value).strip()
 
 
+COMPANY_SUFFIX_HINTS = [
+    "computer",
+    "technologies",
+    "technology",
+    "solutions",
+    "systems",
+    "software",
+    "services",
+    "health",
+    "healthcare",
+    "financial",
+    "group",
+    "holding",
+    "holdings",
+    "partners",
+    "networks",
+    "labs",
+]
+
+LEGAL_ENTITY_SUFFIXES = {
+    "llc",
+    "inc",
+    "inc.",
+    "corp",
+    "corp.",
+    "corporation",
+    "ltd",
+    "ltd.",
+    "limited",
+    "gmbh",
+    "plc",
+}
+
+
 def parse_csv_text(value: str) -> list[str]:
     text = safe_text(value)
     if not text:
@@ -302,7 +336,136 @@ def extract_title_from_json_ld(soup: BeautifulSoup) -> str:
     return ""
 
 
-def parse_greenhouse_page(url: str) -> tuple[str, str, str, str]:
+def _flatten_company_candidate(value) -> list[str]:
+    results: list[str] = []
+
+    if value is None:
+        return results
+
+    if isinstance(value, str):
+        text = safe_text(value)
+        if text:
+            results.append(text)
+        return results
+
+    if isinstance(value, list):
+        for item in value:
+            results.extend(_flatten_company_candidate(item))
+        return results
+
+    if isinstance(value, dict):
+        for key in ["name", "legalName", "alternateName", "@id", "value"]:
+            text = safe_text(value.get(key))
+            if text:
+                results.append(text)
+        return results
+
+    return results
+
+
+def _clean_company_candidate(value: str) -> str:
+    text = safe_text(value)
+    text = re.sub(r"^https?://", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[/#?].*$", "", text).strip()
+    if re.search(r"\sat\s", text, flags=re.IGNORECASE):
+        parts = [part.strip(" -|,()") for part in re.split(r"\sat\s", text, flags=re.IGNORECASE) if part.strip()]
+        if len(parts) >= 2:
+            text = parts[-1]
+    text = re.sub(r"\s+", " ", text).strip(" -|,")
+    return text
+
+
+def _looks_generic_company_label(value: str) -> bool:
+    cleaned = _clean_company_candidate(value)
+    lowered = cleaned.lower()
+    if not cleaned:
+        return True
+
+    generic_values = {
+        "greenhouse",
+        "greenhouse job board",
+        "job board",
+        "jobs",
+        "careers",
+        "workday",
+        "myworkdayjobs",
+        "smartrecruiters",
+        "lever",
+        "ashby",
+    }
+    if lowered in generic_values:
+        return True
+
+    if "job board" in lowered or "careers" == lowered:
+        return True
+
+    if any(token in lowered for token in ["remote", "work from anywhere", "united states"]):
+        return True
+
+    if any(token in lowered for token in ["analyst", "engineer", "manager", "director", "vice president", "svp"]):
+        return True
+
+    return False
+
+
+def _looks_like_legal_entity_name(value: str) -> bool:
+    tokens = re.split(r"[\s,]+", _clean_company_candidate(value).lower())
+    return any(token in LEGAL_ENTITY_SUFFIXES for token in tokens if token)
+
+
+def choose_best_company_name(extracted_company: str, fallback_company: str, url: str) -> str:
+    cleaned_extracted = _clean_company_candidate(extracted_company)
+    cleaned_fallback = _clean_company_candidate(fallback_company)
+    hostname = (urlparse(url).hostname or "").lower()
+
+    if cleaned_extracted and not _looks_generic_company_label(cleaned_extracted):
+        if "myworkdayjobs.com" in hostname and cleaned_fallback:
+            if _looks_like_legal_entity_name(cleaned_extracted):
+                return cleaned_fallback
+        return cleaned_extracted
+
+    return cleaned_fallback or cleaned_extracted
+
+
+def extract_company_from_json_ld(soup: BeautifulSoup) -> str:
+    candidates = extract_json_ld_candidates(soup)
+
+    for item in candidates:
+        for key in ["hiringOrganization", "organization", "publisher", "company"]:
+            values = _flatten_company_candidate(item.get(key))
+            for value in values:
+                cleaned = _clean_company_candidate(value)
+                if cleaned and not _looks_generic_company_label(cleaned):
+                    return cleaned
+
+    return ""
+
+
+def extract_company_from_meta(soup: BeautifulSoup) -> str:
+    meta_candidates = [
+        soup.find("meta", attrs={"property": "og:site_name"}),
+        soup.find("meta", attrs={"name": "application-name"}),
+        soup.find("meta", attrs={"name": "apple-mobile-web-app-title"}),
+    ]
+
+    for tag in meta_candidates:
+        if tag and tag.get("content"):
+            cleaned = _clean_company_candidate(tag.get("content"))
+            if cleaned and not _looks_generic_company_label(cleaned):
+                return cleaned
+
+    if soup.title and soup.title.string:
+        title_text = safe_text(soup.title.string)
+        parts = [part.strip() for part in re.split(r"\s[-|]\s", title_text) if part.strip()]
+        for part in reversed(parts):
+            cleaned = _clean_company_candidate(part)
+            if cleaned and not _looks_generic_company_label(cleaned):
+                return cleaned
+
+    return ""
+
+
+def parse_greenhouse_page(url: str) -> tuple[str, str, str, str, str]:
     response = requests.get(
         url,
         timeout=20,
@@ -316,6 +479,7 @@ def parse_greenhouse_page(url: str) -> tuple[str, str, str, str]:
 
     title = ""
     location = ""
+    company = ""
 
     title_tag = soup.find("h1")
     if title_tag:
@@ -340,11 +504,15 @@ def parse_greenhouse_page(url: str) -> tuple[str, str, str, str]:
     if not title and soup.title and soup.title.string:
         title = soup.title.string.strip()
 
+    company = extract_company_from_json_ld(soup)
+    if not company:
+        company = extract_company_from_meta(soup)
+
     text = soup.get_text(" ", strip=True)
-    return title, location, text, final_url
+    return title, location, text, final_url, company
 
 
-def parse_page(url: str) -> tuple[str, str, str, str]:
+def parse_page(url: str) -> tuple[str, str, str, str, str]:
     if "greenhouse.io" in url.lower():
         return parse_greenhouse_page(url)
 
@@ -359,6 +527,7 @@ def parse_page(url: str) -> tuple[str, str, str, str]:
 
     title = ""
     location = ""
+    company = ""
 
     h1 = soup.find("h1")
     if h1:
@@ -382,11 +551,29 @@ def parse_page(url: str) -> tuple[str, str, str, str]:
     if not location:
         location = extract_location_from_label_patterns(soup)
 
+    company = extract_company_from_json_ld(soup)
+    if not company:
+        company = extract_company_from_meta(soup)
+
     text = soup.get_text(" ", strip=True)
-    return title, location, text, response.url
+    return title, location, text, response.url, company
 
 
 def infer_company_from_domain(url: str) -> str:
+    def _prettify_company_slug(slug: str) -> str:
+        base = safe_text(slug).replace("-", " ").replace("_", " ")
+        base = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", base)
+        base = re.sub(r"\s+", " ", base).strip()
+
+        lowered = base.lower().replace(" ", "")
+        for suffix in COMPANY_SUFFIX_HINTS:
+            if lowered.endswith(suffix) and lowered != suffix:
+                prefix = lowered[: -len(suffix)]
+                if prefix:
+                    return f"{prefix.title()} {suffix.title()}"
+
+        return base.title() or "Unknown"
+
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").replace("www.", "").lower()
     path_parts = [part for part in parsed.path.split("/") if part]
@@ -406,6 +593,10 @@ def infer_company_from_domain(url: str) -> str:
     if "smartrecruiters.com" in hostname:
         if path_parts:
             return path_parts[0].replace("-", " ").title()
+
+    workday_match = re.match(r"^(?P<tenant>[^.]+)\.wd\d+\.myworkdayjobs\.com$", hostname)
+    if workday_match:
+        return _prettify_company_slug(workday_match.group("tenant"))
 
     parts = hostname.split(".")
     if len(parts) >= 2:
@@ -644,9 +835,13 @@ def create_job_record(job_url: str) -> JobRecord:
     This function should extract and infer structured fields from a URL and page.
     Final accept/reject policy should live in services/pipeline_runtime.py.
     """
-    title, extracted_location, text, final_url = parse_page(job_url)
+    title, extracted_location, text, final_url, extracted_company = parse_page(job_url)
 
-    company = infer_company_from_domain(final_url)
+    company = choose_best_company_name(
+        extracted_company=extracted_company,
+        fallback_company=infer_company_from_domain(final_url),
+        url=final_url,
+    )
     location = clean_location_candidate(extracted_location) if extracted_location.strip() else infer_location(text)
     if not location:
         location = infer_location(text)

@@ -17,6 +17,7 @@ def test_normalize_scrub_result_accepts_expected_fields():
         "scrub_confidence": "high",
         "corrected_title": "Vice President, Technology",
         "corrected_company": "Example Holdings",
+        "corrected_location": "Dallas, TX",
         "correction_confidence": "high",
         "correction_notes": ["Page title clearly uses the vice president title variant"],
     }
@@ -27,6 +28,7 @@ def test_normalize_scrub_result_accepts_expected_fields():
     assert normalized["scrub_confidence"] == "High"
     assert normalized["corrected_title"] == "Vice President, Technology"
     assert normalized["corrected_company"] == "Example Holdings"
+    assert normalized["corrected_location"] == "Dallas, TX"
     assert normalized["correction_confidence"] == "High"
     assert "finance-led" in normalized["scrub_summary"]
     assert len(normalized["scrub_flags"]) == 2
@@ -88,6 +90,7 @@ def test_apply_scrub_to_job_payload_applies_high_confidence_field_corrections():
     job_payload = {
         "title": "VP Tech",
         "company": "ExampleCo LLC",
+        "location": "Texas",
         "compensation_raw": "",
         "duplicate_key": "exampleco|vptech|dallas",
         "normalized_title": "vp tech",
@@ -100,6 +103,7 @@ def test_apply_scrub_to_job_payload_applies_high_confidence_field_corrections():
         "scrub_confidence": "High",
         "corrected_title": "Vice President of Technology",
         "corrected_company": "ExampleCo",
+        "corrected_location": "Dallas, TX",
         "corrected_compensation_raw": "$220,000 - $260,000",
         "correction_confidence": "High",
         "correction_notes": ["Page header and compensation section were explicit."],
@@ -109,17 +113,20 @@ def test_apply_scrub_to_job_payload_applies_high_confidence_field_corrections():
 
     assert updated["title"] == "Vice President of Technology"
     assert updated["company"] == "ExampleCo"
+    assert updated["location"] == "Dallas, TX"
     assert updated["compensation_raw"] == "$220,000 - $260,000"
     assert updated["duplicate_key"] == ""
     assert updated["normalized_title"] == ""
     assert "AI scrub corrected Title to Vice President of Technology" in updated["risk_flags"]
     assert "AI scrub corrected Company to ExampleCo" in updated["risk_flags"]
+    assert "AI scrub corrected Location to Dallas, TX" in updated["risk_flags"]
 
 
 def test_apply_scrub_to_job_payload_ignores_corrections_without_high_confidence():
     job_payload = {
         "title": "VP Tech",
         "company": "ExampleCo LLC",
+        "location": "Texas",
         "compensation_raw": "",
         "duplicate_key": "exampleco|vptech|dallas",
         "normalized_title": "vp tech",

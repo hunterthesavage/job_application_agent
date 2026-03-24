@@ -1028,6 +1028,41 @@ def _build_jobs_from_urls(
     }
 
 
+def _refresh_payload_with_live_page_data(payload: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    job_url = safe_text(payload.get("job_posting_url", ""))
+    if not job_url:
+        return payload, False
+
+    refreshed_job = create_job_record(job_url)
+
+    refreshed_payload = dict(payload)
+    refreshed_payload["company"] = safe_text(getattr(refreshed_job, "company", payload.get("company", "")))
+    refreshed_payload["title"] = safe_text(getattr(refreshed_job, "title", payload.get("title", "")))
+    refreshed_payload["normalized_title"] = safe_text(
+        getattr(refreshed_job, "normalized_title", payload.get("normalized_title", ""))
+    )
+    refreshed_payload["role_family"] = safe_text(getattr(refreshed_job, "role_family", payload.get("role_family", "")))
+    refreshed_payload["description_text"] = safe_text(getattr(refreshed_job, "description_text", ""))
+    refreshed_payload["job_posting_url"] = safe_text(getattr(refreshed_job, "job_posting_url", job_url)) or job_url
+    refreshed_payload["location"] = safe_text(getattr(refreshed_job, "location", payload.get("location", "")))
+    refreshed_payload["remote_type"] = safe_text(getattr(refreshed_job, "remote_type", payload.get("remote_type", "")))
+    refreshed_payload["dallas_dfw_match"] = safe_text(
+        getattr(refreshed_job, "dallas_dfw_match", payload.get("dallas_dfw_match", ""))
+    )
+    refreshed_payload["compensation_raw"] = safe_text(
+        getattr(refreshed_job, "compensation_raw", payload.get("compensation_raw", ""))
+    )
+    refreshed_payload["validation_status"] = safe_text(getattr(refreshed_job, "validation_status", payload.get("validation_status", "")))
+    refreshed_payload["validation_confidence"] = safe_text(
+        getattr(refreshed_job, "validation_confidence", payload.get("validation_confidence", ""))
+    )
+    refreshed_payload["compensation_status"] = safe_text(
+        getattr(refreshed_job, "compensation_status", payload.get("compensation_status", ""))
+    )
+
+    return refreshed_payload, True
+
+
 def build_search_preview() -> dict[str, Any]:
     settings = load_settings()
     return {
@@ -1158,6 +1193,8 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
     skipped_count = 0
     error_count = 0
     changed_count = 0
+    live_refresh_count = 0
+    live_refresh_error_count = 0
     output_lines = [
         f"AI job scoring profile: {resume_profile_source}",
         f"Rescore limit: {'All active jobs' if not limit else limit}",
@@ -1174,6 +1211,10 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
         company = safe_text(payload.get("company", "")) or "Unknown company"
 
         old_values = {
+            "company": payload.get("company"),
+            "title": payload.get("title"),
+            "location": payload.get("location"),
+            "compensation_raw": payload.get("compensation_raw"),
             "fit_score": payload.get("fit_score"),
             "fit_tier": payload.get("fit_tier"),
             "ai_priority": payload.get("ai_priority"),
@@ -1183,6 +1224,16 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
         }
 
         try:
+            try:
+                payload, refreshed = _refresh_payload_with_live_page_data(payload)
+                if refreshed:
+                    live_refresh_count += 1
+            except Exception as refresh_exc:
+                live_refresh_error_count += 1
+                output_lines.append(
+                    f"Live page refresh skipped: {company} | {title} | {type(refresh_exc).__name__}: {refresh_exc}"
+                )
+
             score_result = score_accepted_job(payload, resume_profile_text)
             score_status = safe_text(score_result.get("status", "")).lower()
             if score_status != "scored":
@@ -1193,11 +1244,15 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
             apply_score_to_job_payload(payload, score_result)
             scrub_result = scrub_accepted_job(payload, resume_profile_text)
             apply_scrub_to_job_payload(payload, scrub_result)
-            update_job_scoring_fields(job_id, payload)
+            update_job_scoring_fields(job_id, payload, include_core_fields=True)
 
             rescored_count += 1
 
             new_values = {
+                "company": payload.get("company"),
+                "title": payload.get("title"),
+                "location": payload.get("location"),
+                "compensation_raw": payload.get("compensation_raw"),
                 "fit_score": payload.get("fit_score"),
                 "fit_tier": payload.get("fit_tier"),
                 "ai_priority": payload.get("ai_priority"),
@@ -1219,6 +1274,8 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
             "Rescore summary:",
             f"- Existing jobs matching filter: {matching_count}",
             f"- Existing jobs considered: {len(rows)}",
+            f"- Live page refreshes succeeded: {live_refresh_count}",
+            f"- Live page refreshes failed: {live_refresh_error_count}",
             f"- Successfully rescored: {rescored_count}",
             f"- Changed after rescore: {changed_count}",
             f"- Skipped: {skipped_count}",

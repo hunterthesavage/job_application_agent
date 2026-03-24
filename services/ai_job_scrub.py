@@ -52,6 +52,7 @@ def normalize_scrub_result(payload: Dict[str, Any], *, model: str = DEFAULT_MODE
         "scrub_confidence": _normalize_confidence(payload.get("scrub_confidence")),
         "corrected_title": _clean(payload.get("corrected_title")),
         "corrected_company": _clean(payload.get("corrected_company")),
+        "corrected_location": _clean(payload.get("corrected_location")),
         "corrected_compensation_raw": _clean(payload.get("corrected_compensation_raw")),
         "correction_confidence": _normalize_confidence(payload.get("correction_confidence")),
         "correction_notes": _clean_list(payload.get("correction_notes")),
@@ -68,6 +69,7 @@ def build_default_scrub_result(
     scrub_confidence: str = "Low",
     corrected_title: str = "",
     corrected_company: str = "",
+    corrected_location: str = "",
     corrected_compensation_raw: str = "",
     correction_confidence: str = "Low",
     correction_notes: Optional[List[str]] = None,
@@ -82,6 +84,7 @@ def build_default_scrub_result(
             "scrub_confidence": scrub_confidence,
             "corrected_title": corrected_title,
             "corrected_company": corrected_company,
+            "corrected_location": corrected_location,
             "corrected_compensation_raw": corrected_compensation_raw,
             "correction_confidence": correction_confidence,
             "correction_notes": correction_notes or [],
@@ -126,6 +129,7 @@ def build_scrub_prompt(job_payload: Dict[str, Any], resume_profile_text: str) ->
         "scrub_confidence": "High, Medium, or Low",
         "corrected_title": "blank unless page evidence strongly supports a more accurate title",
         "corrected_company": "blank unless page evidence strongly supports a more accurate company name",
+        "corrected_location": "blank unless page evidence strongly supports a more accurate location string",
         "corrected_compensation_raw": "blank unless page evidence strongly supports a more accurate compensation string",
         "correction_confidence": "High, Medium, or Low",
         "correction_notes": ["short note explaining a high-confidence correction"],
@@ -143,7 +147,7 @@ def build_scrub_prompt(job_payload: Dict[str, Any], resume_profile_text: str) ->
         "- clean: no meaningful contradiction found\n"
         "- review: some ambiguity or evidence gaps exist\n"
         "- reject: strong contradiction or clear mismatch exists\n\n"
-        "Only return corrected_title, corrected_company, or corrected_compensation_raw when the page evidence is strong.\n"
+        "Only return corrected_title, corrected_company, corrected_location, or corrected_compensation_raw when the page evidence is strong.\n"
         "If confidence is not High, leave correction fields blank.\n"
         "Do not guess or normalize stylistically. Only correct fields that appear materially wrong or incomplete.\n\n"
         f"Required JSON schema:\n{json.dumps(schema, indent=2)}\n\n"
@@ -238,12 +242,13 @@ def apply_scrub_to_job_payload(job_payload: Dict[str, Any], scrub_result: Dict[s
 
     correction_notes = list(normalized.get("correction_notes", []))
     description_text = _clean(job_payload.get("description_text"))
-    title_or_company_changed = False
+    identity_fields_changed = False
 
     if description_text and normalized.get("correction_confidence") == "High":
         field_specs = [
             ("corrected_title", "title", "Title"),
             ("corrected_company", "company", "Company"),
+            ("corrected_location", "location", "Location"),
             ("corrected_compensation_raw", "compensation_raw", "Compensation"),
         ]
         for corrected_key, payload_key, label in field_specs:
@@ -255,12 +260,13 @@ def apply_scrub_to_job_payload(job_payload: Dict[str, Any], scrub_result: Dict[s
             job_payload[payload_key] = corrected_value
             correction_notes.append(f"AI scrub corrected {label} to {corrected_value}")
 
-            if payload_key in {"title", "company"}:
-                title_or_company_changed = True
+            if payload_key in {"title", "company", "location"}:
+                identity_fields_changed = True
 
-        if title_or_company_changed:
+        if identity_fields_changed:
             job_payload["duplicate_key"] = ""
-            job_payload["normalized_title"] = ""
+            if _clean(normalized.get("corrected_title", "")):
+                job_payload["normalized_title"] = ""
 
     job_payload["risk_flags"] = _merge_text_items(
         job_payload.get("risk_flags", ""),

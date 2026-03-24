@@ -82,3 +82,26 @@ def test_update_job_scoring_fields_updates_only_scoring_columns(temp_db_path, sa
     assert existing["match_rationale"] == "Rescored rationale"
     assert existing["risk_flags"] == "Level mismatch"
     assert existing["application_angle"] == "Updated angle"
+
+
+def test_update_job_scoring_fields_can_persist_core_scrub_corrections(temp_db_path, sample_job_payload):
+    import services.job_store as job_store
+
+    inserted = job_store.upsert_job(sample_job_payload)
+    job_id = inserted["job_id"]
+
+    updated_payload = dict(sample_job_payload)
+    updated_payload["company"] = "Corrected Company"
+    updated_payload["title"] = "Vice President of Technology"
+    updated_payload["location"] = "Dallas, TX"
+    updated_payload["compensation_raw"] = "$220,000 - $260,000"
+    updated_payload["fit_score"] = 82
+
+    job_store.update_job_scoring_fields(job_id, updated_payload, include_core_fields=True)
+
+    existing = job_store.get_existing_job_by_duplicate_key(sample_job_payload["duplicate_key"])
+    assert existing["company"] == "Corrected Company"
+    assert existing["title"] == "Vice President of Technology"
+    assert existing["location"] == "Dallas, TX"
+    assert existing["compensation_raw"] == "$220,000 - $260,000"
+    assert existing["fit_score"] == 82
