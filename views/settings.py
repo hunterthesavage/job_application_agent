@@ -21,6 +21,7 @@ from services.openai_key import (
     mask_openai_api_key,
     save_openai_api_key,
 )
+from services.profile_context_templates import get_profile_context_template
 from services.settings import DEFAULT_SETTINGS, load_settings, save_settings
 from services.status import get_system_status
 from ui.navigation import initialize_nav_state, render_button_nav
@@ -459,6 +460,7 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
     render_system_status()
     st.markdown("---")
     st.markdown("### Cover Letter Output")
+    st.caption("This only affects generated cover letters. Discovery and AI scoring still work without it.")
 
     folder_col, browse_col = st.columns([5, 1.2])
 
@@ -504,6 +506,8 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
         )
     ).expanduser()
     st.caption(f"Resolved output path: {resolved_folder}")
+    if not resolved_folder.exists():
+        st.info("Set this before generating letters. It is not required for discovery or scoring.")
 
     st.text_input(
         "Cover Letter Filename Pattern",
@@ -596,13 +600,33 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
 
 
 def render_profile_context_tab(settings: dict[str, str]) -> None:
-    with st.form("settings_profile_context_form"):
-        st.markdown("### Profile Context")
+    template = get_profile_context_template()
+
+    st.markdown("### Profile Context")
+    st.caption(
+        "This is the primary candidate context used by AI scoring. If this is blank, discovery can still run, but accepted jobs will skip AI scoring unless a fallback profile file exists."
+    )
+
+    helper_left, helper_right = st.columns([1.1, 2.2])
+    with helper_left:
+        if st.button("Load Starter Template", key="settings_load_profile_template"):
+            current_settings = load_settings()
+            save_settings(
+                {
+                    "resume_text": current_settings.get("resume_text", "") or template["resume_text"],
+                    "profile_summary": current_settings.get("profile_summary", "") or template["profile_summary"],
+                    "strengths_to_highlight": current_settings.get("strengths_to_highlight", "") or template["strengths_to_highlight"],
+                    "cover_letter_voice": current_settings.get("cover_letter_voice", "") or template["cover_letter_voice"],
+                }
+            )
+            st.success("Starter template loaded into any empty Profile Context fields.")
+            st.rerun()
+    with helper_right:
         st.caption(
-            "This is the primary candidate context used by AI job scoring. "
-            "Cover letters also use it, while Cover Letter Voice only affects letter generation."
+            "Use the starter if you want a fast first pass. It fills only empty fields, so it will not overwrite your existing Profile Context."
         )
 
+    with st.form("settings_profile_context_form"):
         resume_text = st.text_area(
             "Resume Text",
             value=settings.get("resume_text", ""),
@@ -648,7 +672,10 @@ def render_profile_context_tab(settings: dict[str, str]) -> None:
 
 def render_openai_api_tab() -> None:
     st.markdown("### OpenAI API")
-    st.caption("Add the API key used for cover letter generation. The app uses a saved local key first and falls back to OPENAI_API_KEY from the environment.")
+    st.caption(
+        "Add the API key used for AI title expansion, AI scoring, AI scrub, and cover letters. "
+        "The app uses a saved local key first and falls back to OPENAI_API_KEY from the environment."
+    )
 
     st.markdown("Create or manage your API key here: [OpenAI API keys](https://platform.openai.com/api-keys)")
     st.markdown("Check billing or credits here: [OpenAI Billing](https://platform.openai.com/settings/organization/billing/overview)")
@@ -670,8 +697,10 @@ def render_openai_api_tab() -> None:
 
     if details["active_key_present"]:
         st.markdown(f"**Active key:** `{details['active_key_masked']}`")
+        st.success("AI-assisted discovery, scoring, scrub, and cover letters can use this key.")
     else:
         st.info("No OpenAI API key is configured yet. Save a local key below or provide OPENAI_API_KEY in the environment.")
+        st.caption("Without a key, you can still discover and import jobs, but AI title expansion, scoring, scrub, and cover letters stay off.")
 
     if "settings_openai_api_key_value" not in st.session_state:
         st.session_state["settings_openai_api_key_value"] = load_saved_openai_api_key()

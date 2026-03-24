@@ -1,3 +1,4 @@
+import html
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -11,6 +12,7 @@ from services.job_levels import (
     parse_preferred_job_levels,
     serialize_preferred_job_levels,
 )
+from services.readiness import get_readiness_summary
 from services.pipeline_runtime import (
     build_search_preview,
     discover_and_ingest,
@@ -120,6 +122,57 @@ def _inject_pipeline_css() -> None:
                 box-shadow: 0 10px 24px rgba(0,0,0,0.18);
             }
 
+            .pipeline-readiness-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 0.8rem;
+                margin-bottom: 0.9rem;
+            }
+
+            .pipeline-readiness-grid.capabilities {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                margin-top: 0.2rem;
+            }
+
+            .pipeline-readiness-tile {
+                border-radius: 18px;
+                border: 1px solid rgba(255,255,255,0.07);
+                background: linear-gradient(180deg, rgba(17,24,39,0.94) 0%, rgba(11,16,26,0.98) 100%);
+                padding: 0.9rem 0.95rem 0.88rem 0.95rem;
+                box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+            }
+
+            .pipeline-readiness-label {
+                font-size: 0.80rem;
+                font-weight: 700;
+                color: rgba(255,255,255,0.68);
+                margin-bottom: 0.35rem;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+            }
+
+            .pipeline-readiness-value {
+                font-size: 1.02rem;
+                font-weight: 780;
+                color: rgba(255,255,255,0.98);
+                line-height: 1.1;
+                margin-bottom: 0.22rem;
+            }
+
+            .pipeline-readiness-value.ready {
+                color: rgba(134, 239, 172, 0.98);
+            }
+
+            .pipeline-readiness-value.warning {
+                color: rgba(253, 224, 71, 0.96);
+            }
+
+            .pipeline-readiness-detail {
+                font-size: 0.84rem;
+                line-height: 1.35;
+                color: rgba(255,255,255,0.68);
+            }
+
             .pipeline-status-label {
                 font-size: 0.80rem;
                 font-weight: 700;
@@ -182,10 +235,22 @@ def _inject_pipeline_css() -> None:
                 .pipeline-status-grid {
                     grid-template-columns: repeat(2, minmax(0, 1fr));
                 }
+
+                .pipeline-readiness-grid {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+
+                .pipeline-readiness-grid.capabilities {
+                    grid-template-columns: 1fr;
+                }
             }
 
             @media (max-width: 680px) {
                 .pipeline-status-grid {
+                    grid-template-columns: 1fr;
+                }
+
+                .pipeline-readiness-grid {
                     grid-template-columns: 1fr;
                 }
 
@@ -809,6 +874,51 @@ A good first step is:
     )
 
 
+def _render_readiness_card() -> None:
+    readiness = get_readiness_summary()
+    capability_tiles = readiness.get("capabilities", []) or []
+    setup_snapshot = str(readiness.get("setup_snapshot", "") or "").strip()
+    note = str(readiness.get("note", "") or "").strip()
+    next_step = str(readiness.get("next_step", "") or "").strip()
+
+    def _render_tile(tile: dict[str, object]) -> str:
+        ready = bool(tile.get("ready", False))
+        status_class = "ready" if ready else "warning"
+        label = html.escape(str(tile.get("label", "") or ""))
+        value = html.escape(str(tile.get("value", "") or ""))
+        detail = html.escape(str(tile.get("detail", "") or ""))
+        return (
+            '<div class="pipeline-readiness-tile">'
+            f'<div class="pipeline-readiness-label">{label}</div>'
+            f'<div class="pipeline-readiness-value {status_class}">{value}</div>'
+            f'<div class="pipeline-readiness-detail">{detail}</div>'
+            '</div>'
+        )
+
+    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
+    st.markdown('<div class="pipeline-card-title">Readiness Check</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="pipeline-card-copy">A quick read on which AI-assisted parts of the app are ready right now.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if capability_tiles:
+        rendered_capabilities = [_render_tile(tile) for tile in capability_tiles]
+        st.markdown(
+            f'<div class="pipeline-readiness-grid capabilities">{"".join(rendered_capabilities)}</div>',
+            unsafe_allow_html=True,
+        )
+
+    if note:
+        st.caption(note)
+    if setup_snapshot:
+        st.caption(setup_snapshot)
+    if next_step:
+        st.info(next_step)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def _render_run_inputs() -> None:
     settings = load_settings()
 
@@ -1170,6 +1280,7 @@ def render_pipeline() -> None:
 
     _render_pipeline_operations_card()
     _render_flash()
+    _render_readiness_card()
     _render_first_run_pipeline_guidance()
     _render_action_deck()
     _render_run_diagnostics_card()

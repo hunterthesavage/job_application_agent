@@ -13,6 +13,7 @@ from services.openai_key import (
     load_saved_openai_api_key,
     save_openai_api_key,
 )
+from services.profile_context_templates import get_profile_context_template
 from services.settings import load_settings, save_settings
 from services.openai_title_suggestions import suggest_titles_with_openai
 from services.ui_busy import queue_action
@@ -365,33 +366,52 @@ def _render_search_step() -> None:
 
 
 def _render_profile_step() -> None:
+    template = get_profile_context_template()
+
     st.markdown("## Profile Context")
-    st.write("Optional, but helpful if you want stronger AI-generated cover letters and better context.")
+    st.write(
+        "This is the main context used for AI scoring and cover letters. Discovery still works without it, but accepted jobs will skip AI scoring unless a fallback profile file exists."
+    )
+
+    helper_left, helper_right = st.columns([1.1, 2.2])
+    with helper_left:
+        if st.button("Use Starter Template", key="wizard_use_profile_template"):
+            st.session_state["wizard_resume_text"] = st.session_state.get("wizard_resume_text", "") or template["resume_text"]
+            st.session_state["wizard_profile_summary"] = st.session_state.get("wizard_profile_summary", "") or template["profile_summary"]
+            st.session_state["wizard_strengths_to_highlight"] = (
+                st.session_state.get("wizard_strengths_to_highlight", "") or template["strengths_to_highlight"]
+            )
+            st.session_state["wizard_cover_letter_voice"] = (
+                st.session_state.get("wizard_cover_letter_voice", "") or template["cover_letter_voice"]
+            )
+            st.rerun()
+    with helper_right:
+        st.caption("This fills only empty fields so you can start from a structured scoring profile instead of a blank page.")
 
     with st.form("setup_wizard_profile_form"):
         resume_text = st.text_area(
             "Resume Text",
             value=st.session_state.get("wizard_resume_text", ""),
             height=200,
-            help="Paste resume text here if you want the app to use it later for cover letter generation.",
+            help="Primary supporting evidence for AI scoring and cover letters.",
         )
         profile_summary = st.text_area(
             "Executive Summary",
             value=st.session_state.get("wizard_profile_summary", ""),
             height=120,
-            help="Optional short bio or leadership summary.",
+            help="High-priority scoring input. Use this for your executive summary and target profile.",
         )
         strengths_to_highlight = st.text_area(
             "Strengths to Highlight",
             value=st.session_state.get("wizard_strengths_to_highlight", ""),
             height=120,
-            help="Optional. Example: AI transformation, enterprise IT leadership, ServiceNow.",
+            help="High-priority scoring input. Example: AI transformation, enterprise IT leadership, ServiceNow.",
         )
         cover_letter_voice = st.text_area(
             "Cover Letter Voice",
             value=st.session_state.get("wizard_cover_letter_voice", ""),
             height=100,
-            help="Optional. Describe how you want cover letters to sound.",
+            help="Cover letters only. This does not affect job scoring.",
         )
 
         c1, c2, c3 = st.columns([1, 1.2, 1])
@@ -427,7 +447,9 @@ def _render_profile_step() -> None:
 
 def _render_openai_step() -> None:
     st.markdown("## OpenAI API")
-    st.write("Optional. Set this up now if you want AI title suggestions during setup and AI-assisted cover letters later.")
+    st.write(
+        "Optional, but recommended. This powers AI title suggestions during setup, AI scoring, AI scrub, and cover letters."
+    )
 
     details = get_openai_api_key_details()
     source_label_map = {
@@ -442,6 +464,9 @@ def _render_openai_step() -> None:
     st.markdown(f"**Active key source:** {source_label}")
     if details["active_key_present"]:
         st.markdown(f"**Active key:** `{details['active_key_masked']}`")
+        st.success("AI-assisted features are ready to use during setup and later runs.")
+    else:
+        st.caption("Without a key, you can still finish setup and discover jobs, but AI title suggestions, scoring, scrub, and cover letters will stay off.")
 
     st.text_input(
         "OpenAI API Key",

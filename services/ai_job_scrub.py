@@ -16,6 +16,30 @@ except ImportError:
 DEFAULT_MODEL = "gpt-4.1-mini"
 
 
+def _normalize_confidence(value: Any) -> str:
+    text = _clean(value).lower()
+    if text == "high":
+        return "High"
+    if text == "medium":
+        return "Medium"
+    return "Low"
+
+
+def _merge_text_items(*parts: Any) -> str:
+    merged: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if isinstance(part, (list, tuple)):
+            items = _clean_list(part)
+        else:
+            items = [item.strip() for item in str(part).split(";") if item.strip()]
+        for item in items:
+            if item not in merged:
+                merged.append(item)
+    return "; ".join(merged)
+
+
 def normalize_scrub_result(payload: Dict[str, Any], *, model: str = DEFAULT_MODEL) -> Dict[str, Any]:
     scrub_status = str(payload.get("scrub_status") or "review").strip().lower()
     if scrub_status not in {"clean", "review", "reject"}:
@@ -25,7 +49,12 @@ def normalize_scrub_result(payload: Dict[str, Any], *, model: str = DEFAULT_MODE
         "scrub_status": scrub_status,
         "scrub_summary": str(payload.get("scrub_summary") or ""),
         "scrub_flags": _clean_list(payload.get("scrub_flags")),
-        "scrub_confidence": str(payload.get("scrub_confidence") or "Low").strip().title() or "Low",
+        "scrub_confidence": _normalize_confidence(payload.get("scrub_confidence")),
+        "corrected_title": _clean(payload.get("corrected_title")),
+        "corrected_company": _clean(payload.get("corrected_company")),
+        "corrected_compensation_raw": _clean(payload.get("corrected_compensation_raw")),
+        "correction_confidence": _normalize_confidence(payload.get("correction_confidence")),
+        "correction_notes": _clean_list(payload.get("correction_notes")),
         "model": str(payload.get("model") or model),
         "status": str(payload.get("status") or "scrubbed"),
     }
@@ -37,6 +66,11 @@ def build_default_scrub_result(
     scrub_summary: str = "",
     scrub_flags: Optional[List[str]] = None,
     scrub_confidence: str = "Low",
+    corrected_title: str = "",
+    corrected_company: str = "",
+    corrected_compensation_raw: str = "",
+    correction_confidence: str = "Low",
+    correction_notes: Optional[List[str]] = None,
     model: str = DEFAULT_MODEL,
     status: str = "skipped",
 ) -> Dict[str, Any]:
@@ -46,6 +80,11 @@ def build_default_scrub_result(
             "scrub_summary": scrub_summary,
             "scrub_flags": scrub_flags or [],
             "scrub_confidence": scrub_confidence,
+            "corrected_title": corrected_title,
+            "corrected_company": corrected_company,
+            "corrected_compensation_raw": corrected_compensation_raw,
+            "correction_confidence": correction_confidence,
+            "correction_notes": correction_notes or [],
             "model": model,
             "status": status,
         },
@@ -70,6 +109,8 @@ def build_scrub_input(job_payload: Dict[str, Any], resume_profile_text: str) -> 
             "match_rationale": job_payload.get("match_rationale"),
             "risk_flags": job_payload.get("risk_flags"),
             "application_angle": job_payload.get("application_angle"),
+            "compensation_raw": job_payload.get("compensation_raw"),
+            "job_posting_url": job_payload.get("job_posting_url"),
             "description_text": job_payload.get("description_text"),
         },
         "resume_profile_text": resume_profile_text,
@@ -83,6 +124,11 @@ def build_scrub_prompt(job_payload: Dict[str, Any], resume_profile_text: str) ->
         "scrub_summary": "1 to 2 sentences",
         "scrub_flags": ["specific concern"],
         "scrub_confidence": "High, Medium, or Low",
+        "corrected_title": "blank unless page evidence strongly supports a more accurate title",
+        "corrected_company": "blank unless page evidence strongly supports a more accurate company name",
+        "corrected_compensation_raw": "blank unless page evidence strongly supports a more accurate compensation string",
+        "correction_confidence": "High, Medium, or Low",
+        "correction_notes": ["short note explaining a high-confidence correction"],
     }
 
     return (
@@ -97,6 +143,9 @@ def build_scrub_prompt(job_payload: Dict[str, Any], resume_profile_text: str) ->
         "- clean: no meaningful contradiction found\n"
         "- review: some ambiguity or evidence gaps exist\n"
         "- reject: strong contradiction or clear mismatch exists\n\n"
+        "Only return corrected_title, corrected_company, or corrected_compensation_raw when the page evidence is strong.\n"
+        "If confidence is not High, leave correction fields blank.\n"
+        "Do not guess or normalize stylistically. Only correct fields that appear materially wrong or incomplete.\n\n"
         f"Required JSON schema:\n{json.dumps(schema, indent=2)}\n\n"
         f"Scrub input:\n{json.dumps(scrub_input, indent=2)}"
     )
@@ -187,10 +236,37 @@ class AIJobScrubService:
 def apply_scrub_to_job_payload(job_payload: Dict[str, Any], scrub_result: Dict[str, Any]) -> Dict[str, Any]:
     normalized = normalize_scrub_result(scrub_result)
 
-    existing_risks = _clean(job_payload.get("risk_flags", ""))
-    scrub_flags = normalized.get("scrub_flags", [])
-    merged_risks = [item for item in [existing_risks, "; ".join(scrub_flags)] if item]
-    job_payload["risk_flags"] = "; ".join(merged_risks)
+    correction_notes = list(normalized.get("correction_notes", []))
+    description_text = _clean(job_payload.get("description_text"))
+    title_or_company_changed = False
+
+    if description_text and normalized.get("correction_confidence") == "High":
+        field_specs = [
+            ("corrected_title", "title", "Title"),
+            ("corrected_company", "company", "Company"),
+            ("corrected_compensation_raw", "compensation_raw", "Compensation"),
+        ]
+        for corrected_key, payload_key, label in field_specs:
+            corrected_value = _clean(normalized.get(corrected_key, ""))
+            current_value = _clean(job_payload.get(payload_key, ""))
+            if not corrected_value or corrected_value == current_value:
+                continue
+
+            job_payload[payload_key] = corrected_value
+            correction_notes.append(f"AI scrub corrected {label} to {corrected_value}")
+
+            if payload_key in {"title", "company"}:
+                title_or_company_changed = True
+
+        if title_or_company_changed:
+            job_payload["duplicate_key"] = ""
+            job_payload["normalized_title"] = ""
+
+    job_payload["risk_flags"] = _merge_text_items(
+        job_payload.get("risk_flags", ""),
+        normalized.get("scrub_flags", []),
+        correction_notes,
+    )
 
     scrub_status = normalized.get("scrub_status", "review")
     if scrub_status == "reject":
