@@ -408,7 +408,10 @@ def _process_pending_action_before_render() -> None:
 
         with st.spinner(f"{label}..."):
             if action_type == "discover_and_ingest":
-                result = discover_and_ingest()
+                result = discover_and_ingest(
+                    use_ai_title_expansion=bool(payload.get("use_ai_title_expansion", True)),
+                    use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
+                )
                 st.session_state["pipeline_last_result"] = result
                 _persist_pipeline_output(result)
                 level, message = _build_discover_and_ingest_flash(result)
@@ -416,7 +419,10 @@ def _process_pending_action_before_render() -> None:
                 st.cache_data.clear()
 
             elif action_type == "ingest_pasted":
-                result = ingest_pasted_urls(payload.get("manual_urls", ""))
+                result = ingest_pasted_urls(
+                    payload.get("manual_urls", ""),
+                    use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
+                )
                 st.session_state["pipeline_last_result"] = result
                 _persist_pipeline_output(result)
                 level, message = _build_ingest_flash(result, "Pasted job link import")
@@ -431,7 +437,10 @@ def _process_pending_action_before_render() -> None:
                     }
                     _set_flash("warning", "No saved job links file exists yet. Run discovery first or paste job links.")
                 else:
-                    result = ingest_urls_from_file(JOB_URLS_FILE)
+                    result = ingest_urls_from_file(
+                        JOB_URLS_FILE,
+                        use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
+                    )
                     st.session_state["pipeline_last_result"] = result
                     _persist_pipeline_output(result)
                     level, message = _build_ingest_flash(result, "Saved job link import")
@@ -439,7 +448,9 @@ def _process_pending_action_before_render() -> None:
                     st.cache_data.clear()
 
             elif action_type == "discover_only":
-                result = discover_job_links()
+                result = discover_job_links(
+                    use_ai_title_expansion=bool(payload.get("use_ai_title_expansion", True)),
+                )
                 st.session_state["pipeline_last_result"] = result
                 _persist_pipeline_output(result)
                 level, message = _build_discover_only_flash(result)
@@ -878,6 +889,8 @@ def _render_run_inputs() -> None:
 def _render_action_deck() -> None:
     busy = app_is_busy()
     manual_urls = st.session_state.get("pipeline_manual_urls", "")
+    use_ai_title_expansion = bool(st.session_state.get("pipeline_use_ai_title_expansion", True))
+    use_ai_scoring = bool(st.session_state.get("pipeline_use_ai_scoring", True))
 
     left, right = st.columns([1.25, 1])
 
@@ -888,11 +901,31 @@ def _render_action_deck() -> None:
             '<div class="pipeline-card-copy">Use this when you want the app to discover job links, validate them, score them, and add matching roles into your local system.</div>',
             unsafe_allow_html=True,
         )
+        st.toggle(
+            "Use AI title expansion in this run",
+            key="pipeline_use_ai_title_expansion",
+            disabled=busy,
+            help="When on, discovery may use OpenAI to suggest closely related title variants for search coverage.",
+        )
+        st.toggle(
+            "Use AI scoring and scrub in this run",
+            key="pipeline_use_ai_scoring",
+            disabled=busy,
+            help="When on, accepted jobs may run through AI scoring and the AI scrub pass before they are saved.",
+        )
 
         _render_ai_button_chip()
         if st.button("Find and Add Jobs", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
             st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-            queue_action("pipeline", "discover_and_ingest", label="Find and Add Jobs")
+            queue_action(
+                "pipeline",
+                "discover_and_ingest",
+                payload={
+                    "use_ai_title_expansion": use_ai_title_expansion,
+                    "use_ai_scoring": use_ai_scoring,
+                },
+                label="Find and Add Jobs",
+            )
             st.rerun()
 
         st.markdown(
@@ -905,13 +938,23 @@ def _render_action_deck() -> None:
             _render_ai_button_chip()
             if st.button("Find Job Links Only", use_container_width=True, disabled=busy, key="pipeline_discover_only"):
                 st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-                queue_action("pipeline", "discover_only", label="Find Job Links Only")
+                queue_action(
+                    "pipeline",
+                    "discover_only",
+                    payload={"use_ai_title_expansion": use_ai_title_expansion},
+                    label="Find Job Links Only",
+                )
                 st.rerun()
         with c2:
             _render_ai_button_chip()
             if st.button("Add Saved Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_saved"):
                 st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-                queue_action("pipeline", "ingest_saved", label="Add Saved Job Links")
+                queue_action(
+                    "pipeline",
+                    "ingest_saved",
+                    payload={"use_ai_scoring": use_ai_scoring},
+                    label="Add Saved Job Links",
+                )
                 st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
@@ -937,7 +980,10 @@ def _render_action_deck() -> None:
             queue_action(
                 "pipeline",
                 "ingest_pasted",
-                payload={"manual_urls": manual_urls},
+                payload={
+                    "manual_urls": manual_urls,
+                    "use_ai_scoring": use_ai_scoring,
+                },
                 label="Add Pasted Job Links",
             )
             st.rerun()

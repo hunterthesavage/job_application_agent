@@ -631,14 +631,18 @@ def extract_result_url(result: dict) -> str:
     return ""
 
 
-def discover_google_style_urls(settings: dict[str, str], log_lines: list[str] | None = None) -> list[str]:
+def discover_google_style_urls(
+    settings: dict[str, str],
+    log_lines: list[str] | None = None,
+    use_ai_expansion: bool = True,
+) -> list[str]:
     if DDGS is None:
         if log_lines is not None:
             log_lines.append("DDGS package not installed, skipping Google-style discovery.")
         return []
 
     discovered: list[str] = []
-    plan = build_structured_search_plan(settings=settings, use_ai_expansion=True)
+    plan = build_structured_search_plan(settings=settings, use_ai_expansion=use_ai_expansion)
 
     if log_lines is not None:
         for note in plan.notes:
@@ -783,13 +787,14 @@ def save_output_urls(file_path: str | Path, urls: list[str]) -> None:
             file.write(url + "\n")
 
 
-def discover_urls(settings: dict[str, str] | None = None) -> dict:
+def discover_urls(settings: dict[str, str] | None = None, use_ai_expansion: bool = True) -> dict:
     resolved_settings = settings or load_runtime_settings()
 
     log_lines: list[str] = []
     log_lines.append("Discovery plan:")
     for line in build_search_plan(resolved_settings):
         log_lines.append(f"- {line}")
+    log_lines.append(f"AI title expansion: {'enabled' if use_ai_expansion else 'disabled'}")
 
     all_greenhouse_board_urls = load_board_urls(GREENHOUSE_BOARD_FILE)
     all_lever_board_urls = load_board_urls(LEVER_BOARD_FILE)
@@ -835,7 +840,11 @@ def discover_urls(settings: dict[str, str] | None = None) -> dict:
         except Exception as exc:
             log_lines.append(f"Lever board failed: {exc}")
 
-    search_discovered = discover_google_style_urls(resolved_settings, log_lines=log_lines)
+    search_discovered = discover_google_style_urls(
+        resolved_settings,
+        log_lines=log_lines,
+        use_ai_expansion=use_ai_expansion,
+    )
 
     greenhouse_discovered = list(dict.fromkeys(greenhouse_discovered))
     lever_discovered = list(dict.fromkeys(lever_discovered))

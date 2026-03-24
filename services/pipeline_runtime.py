@@ -789,7 +789,13 @@ def _append_discovery_drop_summary_lines(output_lines: list[str], discovery_resu
         output_lines.append(f"- {reason}: {count}")
 
 
-def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str) -> dict[str, Any]:
+def _build_jobs_from_urls(
+    urls: list[str],
+    source_name: str,
+    source_detail: str,
+    *,
+    use_ai_scoring: bool = True,
+) -> dict[str, Any]:
     settings = load_settings()
 
     accepted_jobs = []
@@ -918,31 +924,36 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
     ai_skipped_count = 0
     ai_error_count = 0
 
-    resume_profile_text, resume_profile_source = load_scoring_profile_text()
-
     if accepted_jobs:
         output_lines.append("")
-        if resume_profile_text:
-            output_lines.append(f"AI job scoring profile: {resume_profile_source}")
-            for payload in accepted_jobs:
-                score_result = score_accepted_job(payload, resume_profile_text)
-                apply_score_to_job_payload(payload, score_result)
-                scrub_result = scrub_accepted_job(payload, resume_profile_text)
-                apply_scrub_to_job_payload(payload, scrub_result)
+        if use_ai_scoring:
+            resume_profile_text, resume_profile_source = load_scoring_profile_text()
+            if resume_profile_text:
+                output_lines.append("AI job scoring: enabled")
+                output_lines.append(f"AI job scoring profile: {resume_profile_source}")
+                for payload in accepted_jobs:
+                    score_result = score_accepted_job(payload, resume_profile_text)
+                    apply_score_to_job_payload(payload, score_result)
+                    scrub_result = scrub_accepted_job(payload, resume_profile_text)
+                    apply_scrub_to_job_payload(payload, scrub_result)
 
-                score_status = safe_text(score_result.get("status", "")).lower()
-                if score_status == "scored":
-                    ai_scored_count += 1
-                elif score_status == "skipped":
-                    ai_skipped_count += 1
-                else:
-                    ai_error_count += 1
+                    score_status = safe_text(score_result.get("status", "")).lower()
+                    if score_status == "scored":
+                        ai_scored_count += 1
+                    elif score_status == "skipped":
+                        ai_skipped_count += 1
+                    else:
+                        ai_error_count += 1
+            else:
+                ai_skipped_count = len(accepted_jobs)
+                output_lines.append(
+                    "AI job scoring skipped: no saved Profile Context or fallback profile text was found. "
+                    "Add content in Settings -> Profile Context, or use profile_context.txt / JOB_AGENT_RESUME_PROFILE as fallback."
+                )
         else:
             ai_skipped_count = len(accepted_jobs)
-            output_lines.append(
-                "AI job scoring skipped: no saved Profile Context or fallback profile text was found. "
-                "Add content in Settings -> Profile Context, or use profile_context.txt / JOB_AGENT_RESUME_PROFILE as fallback."
-            )
+            output_lines.append("AI job scoring: disabled for this run")
+            output_lines.append("AI scrub: disabled because AI job scoring is disabled for this run")
 
     ai_scoring_seconds = time.perf_counter() - ai_scoring_started_at
 
@@ -1025,9 +1036,9 @@ def build_search_preview() -> dict[str, Any]:
     }
 
 
-def discover_job_links() -> dict[str, Any]:
+def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]:
     settings = load_settings()
-    discovery_result = discover_module.discover_urls(settings)
+    discovery_result = discover_module.discover_urls(settings, use_ai_expansion=use_ai_title_expansion)
 
     discovered_urls = discovery_result.get("all_urls", [])
     discover_module.save_output_urls(JOB_URLS_FILE, discovered_urls)
@@ -1043,13 +1054,16 @@ def discover_job_links() -> dict[str, Any]:
             "lever": len(discovery_result.get("lever_urls", [])),
             "search": len(discovery_result.get("search_urls", [])),
         },
-        "queries": discover_module.build_google_discovery_queries(settings),
+        "queries": discover_module.build_google_discovery_queries(
+            settings,
+            use_ai_expansion=use_ai_title_expansion,
+        ),
         "plan": discover_module.build_search_plan(settings),
         "drop_summary": discovery_result.get("drop_summary", {}),
     }
 
 
-def ingest_urls_from_file(file_path: str | Path) -> dict[str, Any]:
+def ingest_urls_from_file(file_path: str | Path, *, use_ai_scoring: bool = True) -> dict[str, Any]:
     path = Path(file_path)
     urls = load_job_urls_from_file(path)
 
@@ -1078,10 +1092,15 @@ def ingest_urls_from_file(file_path: str | Path) -> dict[str, Any]:
             "skip_summary": {},
         }
 
-    return _build_jobs_from_urls(urls, source_name="Local Pipeline", source_detail=str(path.resolve()))
+    return _build_jobs_from_urls(
+        urls,
+        source_name="Local Pipeline",
+        source_detail=str(path.resolve()),
+        use_ai_scoring=use_ai_scoring,
+    )
 
 
-def ingest_pasted_urls(text_value: str) -> dict[str, Any]:
+def ingest_pasted_urls(text_value: str, *, use_ai_scoring: bool = True) -> dict[str, Any]:
     urls = parse_manual_urls(text_value)
     if MAX_URLS_PER_RUN > 0:
         urls = urls[:MAX_URLS_PER_RUN]
@@ -1092,6 +1111,7 @@ def ingest_pasted_urls(text_value: str) -> dict[str, Any]:
         urls,
         source_name="Local Pipeline",
         source_detail=str(MANUAL_URLS_FILE.resolve()),
+        use_ai_scoring=use_ai_scoring,
     )
 
 
@@ -1218,11 +1238,15 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
     }
 
 
-def discover_and_ingest() -> dict[str, Any]:
+def discover_and_ingest(
+    *,
+    use_ai_title_expansion: bool = True,
+    use_ai_scoring: bool = True,
+) -> dict[str, Any]:
     total_started_at = time.perf_counter()
 
     discovery_started_at = time.perf_counter()
-    discovery_result = discover_job_links()
+    discovery_result = discover_job_links(use_ai_title_expansion=use_ai_title_expansion)
     discovery_seconds = time.perf_counter() - discovery_started_at
 
     discovered_urls = discovery_result.get("urls", [])
@@ -1292,6 +1316,7 @@ def discover_and_ingest() -> dict[str, Any]:
         discovered_urls,
         source_name="Local Pipeline",
         source_detail="in_memory_discovery_result",
+        use_ai_scoring=use_ai_scoring,
     )
 
     if ingest_result.get("output"):
