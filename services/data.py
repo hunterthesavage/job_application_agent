@@ -10,6 +10,55 @@ import streamlit as st
 from config import DATABASE_PATH
 
 
+NEW_ROLES_COLUMNS = [
+    "Company",
+    "Title",
+    "Location",
+    "Fit Score",
+    "Fit Tier",
+    "AI Recommendation",
+    "Match Rationale",
+    "Risk Flags",
+    "Application Angle",
+    "Compensation Raw",
+    "Job Posting URL",
+    "Duplicate Key",
+    "Cover Letter Path",
+    "Workflow Status",
+    "Active Status",
+    "Date Found",
+    "Source",
+    "Source Type",
+    "Source Trust",
+    "Source Detail",
+    "Discovery State",
+]
+
+APPLIED_ROLES_COLUMNS = [
+    "Company",
+    "Title",
+    "Applied Date",
+    "Job Posting URL",
+    "Fit Score",
+    "Workflow Status",
+    "Active Status",
+]
+
+
+def _empty_new_roles_df() -> pd.DataFrame:
+    df = pd.DataFrame(columns=["__job_id__", "__seen_count__", "__last_seen_run_id__", *NEW_ROLES_COLUMNS])
+    df["__job_id__"] = pd.Series(dtype="int64")
+    df["__seen_count__"] = pd.Series(dtype="int64")
+    df["__last_seen_run_id__"] = pd.Series(dtype="int64")
+    return df.set_index("__job_id__", drop=True)
+
+
+def _empty_applied_roles_df() -> pd.DataFrame:
+    df = pd.DataFrame(columns=["__job_id__", *APPLIED_ROLES_COLUMNS])
+    df["__job_id__"] = pd.Series(dtype="int64")
+    return df.set_index("__job_id__", drop=True)
+
+
 @st.cache_data(ttl=30)
 def load_sqlite_new_roles() -> pd.DataFrame:
     conn = sqlite3.connect(DATABASE_PATH)
@@ -64,14 +113,22 @@ def load_sqlite_new_roles() -> pd.DataFrame:
             jobs.company ASC,
             jobs.title ASC
         """
-        df = pd.read_sql_query(query, conn)
+        try:
+            df = pd.read_sql_query(query, conn)
+        except (pd.errors.DatabaseError, sqlite3.OperationalError) as exc:
+            message = str(exc).lower()
+            if "no such table" in message or "unable to open database file" in message:
+                return _empty_new_roles_df()
+            raise
     finally:
         conn.close()
 
     if df.empty:
-        return df
+        return _empty_new_roles_df()
 
     df["__job_id__"] = pd.to_numeric(df["__job_id__"], errors="coerce").fillna(0).astype(int)
+    df["__seen_count__"] = pd.to_numeric(df["__seen_count__"], errors="coerce").fillna(0).astype(int)
+    df["__last_seen_run_id__"] = pd.to_numeric(df["__last_seen_run_id__"], errors="coerce").fillna(0).astype(int)
     df = df.set_index("__job_id__", drop=True)
 
     return df
@@ -98,12 +155,18 @@ def load_sqlite_applied_roles() -> pd.DataFrame:
             company ASC,
             title ASC
         """
-        df = pd.read_sql_query(query, conn)
+        try:
+            df = pd.read_sql_query(query, conn)
+        except (pd.errors.DatabaseError, sqlite3.OperationalError) as exc:
+            message = str(exc).lower()
+            if "no such table" in message or "unable to open database file" in message:
+                return _empty_applied_roles_df()
+            raise
     finally:
         conn.close()
 
     if df.empty:
-        return df
+        return _empty_applied_roles_df()
 
     df["__job_id__"] = pd.to_numeric(df["__job_id__"], errors="coerce").fillna(0).astype(int)
     df = df.set_index("__job_id__", drop=True)
@@ -180,9 +243,9 @@ def slug_to_words(text: str) -> str:
     text = safe_text(text)
     if not text:
         return ""
-    text = re.sub(r"[_\-]+", " ", text)
+    text = re.sub(r"[_\\-]+", " ", text)
     text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\\s+", " ", text).strip()
     return text
 
 
@@ -208,7 +271,7 @@ def clean_display_title(company: str, title: str) -> str:
     company_words_norm = normalize_compare_text(pretty_company)
     title_norm = normalize_compare_text(title)
 
-    title_parts = [part.strip() for part in re.split(r"\s[-–—]\s", title) if part.strip()]
+    title_parts = [part.strip() for part in re.split(r"\\s[-–—]\\s", title) if part.strip()]
 
     if len(title_parts) >= 2:
         first_part = title_parts[0]
@@ -218,172 +281,12 @@ def clean_display_title(company: str, title: str) -> str:
             return title
 
         if first_part_norm in {company_norm, company_words_norm}:
-            rest = " - ".join(title_parts[1:]).strip()
-            if rest:
-                return f"{first_part} - {rest}"
+            return " - ".join(title_parts[1:]).strip() or title
 
-    for prefix in [company, pretty_company]:
-        if not prefix:
-            continue
+    if company_norm and company_norm in title_norm:
+        return title
 
-        pattern = re.compile(rf"^{re.escape(prefix)}\s*[-–—:|]\s*", re.IGNORECASE)
-        cleaned_title = re.sub(pattern, "", title)
-        if cleaned_title != title and cleaned_title.strip():
-            return f"{pretty_company} - {cleaned_title.strip()}"
-
-    if company_norm in title_norm or company_words_norm in title_norm:
+    if company_words_norm and company_words_norm in title_norm:
         return title
 
     return f"{pretty_company} - {title}"
-
-
-def open_url(url: str) -> bool:
-    import webbrowser
-
-    try:
-        webbrowser.open_new_tab(url)
-        return True
-    except Exception:
-        return False
-
-
-def is_remote_location(location: str) -> bool:
-    text = safe_text(location).lower()
-    return "remote" in text
-
-
-def has_compensation(text: str) -> bool:
-    text = safe_text(text)
-    if not text:
-        return False
-
-    lowered = text.lower()
-    blockers = {
-        "not disclosed",
-        "unknown",
-        "n/a",
-        "na",
-        "none",
-        "not listed",
-        "not provided",
-    }
-
-    if lowered in blockers:
-        return False
-
-    return True
-
-
-def apply_new_role_filters(df: pd.DataFrame) -> pd.DataFrame:
-    df_filtered = df.copy()
-
-    min_fit = st.session_state.get("filter_min_fit", "Any")
-    discovery_state = st.session_state.get("filter_discovery_state", "All")
-    remote_only = st.session_state.get("filter_remote_only", False)
-    compensation_only = st.session_state.get("filter_compensation_only", False)
-
-    if min_fit != "Any":
-        df_filtered = df_filtered[
-            df_filtered["Fit Score"].apply(normalize_fit_score) >= float(min_fit)
-        ]
-
-    if discovery_state != "All" and "Discovery State" in df_filtered.columns:
-        df_filtered = df_filtered[
-            df_filtered["Discovery State"].apply(safe_text) == discovery_state
-        ]
-
-    if remote_only:
-        df_filtered = df_filtered[
-            df_filtered["Location"].apply(is_remote_location)
-        ]
-
-    if compensation_only:
-        df_filtered = df_filtered[
-            df_filtered["Compensation Raw"].apply(has_compensation)
-        ]
-
-    return df_filtered
-
-
-def calculate_kpis(df_new_roles: pd.DataFrame, df_applied: pd.DataFrame) -> dict[str, str]:
-    new_roles_count = str(len(df_new_roles))
-
-    applied_this_week = "0"
-    if not df_applied.empty and "Applied Date" in df_applied.columns:
-        today = datetime.now().date()
-        count = 0
-
-        for value in df_applied["Applied Date"]:
-            text = safe_text(value)
-            if not text:
-                continue
-
-            try:
-                applied_date = datetime.strptime(text, "%Y-%m-%d").date()
-                if (today - applied_date).days <= 7:
-                    count += 1
-            except Exception:
-                continue
-
-        applied_this_week = str(count)
-
-    avg_fit = "—"
-    if not df_new_roles.empty and "Fit Score" in df_new_roles.columns:
-        scores = df_new_roles["Fit Score"].apply(normalize_fit_score)
-        valid_scores = scores[scores >= 0]
-        if not valid_scores.empty:
-            avg_fit = str(int(round(valid_scores.mean())))
-
-    return {
-        "new_roles": new_roles_count,
-        "applied_this_week": applied_this_week,
-        "avg_fit": avg_fit,
-    }
-
-
-def parse_csv_text(value: str) -> list[str]:
-    text = safe_text(value)
-    if not text:
-        return []
-    return [part.strip() for part in text.split(",") if part.strip()]
-
-
-def text_contains_any(text: str, patterns: list[str]) -> bool:
-    base = safe_text(text).lower()
-    if not base:
-        return False
-    return any(pattern.lower() in base for pattern in patterns)
-
-
-def row_matches_settings_filters(row: pd.Series, settings: dict[str, str]) -> bool:
-    title = safe_value(row, "Title")
-    company = safe_value(row, "Company")
-    location = safe_value(row, "Location")
-    compensation = safe_value(row, "Compensation Raw")
-
-    searchable_text = " ".join(
-        [
-            title,
-            company,
-            location,
-            compensation,
-        ]
-    ).lower()
-
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
-    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
-    exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
-
-    if target_titles:
-        if not text_contains_any(title, target_titles):
-            return False
-
-    if preferred_locations:
-        if not text_contains_any(location, preferred_locations):
-            return False
-
-    if exclude_keywords:
-        if any(keyword.lower() in searchable_text for keyword in exclude_keywords):
-            return False
-
-    return True
