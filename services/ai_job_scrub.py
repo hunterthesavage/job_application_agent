@@ -40,6 +40,12 @@ def _merge_text_items(*parts: Any) -> str:
     return "; ".join(merged)
 
 
+def _build_update_note(prefix: str, label: str, old_value: str, new_value: str) -> str:
+    old_text = _clean(old_value) or "blank"
+    new_text = _clean(new_value)
+    return f"{prefix} {label}: {old_text} -> {new_text}"
+
+
 def normalize_scrub_result(payload: Dict[str, Any], *, model: str = DEFAULT_MODEL) -> Dict[str, Any]:
     scrub_status = str(payload.get("scrub_status") or "review").strip().lower()
     if scrub_status not in {"clean", "review", "reject"}:
@@ -258,7 +264,7 @@ def apply_scrub_to_job_payload(job_payload: Dict[str, Any], scrub_result: Dict[s
                 continue
 
             job_payload[payload_key] = corrected_value
-            correction_notes.append(f"AI scrub corrected {label} to {corrected_value}")
+            correction_notes.append(_build_update_note("AI scrub updated", label, current_value, corrected_value))
 
             if payload_key in {"title", "company", "location"}:
                 identity_fields_changed = True
@@ -270,6 +276,7 @@ def apply_scrub_to_job_payload(job_payload: Dict[str, Any], scrub_result: Dict[s
 
     job_payload["risk_flags"] = _merge_text_items(
         job_payload.get("risk_flags", ""),
+        job_payload.get("_refresh_notes", []),
         normalized.get("scrub_flags", []),
         correction_notes,
     )

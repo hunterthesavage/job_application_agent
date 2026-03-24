@@ -84,6 +84,7 @@ def render_applied_roles() -> None:
 
     if df_applied.empty:
         st.info("No applied jobs yet.")
+        st.caption("Jobs move here after you open a posting from New Roles and click Mark as Applied.")
         return
 
     df_applied_display = build_applied_display_df(df_applied)

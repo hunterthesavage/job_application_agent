@@ -31,6 +31,7 @@ SETTINGS_NAV_OPTIONS = [
     "Configuration",
     "Profile Context",
     "OpenAI API",
+    "System Status",
 ]
 
 
@@ -391,10 +392,11 @@ def _render_reset_notice() -> None:
         st.success(f"App reset complete. Removed {removed_count} local item(s). Setup Wizard is ready again.")
 
 
-def render_system_status() -> None:
+def render_system_status_tab() -> None:
     status = get_system_status()
 
     st.markdown("### System Status")
+    st.caption("Use this page for maintenance, backups, and a quick read on the current local app state.")
     st.caption(f"{APP_NAME} version {APP_VERSION}")
     st.caption(f"Database path: {DATABASE_PATH}")
 
@@ -404,7 +406,7 @@ def render_system_status() -> None:
     c3.metric("Applied", status["jobs_applied"])
     c4.metric("Removed", status["removed_total"])
 
-    st.markdown("#### Current App Status")
+    st.markdown("#### App Status")
     st.write(f"- Latest backup: {status.get('latest_backup_path', '—')}")
     st.write(f"- OpenAI API key: {status.get('openai_api_key_status', 'Unknown')} | {status.get('openai_api_key_masked', 'Not saved')}")
     st.write(f"- Last cover letter: {status['last_cover_letter_path']}")
@@ -412,7 +414,10 @@ def render_system_status() -> None:
     st.write(f"- Last import: {status['last_import_at']}")
     st.write(f"- Last import status: {status['last_import_status']}")
 
-    st.markdown("### Backup and Health Tools")
+    st.markdown("#### Health Status")
+    st.caption("Run this when you want to confirm the local install is healthy before sharing it or troubleshooting it.")
+
+    st.markdown("### Backup and Maintenance")
     b1, b2, b3 = st.columns(3)
 
     with b1:
@@ -455,10 +460,10 @@ def render_system_status() -> None:
         st.markdown("---")
         _render_health_check_result(last_health_check_result)
 
+    _render_reset_app_section()
+
 
 def render_configuration_tab(settings: dict[str, str]) -> None:
-    render_system_status()
-    st.markdown("---")
     st.markdown("### Cover Letter Output")
     st.caption("This only affects generated cover letters. Discovery and AI scoring still work without it.")
 
@@ -595,9 +600,6 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
 
             st.success("Configuration saved.")
             st.rerun()
-
-    _render_reset_app_section()
-
 
 def render_profile_context_tab(settings: dict[str, str]) -> None:
     template = get_profile_context_template()
@@ -771,5 +773,7 @@ def render_settings() -> None:
         render_configuration_tab(settings)
     elif selected_section == "Profile Context":
         render_profile_context_tab(settings)
-    else:
+    elif selected_section == "OpenAI API":
         render_openai_api_tab()
+    else:
+        render_system_status_tab()

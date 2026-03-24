@@ -77,7 +77,8 @@ def _split_scrub_corrections(risk_flags: str) -> tuple[list[str], list[str]]:
     remaining_risks: list[str] = []
 
     for item in _split_semicolon_text(risk_flags):
-        if item.lower().startswith("ai scrub corrected "):
+        lowered = item.lower()
+        if lowered.startswith("ai scrub updated ") or lowered.startswith("live page refresh updated "):
             corrections.append(item)
         else:
             remaining_risks.append(item)

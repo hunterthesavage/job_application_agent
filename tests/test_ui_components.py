@@ -3,13 +3,13 @@ from ui.components import _split_scrub_corrections
 
 def test_split_scrub_corrections_separates_corrections_from_risks():
     corrections, risks = _split_scrub_corrections(
-        "Job description is vague; AI scrub corrected Title to Vice President of Technology; "
-        "AI scrub corrected Company to ExampleCo; Location may be stale"
+        "Job description is vague; AI scrub updated Title: VP Tech -> Vice President of Technology; "
+        "Live page refresh updated Company: Xapo61 -> Xapo Bank; Location may be stale"
     )
 
     assert corrections == [
-        "AI scrub corrected Title to Vice President of Technology",
-        "AI scrub corrected Company to ExampleCo",
+        "AI scrub updated Title: VP Tech -> Vice President of Technology",
+        "Live page refresh updated Company: Xapo61 -> Xapo Bank",
     ]
     assert risks == [
         "Job description is vague",

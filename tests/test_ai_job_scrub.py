@@ -117,9 +117,9 @@ def test_apply_scrub_to_job_payload_applies_high_confidence_field_corrections():
     assert updated["compensation_raw"] == "$220,000 - $260,000"
     assert updated["duplicate_key"] == ""
     assert updated["normalized_title"] == ""
-    assert "AI scrub corrected Title to Vice President of Technology" in updated["risk_flags"]
-    assert "AI scrub corrected Company to ExampleCo" in updated["risk_flags"]
-    assert "AI scrub corrected Location to Dallas, TX" in updated["risk_flags"]
+    assert "AI scrub updated Title: VP Tech -> Vice President of Technology" in updated["risk_flags"]
+    assert "AI scrub updated Company: ExampleCo LLC -> ExampleCo" in updated["risk_flags"]
+    assert "AI scrub updated Location: Texas -> Dallas, TX" in updated["risk_flags"]
 
 
 def test_apply_scrub_to_job_payload_ignores_corrections_without_high_confidence():

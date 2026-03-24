@@ -56,6 +56,18 @@ def _render_flash() -> None:
         st.success(message)
 
 
+def _render_new_roles_empty_state(has_any_roles: bool) -> None:
+    if not has_any_roles:
+        st.info(
+            "No new roles are in the app yet. Start in Pipeline with Find and Add Jobs, or paste a few job links to seed the list."
+        )
+        st.caption("Once jobs land here, you can review AI fit detail, generate cover letters, and mark roles as applied.")
+        return
+
+    st.info("No roles match the current on-screen filters.")
+    st.caption("Try relaxing Minimum Fit Score, turning off Remote Only, or opening More Filters to widen the list again.")
+
+
 def _process_pending_action_before_render() -> None:
     action = get_action("new_roles")
     if not action or action.get("phase") != "execute":
@@ -293,7 +305,7 @@ def render_new_roles() -> None:
     _render_flash()
 
     if df.empty:
-        st.info("No roles found in SQLite yet.")
+        _render_new_roles_empty_state(has_any_roles=False)
         _advance_pending_action_after_render()
         return
 
@@ -327,7 +339,7 @@ def render_new_roles() -> None:
     )
 
     if paged_df.empty:
-        st.info("No roles match the current on-screen filters.")
+        _render_new_roles_empty_state(has_any_roles=True)
     else:
         for job_id, row in paged_df.iterrows():
             render_job_card(

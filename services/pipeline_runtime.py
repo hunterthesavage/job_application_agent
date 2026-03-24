@@ -1060,6 +1060,22 @@ def _refresh_payload_with_live_page_data(payload: dict[str, Any]) -> tuple[dict[
         getattr(refreshed_job, "compensation_status", payload.get("compensation_status", ""))
     )
 
+    refresh_notes = list(payload.get("_refresh_notes", []))
+    field_specs = [
+        ("company", "Company"),
+        ("title", "Title"),
+        ("location", "Location"),
+        ("compensation_raw", "Compensation"),
+    ]
+    for payload_key, label in field_specs:
+        old_value = safe_text(payload.get(payload_key, ""))
+        new_value = safe_text(refreshed_payload.get(payload_key, ""))
+        if not new_value or new_value == old_value:
+            continue
+        refresh_notes.append(f"Live page refresh updated {label}: {old_value or 'blank'} -> {new_value}")
+    if refresh_notes:
+        refreshed_payload["_refresh_notes"] = refresh_notes
+
     return refreshed_payload, True
 
 

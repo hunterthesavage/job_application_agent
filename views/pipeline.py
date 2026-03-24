@@ -31,6 +31,7 @@ from services.ui_busy import (
     queue_action,
     stop_busy,
 )
+from ui.navigation import initialize_nav_state, render_button_nav
 
 
 RESCORE_LIMIT_OPTIONS = [
@@ -47,6 +48,13 @@ RESCORE_STALE_OPTIONS = [
     ("Older than 30 days", 30),
 ]
 
+PIPELINE_NAV_OPTIONS = [
+    "Overview",
+    "Run Jobs",
+    "Results",
+    "Research",
+]
+
 
 def _render_ai_button_chip() -> None:
     st.markdown(
@@ -59,6 +67,150 @@ def _inject_pipeline_css() -> None:
     st.markdown(
         """
         <style>
+            .pipeline-page-intro {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 1rem;
+                margin-bottom: 1rem;
+            }
+
+            .pipeline-page-intro-copy {
+                max-width: 780px;
+            }
+
+            .pipeline-page-kicker {
+                font-size: 0.78rem;
+                font-weight: 800;
+                letter-spacing: 0.10em;
+                text-transform: uppercase;
+                color: rgba(147,197,253,0.90);
+                margin-bottom: 0.28rem;
+            }
+
+            .pipeline-page-title {
+                font-size: 1.58rem;
+                font-weight: 840;
+                line-height: 1.02;
+                color: rgba(255,255,255,0.98);
+                letter-spacing: -0.03em;
+                margin-bottom: 0.3rem;
+            }
+
+            .pipeline-page-copy {
+                font-size: 0.95rem;
+                line-height: 1.48;
+                color: rgba(255,255,255,0.72);
+                max-width: 780px;
+            }
+
+            .pipeline-section-card {
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 24px;
+                background:
+                    radial-gradient(circle at top right, rgba(59,130,246,0.10), transparent 26%),
+                    linear-gradient(180deg, rgba(16,22,36,0.97) 0%, rgba(10,14,24,0.99) 100%);
+                box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+                padding: 1.18rem 1.18rem 1.02rem 1.18rem;
+                margin-bottom: 1rem;
+            }
+
+            .pipeline-section-card.compact {
+                padding-bottom: 0.85rem;
+            }
+
+            .pipeline-section-kicker {
+                font-size: 0.78rem;
+                font-weight: 800;
+                letter-spacing: 0.10em;
+                text-transform: uppercase;
+                color: rgba(191,219,254,0.88);
+                margin-bottom: 0.28rem;
+            }
+
+            .pipeline-section-title {
+                font-size: 1.15rem;
+                font-weight: 820;
+                color: rgba(255,255,255,0.98);
+                letter-spacing: -0.02em;
+                margin-bottom: 0.18rem;
+            }
+
+            .pipeline-section-heading {
+                display: flex;
+                align-items: center;
+                gap: 0.7rem;
+                margin-bottom: 0.18rem;
+            }
+
+            .pipeline-step-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.95rem;
+                height: 1.95rem;
+                border-radius: 999px;
+                background: linear-gradient(180deg, rgba(96,165,250,0.24) 0%, rgba(59,130,246,0.16) 100%);
+                border: 1px solid rgba(96,165,250,0.42);
+                color: rgba(219,234,254,0.98);
+                font-size: 0.92rem;
+                font-weight: 840;
+                box-shadow: 0 8px 18px rgba(37,99,235,0.16);
+                flex-shrink: 0;
+            }
+
+            .pipeline-section-copy {
+                font-size: 0.92rem;
+                line-height: 1.45;
+                color: rgba(255,255,255,0.72);
+                margin-bottom: 0.9rem;
+                max-width: 860px;
+            }
+
+            .pipeline-cta-strip {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.8rem;
+                margin-bottom: 1rem;
+            }
+
+            .pipeline-cta-tile {
+                border-radius: 18px;
+                border: 1px solid rgba(255,255,255,0.07);
+                background: linear-gradient(180deg, rgba(17,24,39,0.90) 0%, rgba(11,16,26,0.97) 100%);
+                padding: 0.9rem 0.95rem;
+                box-shadow: 0 10px 24px rgba(0,0,0,0.16);
+            }
+
+            .pipeline-cta-label {
+                font-size: 0.78rem;
+                font-weight: 800;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: rgba(255,255,255,0.62);
+                margin-bottom: 0.32rem;
+            }
+
+            .pipeline-cta-title {
+                font-size: 1.02rem;
+                font-weight: 780;
+                color: rgba(255,255,255,0.98);
+                margin-bottom: 0.22rem;
+            }
+
+            .pipeline-cta-copy {
+                font-size: 0.88rem;
+                line-height: 1.4;
+                color: rgba(255,255,255,0.70);
+            }
+
+            .pipeline-compact-note {
+                font-size: 0.87rem;
+                line-height: 1.45;
+                color: rgba(255,255,255,0.68);
+                margin-bottom: 0.7rem;
+            }
+
             .pipeline-card {
                 border: 1px solid rgba(255,255,255,0.08);
                 border-radius: 22px;
@@ -232,6 +384,14 @@ def _inject_pipeline_css() -> None:
             }
 
             @media (max-width: 1100px) {
+                .pipeline-page-intro {
+                    flex-direction: column;
+                }
+
+                .pipeline-cta-strip {
+                    grid-template-columns: 1fr;
+                }
+
                 .pipeline-status-grid {
                     grid-template-columns: repeat(2, minmax(0, 1fr));
                 }
@@ -305,6 +465,56 @@ def _render_flash() -> None:
         st.warning(message)
     else:
         st.success(message)
+
+
+def _navigate_pipeline_section(section: str) -> None:
+    st.session_state["pipeline_subnav_selection"] = section
+    st.rerun()
+
+
+def _render_subpage_intro(kicker: str, title: str, copy: str) -> None:
+    st.markdown(
+        f"""
+        <div class="pipeline-page-intro">
+            <div class="pipeline-page-intro-copy">
+                <div class="pipeline-page-kicker">{html.escape(kicker)}</div>
+                <div class="pipeline-page-title">{html.escape(title)}</div>
+                <div class="pipeline-page-copy">{html.escape(copy)}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_section_shell(
+    kicker: str,
+    title: str,
+    copy: str,
+    *,
+    compact: bool = False,
+    step: str = "",
+) -> None:
+    compact_class = " compact" if compact else ""
+    step_markup = ""
+    if step:
+        step_markup = f'<span class="pipeline-step-badge">{html.escape(step)}</span>'
+    st.markdown(
+        f"""
+        <div class="pipeline-section-card{compact_class}">
+            <div class="pipeline-section-kicker">{html.escape(kicker)}</div>
+            <div class="pipeline-section-heading">
+                {step_markup}
+                <div class="pipeline-section-title">{html.escape(title)}</div>
+            </div>
+            <div class="pipeline-section-copy">{html.escape(copy)}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _close_section_shell() -> None:
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 
@@ -810,9 +1020,9 @@ def _render_pipeline_operations_card() -> None:
         """
         <div class="pipeline-ops-card">
             <div class="pipeline-ops-kicker">Pipeline operations</div>
-            <div class="pipeline-ops-title">Run discovery, review signal quality, and keep your search moving.</div>
+            <div class="pipeline-ops-title">Keep discovery moving without losing track of quality.</div>
             <div class="pipeline-ops-copy">
-                This page is your command center for finding new roles, importing job links, and checking whether the latest run produced useful results.
+                This is the quickest read on whether the pipeline is ready, currently busy, or needs a reset before your next run.
             </div>
         """,
         unsafe_allow_html=True,
@@ -861,17 +1071,35 @@ def _render_first_run_pipeline_guidance() -> None:
     if not _is_first_run_pipeline_state():
         return
 
-    st.info(
-        """
-No jobs have been added yet.
-
-A good first step is:
-1. Review or update the Run Inputs below
-2. Click **Find and Add Jobs**
-3. Review the diagnostics and search summary
-4. Or paste a few job URLs manually to seed your list
-        """
+    _render_section_shell(
+        "First run",
+        "Start with one simple run",
+        "You do not need to configure every option before using the app. A small first run is the fastest way to confirm that search, scoring, and cleanup all feel right.",
+        compact=True,
     )
+    st.markdown(
+        '<div class="pipeline-cta-strip">'
+        '<div class="pipeline-cta-tile">'
+        '<div class="pipeline-cta-label">Recommended</div>'
+        '<div class="pipeline-cta-title">Run Find and Add Jobs</div>'
+        '<div class="pipeline-cta-copy">Use your current run inputs and let the app discover, score, and add a small batch of jobs.</div>'
+        '</div>'
+        '<div class="pipeline-cta-tile">'
+        '<div class="pipeline-cta-label">Alternative</div>'
+        '<div class="pipeline-cta-title">Paste a few known job links</div>'
+        '<div class="pipeline-cta-copy">Use manual import when you want to test the pipeline against specific postings first.</div>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Go to Run Jobs", key="pipeline_first_run_go_to_run_jobs", use_container_width=True):
+            _navigate_pipeline_section("Run Jobs")
+    with c2:
+        if st.button("Go to Research", key="pipeline_first_run_go_to_research", use_container_width=True):
+            _navigate_pipeline_section("Research")
+    _close_section_shell()
 
 
 def _render_readiness_card() -> None:
@@ -895,11 +1123,11 @@ def _render_readiness_card() -> None:
             '</div>'
         )
 
-    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
-    st.markdown('<div class="pipeline-card-title">Readiness Check</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="pipeline-card-copy">A quick read on which AI-assisted parts of the app are ready right now.</div>',
-        unsafe_allow_html=True,
+    _render_section_shell(
+        "Readiness",
+        "What is ready right now",
+        "This is the minimum setup view. It answers whether discovery AI, scoring AI, and cover letters are available without making you interpret a longer setup checklist.",
+        compact=True,
     )
 
     if capability_tiles:
@@ -910,23 +1138,24 @@ def _render_readiness_card() -> None:
         )
 
     if note:
-        st.caption(note)
+        st.markdown(f'<div class="pipeline-compact-note">{html.escape(note)}</div>', unsafe_allow_html=True)
     if setup_snapshot:
         st.caption(setup_snapshot)
     if next_step:
         st.info(next_step)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    _close_section_shell()
 
 
 def _render_run_inputs() -> None:
     settings = load_settings()
 
-    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
-    st.markdown('<div class="pipeline-card-title">Run Inputs</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="pipeline-card-copy">Update the search inputs used by Find and Add Jobs and Find Job Links Only.</div>',
-        unsafe_allow_html=True,
+    _render_section_shell(
+        "Run inputs",
+        "Tune what discovery looks for",
+        "Use this only when you want to change the shape of the search. If the current settings already look right, you can skip this and run jobs immediately.",
+        compact=True,
+        step="1",
     )
 
     with st.form("pipeline_run_inputs_form"):
@@ -993,90 +1222,74 @@ def _render_run_inputs() -> None:
             st.success("Run inputs saved.")
             st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    _close_section_shell()
 
 
 def _render_action_deck() -> None:
     busy = app_is_busy()
-    manual_urls = st.session_state.get("pipeline_manual_urls", "")
     use_ai_title_expansion = bool(st.session_state.get("pipeline_use_ai_title_expansion", True))
     use_ai_scoring = bool(st.session_state.get("pipeline_use_ai_scoring", True))
+    _render_section_shell(
+        "Recommended path",
+        "Find and add jobs in one pass",
+        "This is the normal workflow. The app discovers links, validates them, scores accepted jobs, and adds the strongest matches to New Roles.",
+        compact=True,
+        step="2",
+    )
+    st.toggle(
+        "Use AI title expansion in this run",
+        key="pipeline_use_ai_title_expansion",
+        disabled=busy,
+        help="When on, discovery may use OpenAI to suggest closely related title variants for search coverage.",
+    )
+    st.toggle(
+        "Use AI scoring and scrub in this run",
+        key="pipeline_use_ai_scoring",
+        disabled=busy,
+        help="When on, accepted jobs may run through AI scoring and the AI scrub pass before they are saved.",
+    )
 
-    left, right = st.columns([1.25, 1])
-
-    with left:
-        st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
-        st.markdown('<div class="pipeline-card-title">Primary Run Action</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="pipeline-card-copy">Use this when you want the app to discover job links, validate them, score them, and add matching roles into your local system.</div>',
-            unsafe_allow_html=True,
+    _render_ai_button_chip()
+    if st.button("Find and Add Jobs", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
+        st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+        queue_action(
+            "pipeline",
+            "discover_and_ingest",
+            payload={
+                "use_ai_title_expansion": use_ai_title_expansion,
+                "use_ai_scoring": use_ai_scoring,
+            },
+            label="Find and Add Jobs",
         )
-        st.toggle(
-            "Use AI title expansion in this run",
-            key="pipeline_use_ai_title_expansion",
-            disabled=busy,
-            help="When on, discovery may use OpenAI to suggest closely related title variants for search coverage.",
+        st.rerun()
+
+    st.markdown(
+        '<div class="pipeline-secondary-actions-note">Default path for most runs. Best for normal day-to-day discovery.</div>',
+        unsafe_allow_html=True,
+    )
+
+    _render_ai_button_chip()
+    if st.button("Find Job Links Only", use_container_width=True, disabled=busy, key="pipeline_discover_only"):
+        st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+        queue_action(
+            "pipeline",
+            "discover_only",
+            payload={"use_ai_title_expansion": use_ai_title_expansion},
+            label="Find Job Links Only",
         )
-        st.toggle(
-            "Use AI scoring and scrub in this run",
-            key="pipeline_use_ai_scoring",
-            disabled=busy,
-            help="When on, accepted jobs may run through AI scoring and the AI scrub pass before they are saved.",
-        )
+        st.rerun()
 
-        _render_ai_button_chip()
-        if st.button("Find and Add Jobs", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
-            st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-            queue_action(
-                "pipeline",
-                "discover_and_ingest",
-                payload={
-                    "use_ai_title_expansion": use_ai_title_expansion,
-                    "use_ai_scoring": use_ai_scoring,
-                },
-                label="Find and Add Jobs",
-            )
-            st.rerun()
+    _close_section_shell()
 
-        st.markdown(
-            '<div class="pipeline-secondary-actions-note">Default path for most runs. Best for normal day-to-day discovery.</div>',
-            unsafe_allow_html=True,
-        )
 
-        c1, c2 = st.columns(2)
-        with c1:
-            _render_ai_button_chip()
-            if st.button("Find Job Links Only", use_container_width=True, disabled=busy, key="pipeline_discover_only"):
-                st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-                queue_action(
-                    "pipeline",
-                    "discover_only",
-                    payload={"use_ai_title_expansion": use_ai_title_expansion},
-                    label="Find Job Links Only",
-                )
-                st.rerun()
-        with c2:
-            _render_ai_button_chip()
-            if st.button("Add Saved Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_saved"):
-                st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-                queue_action(
-                    "pipeline",
-                    "ingest_saved",
-                    payload={"use_ai_scoring": use_ai_scoring},
-                    label="Add Saved Job Links",
-                )
-                st.rerun()
+def _render_action_deck_manual_only() -> None:
+    busy = app_is_busy()
+    manual_urls = st.session_state.get("pipeline_manual_urls", "")
+    use_ai_scoring = bool(st.session_state.get("pipeline_use_ai_scoring", True))
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    top_left, top_right = st.columns([1.15, 1])
 
-    with right:
-        st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
-        st.markdown('<div class="pipeline-card-title">Manual Import</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="pipeline-card-copy">Paste one job URL per line when you want to seed the system manually or test specific postings.</div>',
-            unsafe_allow_html=True,
-        )
-
+    with top_left:
         st.text_area(
             "Paste job links",
             key="pipeline_manual_urls",
@@ -1098,11 +1311,22 @@ def _render_action_deck() -> None:
             )
             st.rerun()
 
-        st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
+    with top_right:
         st.markdown(
-            '<div class="pipeline-card-copy">Use this when older jobs need their Fit Score and AI Recommendation refreshed under the latest scoring rules.</div>',
+            '<div class="pipeline-card-copy">Use these when you already have links or when older jobs need their Fit Score and AI Recommendation refreshed under the latest scoring rules.</div>',
             unsafe_allow_html=True,
         )
+
+        _render_ai_button_chip()
+        if st.button("Add Saved Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_saved"):
+            st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+            queue_action(
+                "pipeline",
+                "ingest_saved",
+                payload={"use_ai_scoring": use_ai_scoring},
+                label="Add Saved Job Links",
+            )
+            st.rerun()
 
         rescore_left, rescore_right = st.columns(2)
         with rescore_left:
@@ -1145,8 +1369,6 @@ def _render_action_deck() -> None:
             )
             st.rerun()
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
 
 def _render_run_diagnostics_card() -> None:
     last_result = st.session_state.get("pipeline_last_result")
@@ -1161,11 +1383,11 @@ def _render_run_diagnostics_card() -> None:
     if not discovery_lines and not skip_lines and not takeaway:
         return
 
-    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
-    st.markdown('<div class="pipeline-card-title">Run Diagnostics</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="pipeline-card-copy">A cleaner summary of what held the most recent run back.</div>',
-        unsafe_allow_html=True,
+    _render_section_shell(
+        "Diagnostics",
+        "Why the latest run underperformed",
+        "Use this when a run finishes but produces fewer useful jobs than you expected. It surfaces the biggest blockers without making you read the full raw log first.",
+        compact=True,
     )
 
     if takeaway:
@@ -1181,7 +1403,7 @@ def _render_run_diagnostics_card() -> None:
         for line in skip_lines:
             st.markdown(f'<div class="pipeline-diagnostic-line">{line}</div>', unsafe_allow_html=True)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    _close_section_shell()
 
 
 def _render_last_result_card() -> None:
@@ -1189,15 +1411,35 @@ def _render_last_result_card() -> None:
     if not last_result:
         return
 
-    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
-    st.markdown('<div class="pipeline-card-title">Last Pipeline Result</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="pipeline-card-copy">Expanded raw output from the most recent pipeline action.</div>',
-        unsafe_allow_html=True,
+    output_text = str(last_result.get("output", "") or "")
+    next_step_message = ""
+    status = str(last_result.get("status", "") or "").strip().lower()
+
+    if status == "completed":
+        if "Rescore summary:" in output_text:
+            next_step_message = (
+                "Next step: review New Roles and spot-check AI Fit Detail on a few jobs that changed the most."
+            )
+        elif "Validation + ingestion complete." in output_text:
+            next_step_message = (
+                "Next step: go to New Roles to review the new matches, then generate a cover letter or mark the strongest ones as applied."
+            )
+        elif "Job link discovery complete" in output_text:
+            next_step_message = (
+                "Next step: import the saved links, or open Search Summary and Fallback Search Links if discovery felt too light."
+            )
+
+    _render_section_shell(
+        "Last result",
+        "Review the most recent pipeline output",
+        "This is the detailed run log for the last action you triggered. Use it when you want the exact summary, skips, and parser details.",
+        compact=True,
     )
+    if next_step_message:
+        st.info(next_step_message)
     with st.expander("Open last result", expanded=False):
         _render_result(last_result)
-    st.markdown("</div>", unsafe_allow_html=True)
+    _close_section_shell()
 
 
 def _render_last_run_monitor() -> None:
@@ -1226,11 +1468,11 @@ def _render_last_run_monitor() -> None:
     source_yield_top = details.get("source_yield_top", []) if isinstance(details, dict) else []
     source_dominance = details.get("source_dominance", {}) if isinstance(details, dict) else {}
 
-    st.markdown('<div class="pipeline-card">', unsafe_allow_html=True)
-    st.markdown('<div class="pipeline-card-title">Last Run Monitor</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="pipeline-card-copy">Core ingest metrics and source mix from the most recent completed run.</div>',
-        unsafe_allow_html=True,
+    _render_section_shell(
+        "Monitor",
+        "Key metrics from the latest completed run",
+        "Use this for the fast metric read: total seen, net new, rediscovered roles, errors, and whether one source dominated the run.",
+        compact=True,
     )
 
     top1, top2, top3 = st.columns(3)
@@ -1268,7 +1510,131 @@ def _render_last_run_monitor() -> None:
                 job_count = int(row.get("job_count", 0) or 0)
                 st.write(f"- {ats_type} | {source_root} | {job_count} jobs")
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    _close_section_shell()
+
+
+def _render_pipeline_overview_tab() -> None:
+    _render_subpage_intro(
+        "Overview",
+        "Start here for the shortest path to a healthy run",
+        "This page is the calm summary view. Check readiness, confirm the pipeline is in a good state, and then jump into Run Jobs or Results depending on what you need next.",
+    )
+    st.markdown(
+        '<div class="pipeline-cta-strip">'
+        '<div class="pipeline-cta-tile">'
+        '<div class="pipeline-cta-label">Primary next step</div>'
+        '<div class="pipeline-cta-title">Run Jobs</div>'
+        '<div class="pipeline-cta-copy">Use this when you are ready to discover new roles, import links, or refresh existing jobs.</div>'
+        '</div>'
+        '<div class="pipeline-cta-tile">'
+        '<div class="pipeline-cta-label">If you already ran something</div>'
+        '<div class="pipeline-cta-title">Results</div>'
+        '<div class="pipeline-cta-copy">Use this when you want to understand what happened in the latest run and what to do next.</div>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Go to Run Jobs", key="pipeline_overview_to_run_jobs", type="primary", use_container_width=True):
+            _navigate_pipeline_section("Run Jobs")
+    with c2:
+        if st.button("Go to Results", key="pipeline_overview_to_results", use_container_width=True):
+            _navigate_pipeline_section("Results")
+
+    left, right = st.columns([1.15, 1])
+    with left:
+        _render_pipeline_operations_card()
+    with right:
+        _render_readiness_card()
+    _render_first_run_pipeline_guidance()
+
+
+def _render_pipeline_run_jobs_tab() -> None:
+    _render_subpage_intro(
+        "Run jobs",
+        "Choose one action and keep the setup nearby",
+        "This page is for doing work, not reading logs. Set the run inputs first, use the recommended path for normal discovery, and use manual import or maintenance only when needed.",
+    )
+    primary_left, primary_right = st.columns([1.15, 1])
+    with primary_left:
+        _render_run_inputs()
+    with primary_right:
+        _render_action_deck()
+
+    _render_section_shell(
+        "Manual import",
+        "Seed specific jobs or bring saved links into the app",
+        "Use this section when you want to test exact postings, import links you already discovered, or run maintenance on existing jobs. This is secondary to the main discovery flow, but it should stay visible.",
+        compact=True,
+        step="3",
+    )
+    _render_action_deck_manual_only()
+    _close_section_shell()
+
+
+def _render_pipeline_results_tab() -> None:
+    _render_subpage_intro(
+        "Results",
+        "Review outcomes before changing the workflow",
+        "Start with the next-step guidance, then look at diagnostics only if the run underperformed or the results felt off.",
+    )
+    _render_last_result_card()
+    left, right = st.columns([1.05, 0.95])
+    with left:
+        _render_run_diagnostics_card()
+    with right:
+        _render_last_run_monitor()
+
+
+def _render_pipeline_research_tab() -> None:
+    _render_subpage_intro(
+        "Research",
+        "Use this page only when you need deeper context",
+        "These tools help you inspect generated queries, source quality, recent history, and manual fallback options. They are helpful, but not required for normal day-to-day use.",
+    )
+
+    top_left, top_right = st.columns(2)
+    with top_left:
+        _render_section_shell(
+            "Search planning",
+            "Preview what discovery is going to search",
+            "Use this when you want to sanity-check the generated query set before or after a run.",
+            compact=True,
+        )
+        _render_search_summary()
+        _close_section_shell()
+
+    with top_right:
+        _render_section_shell(
+            "Fallback",
+            "Use direct searches when discovery feels light",
+            "This is the manual backup plan when you want to inspect Google results yourself.",
+            compact=True,
+        )
+        _render_google_search_links()
+        _close_section_shell()
+
+    bottom_left, bottom_right = st.columns(2)
+    with bottom_left:
+        _render_section_shell(
+            "Sources",
+            "See what domains and ATS roots the app already trusts",
+            "Use this when you want more confidence in where jobs are coming from.",
+            compact=True,
+        )
+        _render_source_registry_visibility()
+        _close_section_shell()
+
+    with bottom_right:
+        _render_section_shell(
+            "History",
+            "Look back at recent ingestion runs",
+            "Use this when you want to compare run quality over time or confirm the source mix from recent imports.",
+            compact=True,
+        )
+        _render_recent_runs()
+        _close_section_shell()
 
 
 def render_pipeline() -> None:
@@ -1276,28 +1642,25 @@ def render_pipeline() -> None:
     _inject_pipeline_css()
 
     st.subheader("Pipeline")
-    st.caption("Control discovery, imports, diagnostics, and run visibility from one place.")
-
-    _render_pipeline_operations_card()
     _render_flash()
-    _render_readiness_card()
-    _render_first_run_pipeline_guidance()
-    _render_action_deck()
-    _render_run_diagnostics_card()
-    _render_run_inputs()
-    _render_last_run_monitor()
-    _render_last_result_card()
+    initialize_nav_state("pipeline_subnav_selection", "Overview")
+    st.caption("Use the subpages below to move between readiness, active runs, recent results, and deeper research tools.")
 
-    with st.expander("Search Summary", expanded=False):
-        _render_search_summary()
+    selected_section = render_button_nav(
+        options=PIPELINE_NAV_OPTIONS,
+        state_key="pipeline_subnav_selection",
+        key_prefix="pipeline_subnav",
+        selected_button_type="tertiary",
+    )
+    st.markdown("<div style='height: 0.6rem;'></div>", unsafe_allow_html=True)
 
-    with st.expander("Source Registry", expanded=False):
-        _render_source_registry_visibility()
-
-    with st.expander("Recent Job Runs", expanded=False):
-        _render_recent_runs()
-
-    with st.expander("Fallback Search Links", expanded=False):
-        _render_google_search_links()
+    if selected_section == "Overview":
+        _render_pipeline_overview_tab()
+    elif selected_section == "Run Jobs":
+        _render_pipeline_run_jobs_tab()
+    elif selected_section == "Results":
+        _render_pipeline_results_tab()
+    else:
+        _render_pipeline_research_tab()
 
     _advance_pending_action_after_render()
