@@ -1,30 +1,26 @@
 from pathlib import Path
-import os
-
 
 APP_NAME = "Job Application Agent"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
-LOGS_DIR = PROJECT_ROOT / "logs"
-BACKUPS_DIR = PROJECT_ROOT / "backups"
+LOGS_DIR = DATA_DIR / "logs"
+LATEST_PIPELINE_LOG_PATH = LOGS_DIR / "latest_pipeline_run.txt"
 
 DATABASE_FILENAME = "job_agent.db"
 DATABASE_PATH = DATA_DIR / DATABASE_FILENAME
-OPENAI_API_KEY_FILE = DATA_DIR / "openai_api_key.txt"
 
-JOB_URLS_FILE = PROJECT_ROOT / "job_urls.txt"
+BACKUPS_DIR = DATA_DIR / "backups"
+OPENAI_API_KEY_FILE = DATA_DIR / "openai_api_key.txt"
+JOB_URLS_FILE = DATA_DIR / "job_urls.txt"
 MANUAL_URLS_FILE = DATA_DIR / "manual_urls.txt"
 
-SPREADSHEET_ID = os.getenv("JOB_AGENT_SPREADSHEET_ID", "")
-NEW_ROLES_SHEET = "New Validated Roles"
-APPLIED_SHEET = "Applied Pipeline"
-SETTINGS_SHEET = "Settings"
-REMOVED_SHEET = "Removed Roles"
-
-PAGE_SIZE_OPTIONS = [5, 10, 20, 500]
-FIT_SCORE_OPTIONS = ["Any", 60, 70, 75, 80, 85, 90]
-
 DEFAULT_STORAGE_BACKEND = "sqlite"
-SUPPORTED_STORAGE_BACKENDS = {"sqlite"}
+
+# Legacy Google Sheets compatibility
+SPREADSHEET_ID = "1h0LEK4-t6-j7rmdxjWeO8XY_Kx9L5HfQpOdkJtf_p_E"
+NEW_ROLES_SHEET = "New Validated Roles"
+APPLIED_SHEET = "Applied Roles"
+REMOVED_SHEET = "Removed Roles"
+SETTINGS_SHEET = "Settings"

@@ -12,6 +12,14 @@ except ImportError:
     DDGS = None
 
 from services.search_plan import build_search_plan as build_structured_search_plan
+from services.url_resolution import (
+    choose_best_discovery_url,
+    is_discovery_only_host,
+    is_likely_job_detail_url,
+    is_preferred_job_host,
+    resolve_candidate_url,
+    resolve_discovery_url_via_page,
+)
 
 
 GREENHOUSE_BOARD_FILE = "greenhouse_boards.txt"
@@ -629,38 +637,141 @@ def discover_google_style_urls(settings: dict[str, str], log_lines: list[str] | 
             log_lines.append("DDGS package not installed, skipping Google-style discovery.")
         return []
 
-    discovered = []
-    queries = build_google_discovery_queries(settings, use_ai_expansion=True, log_lines=log_lines)
+    discovered: list[str] = []
+    plan = build_structured_search_plan(settings=settings, use_ai_expansion=True)
+
+    if log_lines is not None:
+        for note in plan.notes:
+            if safe_text(note):
+                log_lines.append(safe_text(note))
+
+    query_tiers = plan.query_tiers or []
+    if not query_tiers:
+        if log_lines is not None:
+            log_lines.append("No search query tiers available.")
+        return []
+
+    tier_max_results = {
+        "ats_grouped": 40,
+        "ats_strict": 30,
+        "ats_loose": 30,
+        "career_web": 20,
+        "job_board_discovery": 20,
+    }
+
+    total_search_results = 0
+    consecutive_search_failures = 0
+    web_discovery_disabled = False
 
     with DDGS() as ddgs:
-        for query in queries:
-            if log_lines is not None:
-                log_lines.append(f"Searching query: {query}")
+        for tier in query_tiers:
+            tier_name = safe_text(tier.get("name", "unknown"))
+            tier_label = safe_text(tier.get("label", tier_name))
+            queries = tier.get("queries", []) or []
+            max_results = int(tier_max_results.get(tier_name, 30))
 
-            try:
-                results = list(ddgs.text(query, max_results=40))
-                result_count = len(results)
+            if web_discovery_disabled:
+                if log_lines is not None:
+                    log_lines.append(f"Skipping search tier [{tier_name}] because web discovery is unavailable for this run.")
+                continue
+
+            if log_lines is not None:
+                log_lines.append(f"Search tier: {tier_label} | queries: {len(queries)}")
+
+            tier_result_count = 0
+            tier_url_count_before = len(discovered)
+
+            for query in queries:
+                if web_discovery_disabled:
+                    break
 
                 if log_lines is not None:
-                    log_lines.append(f"Search results returned: {result_count}")
+                    log_lines.append(f"Searching query [{tier_name}]: {query}")
 
-                if result_count == 0:
-                    continue
+                try:
+                    results = list(ddgs.text(query, max_results=max_results))
+                    result_count = len(results)
+                    total_search_results += result_count
+                    tier_result_count += result_count
+                    consecutive_search_failures = 0
 
-                for result in results:
-                    url = extract_result_url(result)
-                    title = str(result.get("title", "")).strip()
+                    if log_lines is not None:
+                        log_lines.append(f"Search results returned [{tier_name}]: {result_count}")
 
-                    if not url:
+                    if result_count == 0:
                         continue
 
-                    discovered.append(url)
+                    for result in results:
+                        candidate_urls = []
 
-            except Exception as exc:
-                if log_lines is not None:
-                    log_lines.append(f"Search failed for query '{query}': {exc}")
+                        primary_url = extract_result_url(result)
+                        if primary_url:
+                            candidate_urls.append(primary_url)
 
-    return list(dict.fromkeys(discovered))
+                        for key in ["href", "url", "link"]:
+                            value = result.get(key) if isinstance(result, dict) else None
+                            if value:
+                                candidate_urls.append(str(value))
+
+                        best_url = choose_best_discovery_url(candidate_urls)
+                        if not best_url:
+                            continue
+
+                        resolved_url, resolution_reason = resolve_candidate_url(best_url)
+                        if not resolved_url:
+                            continue
+
+                        final_url = resolved_url
+                        final_reason = resolution_reason
+
+                        if is_discovery_only_host(resolved_url):
+                            if not is_likely_job_detail_url(resolved_url):
+                                if log_lines is not None:
+                                    log_lines.append(f"Rejected gateway URL [{tier_name}]: {resolved_url} | non-detail discovery page")
+                                continue
+
+                            upgraded_url, upgrade_reason = resolve_discovery_url_via_page(resolved_url)
+                            if upgraded_url and is_preferred_job_host(upgraded_url):
+                                final_url = upgraded_url
+                                final_reason = f"{resolution_reason}|{upgrade_reason}"
+                            else:
+                                if log_lines is not None:
+                                    log_lines.append(
+                                        f"Rejected gateway URL [{tier_name}]: {resolved_url} | {upgrade_reason} | no canonical employer/ATS URL"
+                                    )
+                                continue
+
+                        if log_lines is not None and final_reason != "direct":
+                            log_lines.append(f"Resolved candidate URL [{tier_name}]: {final_reason} -> {final_url}")
+
+                        discovered.append(final_url)
+
+                except Exception as exc:
+                    consecutive_search_failures += 1
+                    if log_lines is not None:
+                        log_lines.append(f"Search failed [{tier_name}] for query '{query}': {exc}")
+
+                    if consecutive_search_failures >= 3:
+                        web_discovery_disabled = True
+                        if log_lines is not None:
+                            log_lines.append(
+                                "Web discovery unavailable, using ATS boards only for the rest of this run."
+                            )
+
+            tier_unique_after = len(list(dict.fromkeys(discovered)))
+            tier_new_urls = max(0, tier_unique_after - tier_url_count_before)
+
+            if log_lines is not None:
+                log_lines.append(f"Tier result count [{tier_name}]: {tier_result_count}")
+                log_lines.append(f"Tier unique URLs added [{tier_name}]: {tier_new_urls}")
+
+    discovered = list(dict.fromkeys(discovered))
+
+    if log_lines is not None:
+        log_lines.append(f"Total search results seen: {total_search_results}")
+        log_lines.append(f"Total unique search URLs kept before filtering: {len(discovered)}")
+
+    return discovered
 
 
 def save_output_urls(file_path: str | Path, urls: list[str]) -> None:

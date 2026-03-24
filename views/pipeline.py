@@ -4,7 +4,7 @@ from urllib.parse import quote_plus
 
 import streamlit as st
 
-from config import JOB_URLS_FILE
+from config import JOB_URLS_FILE, LATEST_PIPELINE_LOG_PATH
 from services.ingestion import get_recent_ingestion_runs, get_source_registry_summary
 from services.pipeline_runtime import (
     build_search_preview,
@@ -213,6 +213,16 @@ def _render_flash() -> None:
         st.success(message)
 
 
+
+def _persist_pipeline_output(result: dict) -> None:
+    try:
+        LATEST_PIPELINE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        output = str((result or {}).get("output", "") or "")
+        LATEST_PIPELINE_LOG_PATH.write_text(output, encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _render_result(result: dict) -> None:
     if result.get("status") == "completed":
         if result.get("output"):
@@ -350,6 +360,7 @@ def _process_pending_action_before_render() -> None:
             if action_type == "discover_and_ingest":
                 result = discover_and_ingest()
                 st.session_state["pipeline_last_result"] = result
+                _persist_pipeline_output(result)
                 level, message = _build_discover_and_ingest_flash(result)
                 _set_flash(level, message)
                 st.cache_data.clear()
@@ -357,6 +368,7 @@ def _process_pending_action_before_render() -> None:
             elif action_type == "ingest_pasted":
                 result = ingest_pasted_urls(payload.get("manual_urls", ""))
                 st.session_state["pipeline_last_result"] = result
+                _persist_pipeline_output(result)
                 level, message = _build_ingest_flash(result, "Pasted job link import")
                 _set_flash(level, message)
                 st.cache_data.clear()
@@ -371,6 +383,7 @@ def _process_pending_action_before_render() -> None:
                 else:
                     result = ingest_urls_from_file(JOB_URLS_FILE)
                     st.session_state["pipeline_last_result"] = result
+                    _persist_pipeline_output(result)
                     level, message = _build_ingest_flash(result, "Saved job link import")
                     _set_flash(level, message)
                     st.cache_data.clear()
@@ -378,6 +391,7 @@ def _process_pending_action_before_render() -> None:
             elif action_type == "discover_only":
                 result = discover_job_links()
                 st.session_state["pipeline_last_result"] = result
+                _persist_pipeline_output(result)
                 level, message = _build_discover_only_flash(result)
                 _set_flash(level, message)
 

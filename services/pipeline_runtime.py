@@ -683,6 +683,79 @@ def _append_skip_summary_lines(
             output_lines.append(f"- {reason}: {count}")
 
 
+def _is_preparse_skip_reason(reason: str) -> bool:
+    normalized = safe_text(reason)
+    return normalized in {
+        "non_job_url",
+        "weak_url_title_match",
+    }
+
+
+def _is_postparse_skip_reason(reason: str) -> bool:
+    normalized = safe_text(reason)
+    return normalized in {
+        "parse_failed",
+        "processing_error",
+        "title_mismatch",
+        "location_mismatch",
+        "excluded_keyword",
+        "below_threshold",
+    }
+
+
+def _append_run_quality_summary_lines(
+    output_lines: list[str],
+    seen_urls: int,
+    accepted_jobs: int,
+    skip_counts: Counter,
+) -> None:
+    total_skipped = sum(skip_counts.values())
+    preparse_skips = sum(count for reason, count in skip_counts.items() if _is_preparse_skip_reason(reason))
+    postparse_skips = sum(count for reason, count in skip_counts.items() if _is_postparse_skip_reason(reason))
+    duplicate_batch_skips = int(skip_counts.get("duplicate_in_batch", 0))
+
+    def _pct(value: int, total: int) -> str:
+        if total <= 0:
+            return "0.0%"
+        return f"{(value / total) * 100:.1f}%"
+
+    output_lines.append("")
+    output_lines.append("Run quality summary:")
+    output_lines.append(f"- Seen URLs: {seen_urls}")
+    output_lines.append(f"- Accepted jobs: {accepted_jobs} ({_pct(accepted_jobs, seen_urls)})")
+    output_lines.append(f"- Pre-parse skips: {preparse_skips} ({_pct(preparse_skips, seen_urls)})")
+    output_lines.append(f"- Post-parse skips: {postparse_skips} ({_pct(postparse_skips, seen_urls)})")
+    if duplicate_batch_skips:
+        output_lines.append(f"- Duplicate-in-batch skips: {duplicate_batch_skips} ({_pct(duplicate_batch_skips, seen_urls)})")
+
+    dominant_reason = ""
+    dominant_count = 0
+    for reason, count in skip_counts.most_common():
+        if reason == "duplicate_in_batch":
+            continue
+        dominant_reason = reason
+        dominant_count = count
+        break
+
+    if dominant_reason:
+        output_lines.append(
+            f"- Dominant skip reason: {dominant_reason} ({dominant_count}, {_pct(dominant_count, max(1, total_skipped))} of skips)"
+        )
+
+    if accepted_jobs == 0 and preparse_skips > postparse_skips:
+        output_lines.append(
+            "- Operator read: this run underperformed mainly because discovery quality was weak before parsing."
+        )
+    elif accepted_jobs == 0 and postparse_skips >= preparse_skips:
+        output_lines.append(
+            "- Operator read: this run underperformed mainly because discovered candidates did not match fit policy after parsing."
+        )
+    elif accepted_jobs > 0 and dominant_reason:
+        output_lines.append(
+            f"- Operator read: the run produced usable jobs, but the main limiter was {dominant_reason}."
+        )
+
+
 def _append_discovery_drop_summary_lines(output_lines: list[str], discovery_result: dict[str, Any]) -> None:
     drop_summary = discovery_result.get("drop_summary", {}) or {}
     flattened: Counter = Counter()
@@ -849,6 +922,12 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
     output_lines.append(f"Build/validate seconds: {build_seconds:.2f}")
     output_lines.append(f"Ingest seconds: {ingest_seconds:.2f}")
 
+    _append_run_quality_summary_lines(
+        output_lines=output_lines,
+        seen_urls=len(urls),
+        accepted_jobs=len(accepted_jobs),
+        skip_counts=skip_counts,
+    )
     _append_skip_summary_lines(output_lines, skip_counts, skip_examples)
 
     source_yield_top = summary.get("source_yield_top", [])
