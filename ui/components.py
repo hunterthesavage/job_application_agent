@@ -1,4 +1,5 @@
 import html
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -24,6 +25,26 @@ FIT_SCORE_OPTIONS = ["Any", 60, 70, 75, 80, 85, 90]
 
 def _widget_nonce() -> int:
     return int(st.session_state.get("configuration_widget_nonce", 0))
+
+
+def _format_refresh_timestamp(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+
+    normalized = raw.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except Exception:
+        return raw
+
+    if parsed.tzinfo is not None:
+        try:
+            parsed = parsed.astimezone()
+        except Exception:
+            pass
+
+    return parsed.strftime("%Y-%m-%d %I:%M %p").lstrip("0")
 
 
 def _get_openai_badge() -> tuple[str, str]:
@@ -264,6 +285,7 @@ def render_job_card(
     fit_score = safe_value(row, "Fit Score")
     fit_tier = safe_value(row, "Fit Tier")
     ai_recommendation = safe_value(row, "AI Recommendation")
+    last_refreshed = safe_value(row, "Last Refreshed")
     match_rationale = safe_value(row, "Match Rationale")
     risk_flags = safe_value(row, "Risk Flags")
     application_angle = safe_value(row, "Application Angle")
@@ -300,6 +322,9 @@ def render_job_card(
 
         if pills:
             st.markdown(f'<div class="meta-row">{"".join(pills)}</div>', unsafe_allow_html=True)
+
+        if last_refreshed:
+            st.caption(f"Score refreshed: {_format_refresh_timestamp(last_refreshed)}")
 
         if match_rationale or risk_flags or application_angle:
             with st.expander("AI Fit Detail", expanded=False):
