@@ -132,17 +132,32 @@ def handle_cover_letter_pattern_change() -> None:
 
 
 def initialize_settings_state(settings: dict[str, str]) -> None:
+    saved_cover_letter_folder = settings.get(
+        "cover_letter_output_folder",
+        DEFAULT_SETTINGS["cover_letter_output_folder"],
+    )
+    saved_cover_letter_pattern = settings.get(
+        "cover_letter_filename_pattern",
+        DEFAULT_SETTINGS["cover_letter_filename_pattern"],
+    )
+
     if "settings_cover_letter_output_folder_value" not in st.session_state:
-        st.session_state["settings_cover_letter_output_folder_value"] = settings.get(
-            "cover_letter_output_folder",
-            DEFAULT_SETTINGS["cover_letter_output_folder"],
-        )
+        st.session_state["settings_cover_letter_output_folder_value"] = saved_cover_letter_folder
+    else:
+        current_folder_value = str(st.session_state.get("settings_cover_letter_output_folder_value", "") or "").strip()
+        last_loaded_folder = str(st.session_state.get("_settings_cover_letter_output_folder_loaded", "") or "").strip()
+        if saved_cover_letter_folder and (not current_folder_value or current_folder_value == last_loaded_folder):
+            st.session_state["settings_cover_letter_output_folder_value"] = saved_cover_letter_folder
+    st.session_state["_settings_cover_letter_output_folder_loaded"] = saved_cover_letter_folder
 
     if "settings_cover_letter_filename_pattern_value" not in st.session_state:
-        st.session_state["settings_cover_letter_filename_pattern_value"] = settings.get(
-            "cover_letter_filename_pattern",
-            DEFAULT_SETTINGS["cover_letter_filename_pattern"],
-        )
+        st.session_state["settings_cover_letter_filename_pattern_value"] = saved_cover_letter_pattern
+    else:
+        current_pattern_value = str(st.session_state.get("settings_cover_letter_filename_pattern_value", "") or "").strip()
+        last_loaded_pattern = str(st.session_state.get("_settings_cover_letter_filename_pattern_loaded", "") or "").strip()
+        if saved_cover_letter_pattern and (not current_pattern_value or current_pattern_value == last_loaded_pattern):
+            st.session_state["settings_cover_letter_filename_pattern_value"] = saved_cover_letter_pattern
+    st.session_state["_settings_cover_letter_filename_pattern_loaded"] = saved_cover_letter_pattern
 
     if "configuration_widget_nonce" not in st.session_state:
         st.session_state["configuration_widget_nonce"] = 0

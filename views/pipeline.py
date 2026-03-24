@@ -472,19 +472,22 @@ def _navigate_pipeline_section(section: str) -> None:
     st.rerun()
 
 
+def _navigate_top_section(section: str) -> None:
+    st.session_state["top_nav_selection"] = section
+    st.rerun()
+
+
 def _render_subpage_intro(kicker: str, title: str, copy: str) -> None:
-    st.markdown(
-        f"""
-        <div class="pipeline-page-intro">
-            <div class="pipeline-page-intro-copy">
-                <div class="pipeline-page-kicker">{html.escape(kicker)}</div>
-                <div class="pipeline-page-title">{html.escape(title)}</div>
-                <div class="pipeline-page-copy">{html.escape(copy)}</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    markup = (
+        '<div class="pipeline-page-intro">'
+        '<div class="pipeline-page-intro-copy">'
+        f'<div class="pipeline-page-kicker">{html.escape(kicker)}</div>'
+        f'<div class="pipeline-page-title">{html.escape(title)}</div>'
+        f'<div class="pipeline-page-copy">{html.escape(copy)}</div>'
+        '</div>'
+        '</div>'
     )
+    st.markdown(markup, unsafe_allow_html=True)
 
 
 def _render_section_shell(
@@ -499,18 +502,16 @@ def _render_section_shell(
     step_markup = ""
     if step:
         step_markup = f'<span class="pipeline-step-badge">{html.escape(step)}</span>'
-    st.markdown(
-        f"""
-        <div class="pipeline-section-card{compact_class}">
-            <div class="pipeline-section-kicker">{html.escape(kicker)}</div>
-            <div class="pipeline-section-heading">
-                {step_markup}
-                <div class="pipeline-section-title">{html.escape(title)}</div>
-            </div>
-            <div class="pipeline-section-copy">{html.escape(copy)}</div>
-        """,
-        unsafe_allow_html=True,
+    markup = (
+        f'<div class="pipeline-section-card{compact_class}">'
+        f'<div class="pipeline-section-kicker">{html.escape(kicker)}</div>'
+        '<div class="pipeline-section-heading">'
+        f'{step_markup}'
+        f'<div class="pipeline-section-title">{html.escape(title)}</div>'
+        '</div>'
+        f'<div class="pipeline-section-copy">{html.escape(copy)}</div>'
     )
+    st.markdown(markup, unsafe_allow_html=True)
 
 
 def _close_section_shell() -> None:
@@ -757,12 +758,13 @@ def _advance_pending_action_after_render() -> None:
         st.rerun()
 
 
-def _render_search_summary() -> None:
+def _render_search_summary(*, show_heading: bool = True) -> None:
     preview = build_search_preview()
     plan = preview.get("plan", [])
     queries = preview.get("queries", [])
 
-    st.markdown("### Search Summary")
+    if show_heading:
+        st.markdown("### Search Summary")
 
     if plan:
         for line in plan:
@@ -774,24 +776,26 @@ def _render_search_summary() -> None:
                 st.code(query, language="text")
 
 
-def _render_google_search_links() -> None:
+def _render_google_search_links(*, show_heading: bool = True) -> None:
     preview = build_search_preview()
     queries = preview.get("queries", [])[:8]
 
     if not queries:
         return
 
-    st.markdown("### Fallback Search Links")
-    st.caption("If discovery is light, use these direct Google searches to inspect the market manually.")
+    if show_heading:
+        st.markdown("### Fallback Search Links")
+        st.caption("If discovery is light, use these direct Google searches to inspect the market manually.")
 
     for query in queries:
         encoded = quote_plus(query)
         st.markdown(f"- [Search Google for: {query}](https://www.google.com/search?q={encoded})")
 
 
-def _render_source_registry_visibility() -> None:
-    st.markdown("### Source Registry")
-    st.caption("This shows how many source roots the app currently knows and how trustworthy they are.")
+def _render_source_registry_visibility(*, show_heading: bool = True) -> None:
+    if show_heading:
+        st.markdown("### Source Registry")
+        st.caption("This shows how many source roots the app currently knows and how trustworthy they are.")
 
     try:
         summary = get_source_registry_summary()
@@ -823,8 +827,9 @@ def _render_source_registry_visibility() -> None:
         st.info("No source registry entries yet. Run a job import first.")
 
 
-def _render_recent_runs() -> None:
-    st.markdown("### Recent Job Runs")
+def _render_recent_runs(*, show_heading: bool = True) -> None:
+    if show_heading:
+        st.markdown("### Recent Job Runs")
     runs = get_recent_ingestion_runs(limit=8)
 
     if not runs:
@@ -861,6 +866,137 @@ def _render_recent_runs() -> None:
         st.write(headline)
         if trust_text:
             st.caption(f"Trust mix: {trust_text}")
+
+
+def _render_research_health_card() -> None:
+    readiness = get_readiness_summary()
+
+    _render_section_shell(
+        "App health",
+        "Check whether setup or local state is contributing to the problem",
+        "Use this when AI features seem off or setup drift might be affecting the run.",
+        compact=True,
+    )
+
+    note = str(readiness.get("note", "") or "").strip()
+    if note:
+        st.markdown(f'<div class="pipeline-compact-note">{html.escape(note)}</div>', unsafe_allow_html=True)
+
+    with st.expander("Open app health", expanded=False):
+        capability_tiles = readiness.get("capabilities", []) or []
+        if capability_tiles:
+            rendered = []
+            for tile in capability_tiles:
+                ready = bool(tile.get("ready", False))
+                status_class = "ready" if ready else "warning"
+                label = html.escape(str(tile.get("label", "") or ""))
+                value = html.escape(str(tile.get("value", "") or ""))
+                detail = html.escape(str(tile.get("detail", "") or ""))
+                rendered.append(
+                    '<div class="pipeline-readiness-tile">'
+                    f'<div class="pipeline-readiness-label">{label}</div>'
+                    f'<div class="pipeline-readiness-value {status_class}">{value}</div>'
+                    f'<div class="pipeline-readiness-detail">{detail}</div>'
+                    '</div>'
+                )
+            st.markdown(
+                f'<div class="pipeline-readiness-grid capabilities">{"".join(rendered)}</div>',
+                unsafe_allow_html=True,
+            )
+        st.caption("For backups, full health checks, and reset tools, open Settings -> System Status.")
+
+    _close_section_shell()
+
+
+def _render_research_recent_history_card() -> None:
+    runs = get_recent_ingestion_runs(limit=8)
+    latest = runs[0] if runs else None
+    latest_status = _humanize_pipeline_status(str((latest or {}).get("status", "") or "Unknown")) if latest else "No runs yet"
+    latest_errors = int((latest or {}).get("error_count", 0) or 0) if latest else 0
+
+    _render_section_shell(
+        "Recent run history",
+        "Check whether this issue is a one-off or a pattern",
+        "Use this when you want to compare recent runs before changing discovery or scoring inputs.",
+        compact=True,
+    )
+
+    if latest:
+        st.markdown(
+            f'<div class="pipeline-compact-note">Latest run: {html.escape(latest_status)} with {latest_errors} errors. {len(runs)} recent runs available for comparison.</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="pipeline-compact-note">No ingestion history yet. Run a small search first, then come back here to compare outcomes over time.</div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Open recent run history", expanded=False):
+        _render_recent_runs(show_heading=False)
+
+    _close_section_shell()
+
+
+def _render_research_source_quality_card() -> None:
+    try:
+        summary = get_source_registry_summary()
+    except Exception as exc:
+        summary = None
+        error_message = str(exc)
+    else:
+        error_message = ""
+
+    _render_section_shell(
+        "Source quality",
+        "Check whether noisy or weak sources are distorting results",
+        "Use this when results seem too dependent on one ATS or when the source mix feels lower quality than expected.",
+        compact=True,
+    )
+
+    if summary is None:
+        st.markdown(
+            f'<div class="pipeline-compact-note">Source quality could not be loaded yet: {html.escape(error_message)}</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        totals = summary.get("totals", {}) or {}
+        total_sources = int(totals.get("total_sources", 0) or 0)
+        ats_confirmed = int(totals.get("ats_confirmed_sources", 0) or 0)
+        st.markdown(
+            f'<div class="pipeline-compact-note">{total_sources} known sources tracked, with {ats_confirmed} ATS-confirmed roots currently in the registry.</div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Open source quality details", expanded=False):
+        _render_source_registry_visibility(show_heading=False)
+
+    _close_section_shell()
+
+
+def _render_research_search_strategy_card() -> None:
+    preview = build_search_preview()
+    plan = preview.get("plan", []) or []
+    queries = preview.get("queries", []) or []
+
+    _render_section_shell(
+        "Search strategy",
+        "Check what discovery is actually searching for",
+        "Use this when the search feels too narrow, too broad, or just off-target.",
+        compact=True,
+    )
+
+    st.markdown(
+        f'<div class="pipeline-compact-note">{len(plan)} planning notes and {len(queries)} generated queries are ready to inspect.</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("Open search strategy details", expanded=False):
+        _render_search_summary(show_heading=False)
+        st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+        _render_google_search_links(show_heading=False)
+
+    _close_section_shell()
 
 
 def _format_elapsed(start_iso: str) -> str:
@@ -1020,9 +1156,9 @@ def _render_pipeline_operations_card() -> None:
         """
         <div class="pipeline-ops-card">
             <div class="pipeline-ops-kicker">Pipeline operations</div>
-            <div class="pipeline-ops-title">Keep discovery moving without losing track of quality.</div>
+            <div class="pipeline-ops-title">Know whether the pipeline is healthy before you run anything else.</div>
             <div class="pipeline-ops-copy">
-                This is the quickest read on whether the pipeline is ready, currently busy, or needs a reset before your next run.
+                Use this as the fast operational check: current state, the last completed run, and whether anything needs attention before the next search.
             </div>
         """,
         unsafe_allow_html=True,
@@ -1126,7 +1262,7 @@ def _render_readiness_card() -> None:
     _render_section_shell(
         "Readiness",
         "What is ready right now",
-        "This is the minimum setup view. It answers whether discovery AI, scoring AI, and cover letters are available without making you interpret a longer setup checklist.",
+        "This is the short setup view. It tells you what AI-assisted capabilities are ready without making you read the full configuration state.",
         compact=True,
     )
 
@@ -1139,8 +1275,6 @@ def _render_readiness_card() -> None:
 
     if note:
         st.markdown(f'<div class="pipeline-compact-note">{html.escape(note)}</div>', unsafe_allow_html=True)
-    if setup_snapshot:
-        st.caption(setup_snapshot)
     if next_step:
         st.info(next_step)
 
@@ -1406,43 +1540,37 @@ def _render_run_diagnostics_card() -> None:
     _close_section_shell()
 
 
+def _get_last_result_next_step_message(last_result: dict) -> str:
+    output_text = str(last_result.get("output", "") or "")
+    status = str(last_result.get("status", "") or "").strip().lower()
+
+    if status == "completed":
+        if "Rescore summary:" in output_text:
+            return "Review New Roles and spot-check AI Fit Detail on the jobs that changed the most."
+        if "Validation + ingestion complete." in output_text:
+            return "Go to New Roles to review the strongest matches, then generate a cover letter or mark one as applied."
+        if "Job link discovery complete" in output_text:
+            return "Import the saved links next, or open Research if discovery felt lighter than expected."
+    return ""
+
+
 def _render_last_result_card() -> None:
     last_result = st.session_state.get("pipeline_last_result")
     if not last_result:
         return
 
-    output_text = str(last_result.get("output", "") or "")
-    next_step_message = ""
-    status = str(last_result.get("status", "") or "").strip().lower()
-
-    if status == "completed":
-        if "Rescore summary:" in output_text:
-            next_step_message = (
-                "Next step: review New Roles and spot-check AI Fit Detail on a few jobs that changed the most."
-            )
-        elif "Validation + ingestion complete." in output_text:
-            next_step_message = (
-                "Next step: go to New Roles to review the new matches, then generate a cover letter or mark the strongest ones as applied."
-            )
-        elif "Job link discovery complete" in output_text:
-            next_step_message = (
-                "Next step: import the saved links, or open Search Summary and Fallback Search Links if discovery felt too light."
-            )
-
     _render_section_shell(
-        "Last result",
-        "Review the most recent pipeline output",
-        "This is the detailed run log for the last action you triggered. Use it when you want the exact summary, skips, and parser details.",
+        "Full output",
+        "Open the raw result only when you need detail",
+        "This keeps the page focused on decisions first and raw run text second.",
         compact=True,
     )
-    if next_step_message:
-        st.info(next_step_message)
     with st.expander("Open last result", expanded=False):
         _render_result(last_result)
     _close_section_shell()
 
 
-def _render_last_run_monitor() -> None:
+def _render_more_results_expander() -> None:
     runs = get_recent_ingestion_runs(limit=1)
     if not runs:
         return
@@ -1468,47 +1596,90 @@ def _render_last_run_monitor() -> None:
     source_yield_top = details.get("source_yield_top", []) if isinstance(details, dict) else []
     source_dominance = details.get("source_dominance", {}) if isinstance(details, dict) else {}
 
+    with st.expander("More Results", expanded=False):
+        top1, top2, top3 = st.columns(3)
+        top1.metric("Run ID", run_id if run_id != "" else "Unknown")
+        top2.metric("Status", _humanize_pipeline_status(status))
+        top3.metric("Duration", ingest_duration)
+
+        mid1, mid2, mid3, mid4 = st.columns(4)
+        mid1.metric("Total Seen", total_seen)
+        mid2.metric("Inserted", inserted_count)
+        mid3.metric("Updated", updated_count)
+        mid4.metric("Errors", error_count)
+
+        low1, low2, low3 = st.columns(3)
+        low1.metric("Net New", net_new_count)
+        low2.metric("Rediscovered", rediscovered_count)
+        low3.metric("Duplicate In Run", duplicate_in_run_count)
+
+        st.caption(f"Ingest started: {started_at or 'Unknown'} | Ingest completed: {completed_at or 'Unknown'}")
+
+        if source_dominance.get("flag"):
+            st.warning(f"Dominance warning: {source_dominance.get('reason', '')}")
+        elif source_yield_top:
+            first = source_yield_top[0]
+            top_source_root = str(first.get("source_root", "") or "")
+            top_source_jobs = int(first.get("job_count", 0) or 0)
+            if top_source_root:
+                st.caption(f"Top source this run: {top_source_root} ({top_source_jobs} jobs)")
+
+        if source_yield_top:
+            with st.expander("Top sources this run", expanded=False):
+                for row in source_yield_top[:5]:
+                    ats_type = str(row.get("ats_type", "Unknown") or "Unknown")
+                    source_root = str(row.get("source_root", "unknown") or "unknown")
+                    job_count = int(row.get("job_count", 0) or 0)
+                    st.write(f"- {ats_type} | {source_root} | {job_count} jobs")
+
+
+def _render_results_summary_card() -> None:
+    latest_run = _get_latest_run()
+    last_result = st.session_state.get("pipeline_last_result") or {}
+
+    if not latest_run and not last_result:
+        _render_section_shell(
+            "Results",
+            "No pipeline results yet",
+            "Once you run discovery, import links, or rescore jobs, the summary and next-step guidance will show up here.",
+            compact=True,
+        )
+        if st.button("Go to Run Jobs", key="pipeline_results_empty_to_run_jobs", type="primary", use_container_width=True):
+            _navigate_pipeline_section("Run Jobs")
+        _close_section_shell()
+        return
+
+    next_step_message = _get_last_result_next_step_message(last_result)
+    details = latest_run.get("details", {}) if latest_run and isinstance(latest_run.get("details", {}), dict) else {}
+
+    run_status = _humanize_pipeline_status(str((latest_run or {}).get("status", "") or "Completed"))
+    duration = _format_run_duration(
+        str((latest_run or {}).get("started_at", "") or ""),
+        str((latest_run or {}).get("completed_at", "") or ""),
+    ) if latest_run else "Unknown"
+    net_new = int((details or {}).get("net_new_count", (latest_run or {}).get("inserted_count", 0) or 0) or 0)
+    errors = int((latest_run or {}).get("error_count", 0) or 0)
+    total_seen = int((latest_run or {}).get("total_seen", 0) or 0)
+
     _render_section_shell(
-        "Monitor",
-        "Key metrics from the latest completed run",
-        "Use this for the fast metric read: total seen, net new, rediscovered roles, errors, and whether one source dominated the run.",
+        "Latest result",
+        "Start here before diving into diagnostics",
+        "This is the short decision view for the most recent run. It tells you whether the run was healthy and where you should go next.",
         compact=True,
     )
 
-    top1, top2, top3 = st.columns(3)
-    top1.metric("Run ID", run_id if run_id != "" else "Unknown")
-    top2.metric("Status", _humanize_pipeline_status(status))
-    top3.metric("Duration", ingest_duration)
+    top1, top2, top3, top4 = st.columns(4)
+    top1.metric("Status", run_status)
+    top2.metric("Net New", net_new)
+    top3.metric("Errors", errors)
+    top4.metric("Seen", total_seen)
 
-    mid1, mid2, mid3, mid4 = st.columns(4)
-    mid1.metric("Total Seen", total_seen)
-    mid2.metric("Inserted", inserted_count)
-    mid3.metric("Updated", updated_count)
-    mid4.metric("Errors", error_count)
+    st.caption(f"Latest completed run duration: {duration}")
 
-    low1, low2, low3 = st.columns(3)
-    low1.metric("Net New", net_new_count)
-    low2.metric("Rediscovered", rediscovered_count)
-    low3.metric("Duplicate In Run", duplicate_in_run_count)
+    if next_step_message:
+        st.info(f"Next step: {next_step_message}")
 
-    st.caption(f"Ingest started: {started_at or 'Unknown'} | Ingest completed: {completed_at or 'Unknown'}")
-
-    if source_dominance.get("flag"):
-        st.warning(f"Dominance warning: {source_dominance.get('reason', '')}")
-    elif source_yield_top:
-        first = source_yield_top[0]
-        top_source_root = str(first.get("source_root", "") or "")
-        top_source_jobs = int(first.get("job_count", 0) or 0)
-        if top_source_root:
-            st.caption(f"Top source this run: {top_source_root} ({top_source_jobs} jobs)")
-
-    if source_yield_top:
-        with st.expander("Top sources this run", expanded=False):
-            for row in source_yield_top[:5]:
-                ats_type = str(row.get("ats_type", "Unknown") or "Unknown")
-                source_root = str(row.get("source_root", "unknown") or "unknown")
-                job_count = int(row.get("job_count", 0) or 0)
-                st.write(f"- {ats_type} | {source_root} | {job_count} jobs")
+    _render_more_results_expander()
 
     _close_section_shell()
 
@@ -1516,31 +1687,25 @@ def _render_last_run_monitor() -> None:
 def _render_pipeline_overview_tab() -> None:
     _render_subpage_intro(
         "Overview",
-        "Start here for the shortest path to a healthy run",
-        "This page is the calm summary view. Check readiness, confirm the pipeline is in a good state, and then jump into Run Jobs or Results depending on what you need next.",
+        "Start here before you run or review anything else",
+        "Use this page for a quick go or no-go check. If everything looks healthy, jump to Run Jobs. If you already ran something, jump to Results.",
     )
-    st.markdown(
-        '<div class="pipeline-cta-strip">'
-        '<div class="pipeline-cta-tile">'
-        '<div class="pipeline-cta-label">Primary next step</div>'
-        '<div class="pipeline-cta-title">Run Jobs</div>'
-        '<div class="pipeline-cta-copy">Use this when you are ready to discover new roles, import links, or refresh existing jobs.</div>'
-        '</div>'
-        '<div class="pipeline-cta-tile">'
-        '<div class="pipeline-cta-label">If you already ran something</div>'
-        '<div class="pipeline-cta-title">Results</div>'
-        '<div class="pipeline-cta-copy">Use this when you want to understand what happened in the latest run and what to do next.</div>'
-        '</div>'
-        '</div>',
-        unsafe_allow_html=True,
+    _render_section_shell(
+        "Quick actions",
+        "Choose your next step",
+        "Most of the time you only need one of these actions. Use Run Jobs to do work. Use Results to understand the latest run.",
+        compact=True,
     )
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Go to Run Jobs", key="pipeline_overview_to_run_jobs", type="primary", use_container_width=True):
             _navigate_pipeline_section("Run Jobs")
+        st.caption("Discovery, imports, and rescoring")
     with c2:
         if st.button("Go to Results", key="pipeline_overview_to_results", use_container_width=True):
             _navigate_pipeline_section("Results")
+        st.caption("Latest run outcome and next-step guidance")
+    _close_section_shell()
 
     left, right = st.columns([1.15, 1])
     with left:
@@ -1576,65 +1741,61 @@ def _render_pipeline_run_jobs_tab() -> None:
 def _render_pipeline_results_tab() -> None:
     _render_subpage_intro(
         "Results",
-        "Review outcomes before changing the workflow",
-        "Start with the next-step guidance, then look at diagnostics only if the run underperformed or the results felt off.",
+        "Check the latest outcome before changing anything",
+        "Start with the summary and next step. Only move into diagnostics and raw output if the run underperformed or something looks wrong.",
     )
+    _render_results_summary_card()
+    _render_run_diagnostics_card()
     _render_last_result_card()
-    left, right = st.columns([1.05, 0.95])
-    with left:
-        _render_run_diagnostics_card()
-    with right:
-        _render_last_run_monitor()
 
 
 def _render_pipeline_research_tab() -> None:
     _render_subpage_intro(
         "Research",
-        "Use this page only when you need deeper context",
-        "These tools help you inspect generated queries, source quality, recent history, and manual fallback options. They are helpful, but not required for normal day-to-day use.",
+        "Research what is going wrong before you change the workflow",
+        "Use this page to investigate weak discovery, surprising skips, source quality, or local setup issues. It is a troubleshooting workspace, not a routine action page.",
     )
+
+    readiness = get_readiness_summary()
+    latest_run = _get_latest_run()
+    diagnostics = _build_diagnostics_from_last_result()
+    takeaway = str(diagnostics.get("takeaway", "") or "").strip()
+    next_step = str(readiness.get("next_step", "") or "").strip()
+
+    if takeaway:
+        st.markdown(f'<div class="pipeline-takeaway">{html.escape(takeaway)}</div>', unsafe_allow_html=True)
+    elif latest_run:
+        status = _humanize_pipeline_status(str(latest_run.get("status", "") or "Unknown"))
+        st.markdown(
+            f'<div class="pipeline-compact-note">Latest run status: {html.escape(status)}. Start with App Health or Search Strategy if the results felt off.</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="pipeline-compact-note">No recent run data yet. Use Search Strategy first, then run a small discovery pass before troubleshooting deeper.</div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Common investigation paths", expanded=False):
+        st.write("- Discovery felt light: inspect Search Strategy, then compare manual fallback searches.")
+        st.write("- Good jobs were skipped: compare Results diagnostics with Source Quality and Recent Run History.")
+        st.write("- AI features seem off: check App Health first, then Settings -> OpenAI API, Profile Context, and Configuration.")
+        if next_step:
+            st.write(f"- Current setup clue: {next_step}")
 
     top_left, top_right = st.columns(2)
     with top_left:
-        _render_section_shell(
-            "Search planning",
-            "Preview what discovery is going to search",
-            "Use this when you want to sanity-check the generated query set before or after a run.",
-            compact=True,
-        )
-        _render_search_summary()
-        _close_section_shell()
+        _render_research_health_card()
 
     with top_right:
-        _render_section_shell(
-            "Fallback",
-            "Use direct searches when discovery feels light",
-            "This is the manual backup plan when you want to inspect Google results yourself.",
-            compact=True,
-        )
-        _render_google_search_links()
-        _close_section_shell()
+        _render_research_recent_history_card()
 
     bottom_left, bottom_right = st.columns(2)
     with bottom_left:
-        _render_section_shell(
-            "Sources",
-            "See what domains and ATS roots the app already trusts",
-            "Use this when you want more confidence in where jobs are coming from.",
-            compact=True,
-        )
-        _render_source_registry_visibility()
-        _close_section_shell()
+        _render_research_source_quality_card()
 
     with bottom_right:
-        _render_section_shell(
-            "History",
-            "Look back at recent ingestion runs",
-            "Use this when you want to compare run quality over time or confirm the source mix from recent imports.",
-            compact=True,
-        )
-        _render_recent_runs()
-        _close_section_shell()
+        _render_research_search_strategy_card()
 
 
 def render_pipeline() -> None:
