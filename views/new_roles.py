@@ -29,7 +29,6 @@ from ui.components import (
 
 
 VALID_FIT_OPTIONS = ["Any", 60, 70, 75, 80, 85, 90]
-TRUST_FILTER_OPTIONS = ["All", "ATS Confirmed", "Career Site Confirmed", "Web Discovered", "Third-Party Listing", "Unknown"]
 NEW_ROLES_SORT_OPTIONS = [
     "Newest First",
     "Highest Fit Score",
@@ -55,33 +54,6 @@ def _render_flash() -> None:
         st.error(message)
     else:
         st.success(message)
-
-
-def _row_value(row, *names: str) -> str:
-    for name in names:
-        try:
-            value = row.get(name, "")
-        except Exception:
-            value = ""
-        text = str(value).strip()
-        if text and text.lower() != "nan":
-            return text
-    return ""
-
-
-def _render_source_trust_badge(row) -> None:
-    trust = _row_value(row, "Source Trust", "source_trust") or "Unknown"
-    source_type = _row_value(row, "Source Type", "source_type") or "Unknown"
-    source_detail = _row_value(row, "Source Detail", "source_detail", "Source") or ""
-    discovery_state = _row_value(row, "Discovery State", "discovery_state") or ""
-
-    caption_parts = [f"Trust: {trust}", f"Source Type: {source_type}"]
-    if discovery_state:
-        caption_parts.append(f"Discovery: {discovery_state}")
-    st.caption(" | ".join(caption_parts))
-
-    if source_detail:
-        st.caption(f"Source Detail: {source_detail}")
 
 
 def _process_pending_action_before_render() -> None:
@@ -227,17 +199,25 @@ def _apply_new_roles_sort(df, sort_label: str):
     return df
 
 
-def _render_sort_controls() -> None:
-    left, right = st.columns([1.2, 3])
+def _render_header_sort_controls(current_page: int, total_pages: int, total_rows: int) -> None:
+    left, right = st.columns([3.2, 1.45], vertical_alignment="bottom")
+
     with left:
+        st.markdown('<div class="section-title">New Roles</div>', unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="soft-control-label">Sort jobs by</div>', unsafe_allow_html=True)
         st.selectbox(
             "Sort jobs by",
             NEW_ROLES_SORT_OPTIONS,
             key="new_roles_sort",
-            help="Choose how the New Roles list is ordered.",
+            label_visibility="collapsed",
+            help="The default sort comes from Settings. Change it here when you want a different review order.",
         )
-    with right:
-        st.caption("Newest First is the default unless you change it in Settings.")
+        st.markdown(
+            f'<div class="section-meta section-meta-right">Page {current_page} of {total_pages} | Showing {total_rows} total jobs</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def initialize_filter_state_from_settings(settings: dict) -> None:
@@ -273,15 +253,6 @@ def initialize_filter_state_from_settings(settings: dict) -> None:
 
     if "new_roles_sort" not in st.session_state:
         st.session_state["new_roles_sort"] = default_sort
-
-
-def _render_trust_filter() -> None:
-    st.selectbox(
-        "Source trust",
-        TRUST_FILTER_OPTIONS,
-        key="filter_source_trust",
-        help="Use this to quickly separate ATS-confirmed jobs from broader web discovery.",
-    )
 
 
 def _apply_source_trust_filter(df):
@@ -336,12 +307,6 @@ def render_new_roles() -> None:
     render_kpis(kpis)
     render_filter_bar()
 
-    sort_col, trust_col = st.columns(2)
-    with sort_col:
-        _render_sort_controls()
-    with trust_col:
-        _render_trust_filter()
-
     df_filtered = apply_new_role_filters(df_display)
     df_filtered = _apply_source_trust_filter(df_filtered)
     df_filtered = _apply_new_roles_sort(df_filtered, st.session_state.get("new_roles_sort", "Newest First"))
@@ -355,16 +320,10 @@ def render_new_roles() -> None:
         page_key="new_roles_current_page",
     )
 
-    st.markdown(
-        f"""
-        <div class="section-row">
-            <div class="section-title">New Roles</div>
-            <div class="section-meta">
-                Page {current_page} of {total_pages} | Showing {len(df_filtered)} total jobs
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    _render_header_sort_controls(
+        current_page=current_page,
+        total_pages=total_pages,
+        total_rows=len(df_filtered),
     )
 
     if paged_df.empty:
@@ -375,7 +334,6 @@ def render_new_roles() -> None:
                 int(job_id),
                 row,
             )
-            _render_source_trust_badge(row)
             st.markdown("---")
 
     render_bottom_pagination_controls(

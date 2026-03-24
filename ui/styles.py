@@ -272,6 +272,19 @@ def inject_custom_css() -> None:
                 color: rgba(255,255,255,0.82);
             }
 
+            .section-meta-right {
+                text-align: right;
+                margin-top: 0.45rem;
+            }
+
+            .soft-control-label {
+                font-size: 0.88rem;
+                font-weight: 650;
+                color: rgba(255,255,255,0.72);
+                margin-bottom: 0.25rem;
+                text-align: right;
+            }
+
             .bottom-controls-wrap {
                 margin-top: 1.35rem;
                 margin-bottom: 0.4rem;

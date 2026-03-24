@@ -1,6 +1,13 @@
 from datetime import datetime
 
+from services.ai_job_scoring import (
+    apply_score_to_job_payload,
+    load_scoring_profile_text,
+    score_accepted_job,
+)
+from services.ai_job_scrub import apply_scrub_to_job_payload, scrub_accepted_job
 from services.db import db_connection
+from services.job_store import update_job_scoring_fields
 
 
 def _row_to_dict(row):
@@ -68,6 +75,38 @@ def mark_job_as_applied(job_id: int) -> dict:
         ).fetchone()
 
     return _row_to_dict(updated)
+
+
+def rescore_job(job_id: int) -> dict:
+    job = get_job_by_id(job_id)
+    if job is None:
+        raise ValueError(f"Job id {job_id} not found.")
+
+    resume_profile_text, resume_profile_source = load_scoring_profile_text()
+    if not str(resume_profile_text or "").strip():
+        raise ValueError(
+            "No saved Profile Context or fallback profile text was found. "
+            "Add content in Settings -> Profile Context, or use profile_context.txt / JOB_AGENT_RESUME_PROFILE as fallback."
+        )
+
+    score_result = score_accepted_job(job, resume_profile_text)
+    score_status = str(score_result.get("status", "") or "").strip().lower()
+    if score_status != "scored":
+        raise ValueError(
+            f"Job rescore was skipped with status '{score_status or 'unknown'}' "
+            f"using profile source '{resume_profile_source}'."
+        )
+
+    apply_score_to_job_payload(job, score_result)
+    scrub_result = scrub_accepted_job(job, resume_profile_text)
+    apply_scrub_to_job_payload(job, scrub_result)
+    update_job_scoring_fields(job_id, job)
+
+    updated = get_job_by_id(job_id)
+    if updated is None:
+        raise ValueError(f"Job id {job_id} could not be reloaded after rescoring.")
+
+    return updated
 
 
 def remove_job(job_id: int, removal_reason: str = "Removed in app") -> dict:

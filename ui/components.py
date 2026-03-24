@@ -21,6 +21,7 @@ from services.ui_busy import app_is_busy, current_busy_label, start_busy, stop_b
 
 PAGE_SIZE_OPTIONS = [5, 10, 20, 500]
 FIT_SCORE_OPTIONS = ["Any", 60, 70, 75, 80, 85, 90]
+TRUST_FILTER_OPTIONS = ["All", "ATS Confirmed", "Career Site Confirmed", "Web Discovered", "Third-Party Listing", "Unknown"]
 
 
 def _widget_nonce() -> int:
@@ -143,7 +144,7 @@ def render_filter_bar() -> None:
     st.markdown('<div class="filters-shell">', unsafe_allow_html=True)
     st.markdown('<div class="filters-heading">Filters</div>', unsafe_allow_html=True)
 
-    c1, c2, c3, c4 = st.columns([1.15, 1, 1.2, 1.1])
+    c1, c2, c3 = st.columns([1.2, 1, 1.2])
     nonce = _widget_nonce()
 
     with c1:
@@ -167,27 +168,6 @@ def render_filter_bar() -> None:
             st.rerun()
 
     with c2:
-        st.markdown('<div class="control-label">Discovery State</div>', unsafe_allow_html=True)
-
-        discovery_options = ["All", "Net New", "Rediscovered"]
-        current_discovery = st.session_state.get("filter_discovery_state", "All")
-        discovery_key = f"filter_discovery_state_selector_{nonce}"
-
-        selected_discovery = st.selectbox(
-            "Discovery State",
-            discovery_options,
-            index=discovery_options.index(current_discovery) if current_discovery in discovery_options else 0,
-            key=discovery_key,
-            label_visibility="collapsed",
-            disabled=app_is_busy(),
-        )
-
-        if selected_discovery != st.session_state.get("filter_discovery_state", "All"):
-            st.session_state["filter_discovery_state"] = selected_discovery
-            st.session_state["new_roles_current_page"] = 1
-            st.rerun()
-
-    with c3:
         st.markdown('<div class="control-label">Remote Only</div>', unsafe_allow_html=True)
         st.toggle(
             "Remote Only",
@@ -196,7 +176,7 @@ def render_filter_bar() -> None:
             disabled=app_is_busy(),
         )
 
-    with c4:
+    with c3:
         st.markdown('<div class="control-label">Compensation Available Only</div>', unsafe_allow_html=True)
         st.toggle(
             "Compensation Available Only",
@@ -204,6 +184,51 @@ def render_filter_bar() -> None:
             label_visibility="collapsed",
             disabled=app_is_busy(),
         )
+
+    with st.expander("More Filters", expanded=False):
+        extra_left, extra_right = st.columns(2)
+
+        with extra_left:
+            st.markdown('<div class="control-label">Discovery State</div>', unsafe_allow_html=True)
+
+            discovery_options = ["All", "Net New", "Rediscovered"]
+            current_discovery = st.session_state.get("filter_discovery_state", "All")
+            discovery_key = f"filter_discovery_state_selector_{nonce}"
+
+            selected_discovery = st.selectbox(
+                "Discovery State",
+                discovery_options,
+                index=discovery_options.index(current_discovery) if current_discovery in discovery_options else 0,
+                key=discovery_key,
+                label_visibility="collapsed",
+                disabled=app_is_busy(),
+            )
+
+            if selected_discovery != st.session_state.get("filter_discovery_state", "All"):
+                st.session_state["filter_discovery_state"] = selected_discovery
+                st.session_state["new_roles_current_page"] = 1
+                st.rerun()
+
+        with extra_right:
+            st.markdown('<div class="control-label">Source Trust</div>', unsafe_allow_html=True)
+
+            current_trust = st.session_state.get("filter_source_trust", "All")
+            trust_key = f"filter_source_trust_selector_{nonce}"
+
+            selected_trust = st.selectbox(
+                "Source Trust",
+                TRUST_FILTER_OPTIONS,
+                index=TRUST_FILTER_OPTIONS.index(current_trust) if current_trust in TRUST_FILTER_OPTIONS else 0,
+                key=trust_key,
+                label_visibility="collapsed",
+                disabled=app_is_busy(),
+                help="Separate ATS-confirmed roles from broader web discovery when you want a narrower review set.",
+            )
+
+            if selected_trust != st.session_state.get("filter_source_trust", "All"):
+                st.session_state["filter_source_trust"] = selected_trust
+                st.session_state["new_roles_current_page"] = 1
+                st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -289,6 +314,11 @@ def render_job_card(
     match_rationale = safe_value(row, "Match Rationale")
     risk_flags = safe_value(row, "Risk Flags")
     application_angle = safe_value(row, "Application Angle")
+    source = safe_value(row, "Source")
+    source_type = safe_value(row, "Source Type")
+    source_trust = safe_value(row, "Source Trust")
+    source_detail = safe_value(row, "Source Detail")
+    discovery_state = safe_value(row, "Discovery State")
     compensation_raw = safe_value(row, "Compensation Raw")
     job_url = safe_value(row, "Job Posting URL")
 
@@ -323,11 +353,11 @@ def render_job_card(
         if pills:
             st.markdown(f'<div class="meta-row">{"".join(pills)}</div>', unsafe_allow_html=True)
 
-        if last_refreshed:
-            st.caption(f"Score refreshed: {_format_refresh_timestamp(last_refreshed)}")
-
-        if match_rationale or risk_flags or application_angle:
+        if match_rationale or risk_flags or application_angle or last_refreshed:
             with st.expander("AI Fit Detail", expanded=False):
+                if last_refreshed:
+                    st.caption(f"Score refreshed: {_format_refresh_timestamp(last_refreshed)}")
+
                 if match_rationale:
                     st.markdown("**Why it matches**")
                     st.write(match_rationale)
@@ -340,6 +370,20 @@ def render_job_card(
                 if application_angle:
                     st.markdown("**Suggested application angle**")
                     st.write(application_angle)
+
+        if source or source_type or source_trust or source_detail or discovery_state:
+            with st.expander("Source", expanded=False):
+                if source_trust:
+                    st.markdown(f"**Trust**: {source_trust}")
+                if source_type:
+                    st.markdown(f"**Source Type**: {source_type}")
+                if source:
+                    st.markdown(f"**Source**: {source}")
+                if discovery_state:
+                    st.markdown(f"**Discovery State**: {discovery_state}")
+                if source_detail:
+                    st.markdown("**Source Detail**")
+                    st.write(source_detail)
 
     with right:
         btn1, btn2, btn3, btn4 = st.columns([1.05, 0.95, 1.15, 0.95])
