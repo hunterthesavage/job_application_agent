@@ -10,7 +10,7 @@ from typing import Any
 from config import JOB_URLS_FILE, MANUAL_URLS_FILE
 from services.ai_job_scoring import (
     apply_score_to_job_payload,
-    load_resume_profile_text,
+    load_scoring_profile_text,
     score_accepted_job,
 )
 from services.ai_job_scrub import (
@@ -18,6 +18,10 @@ from services.ai_job_scrub import (
     scrub_accepted_job,
 )
 from services.ingestion import ingest_job_records
+from services.job_store import (
+    list_jobs_for_rescoring,
+    update_job_scoring_fields,
+)
 from services.location_matching import (
     evaluate_location_filters,
     location_matches_preference,
@@ -913,7 +917,7 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
     ai_skipped_count = 0
     ai_error_count = 0
 
-    resume_profile_text, resume_profile_source = load_resume_profile_text()
+    resume_profile_text, resume_profile_source = load_scoring_profile_text()
 
     if accepted_jobs:
         output_lines.append("")
@@ -935,8 +939,8 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
         else:
             ai_skipped_count = len(accepted_jobs)
             output_lines.append(
-                "AI job scoring skipped: no resume/profile text file was found. "
-                "Checked default locations plus JOB_AGENT_RESUME_PROFILE if set."
+                "AI job scoring skipped: no saved Profile Context or fallback profile text was found. "
+                "Add content in Settings -> Profile Context, or use profile_context.txt / JOB_AGENT_RESUME_PROFILE as fallback."
             )
 
     ai_scoring_seconds = time.perf_counter() - ai_scoring_started_at
@@ -1088,6 +1092,121 @@ def ingest_pasted_urls(text_value: str) -> dict[str, Any]:
         source_name="Local Pipeline",
         source_detail=str(MANUAL_URLS_FILE.resolve()),
     )
+
+
+def rescore_existing_jobs(limit: int = 0) -> dict[str, Any]:
+    started_at = time.perf_counter()
+    resume_profile_text, resume_profile_source = load_scoring_profile_text()
+
+    if not resume_profile_text:
+        output = (
+            "Rescore existing jobs skipped: no saved Profile Context or fallback profile text was found.\n"
+            "Add content in Settings -> Profile Context, or use profile_context.txt / JOB_AGENT_RESUME_PROFILE as fallback."
+        )
+        return {
+            "status": "completed",
+            "output": output,
+            "rescored_count": 0,
+            "skipped_count": 0,
+            "error_count": 0,
+            "changed_count": 0,
+            "total_considered": 0,
+        }
+
+    rows = list_jobs_for_rescoring(limit=limit or None)
+    if not rows:
+        output = (
+            f"AI job scoring profile: {resume_profile_source}\n\n"
+            "No existing jobs were available to rescore."
+        )
+        return {
+            "status": "completed",
+            "output": output,
+            "rescored_count": 0,
+            "skipped_count": 0,
+            "error_count": 0,
+            "changed_count": 0,
+            "total_considered": 0,
+        }
+
+    rescored_count = 0
+    skipped_count = 0
+    error_count = 0
+    changed_count = 0
+    output_lines = [
+        f"AI job scoring profile: {resume_profile_source}",
+        f"Existing jobs selected for rescore: {len(rows)}",
+        "",
+    ]
+
+    for row in rows:
+        payload = dict(row)
+        job_id = int(payload.get("id") or 0)
+        title = safe_text(payload.get("title", "")) or "Unknown title"
+        company = safe_text(payload.get("company", "")) or "Unknown company"
+
+        old_values = {
+            "fit_score": payload.get("fit_score"),
+            "fit_tier": payload.get("fit_tier"),
+            "ai_priority": payload.get("ai_priority"),
+            "match_rationale": payload.get("match_rationale"),
+            "risk_flags": payload.get("risk_flags"),
+            "application_angle": payload.get("application_angle"),
+        }
+
+        try:
+            score_result = score_accepted_job(payload, resume_profile_text)
+            score_status = safe_text(score_result.get("status", "")).lower()
+            if score_status != "scored":
+                skipped_count += 1
+                output_lines.append(f"Skipped rescore: {company} | {title} | score status: {score_status or 'unknown'}")
+                continue
+
+            apply_score_to_job_payload(payload, score_result)
+            scrub_result = scrub_accepted_job(payload, resume_profile_text)
+            apply_scrub_to_job_payload(payload, scrub_result)
+            update_job_scoring_fields(job_id, payload)
+
+            rescored_count += 1
+
+            new_values = {
+                "fit_score": payload.get("fit_score"),
+                "fit_tier": payload.get("fit_tier"),
+                "ai_priority": payload.get("ai_priority"),
+                "match_rationale": payload.get("match_rationale"),
+                "risk_flags": payload.get("risk_flags"),
+                "application_angle": payload.get("application_angle"),
+            }
+            if old_values != new_values:
+                changed_count += 1
+
+        except Exception as exc:
+            error_count += 1
+            output_lines.append(f"Rescore error: {company} | {title} | {type(exc).__name__}: {exc}")
+
+    elapsed = time.perf_counter() - started_at
+    output_lines.extend(
+        [
+            "",
+            "Rescore summary:",
+            f"- Existing jobs considered: {len(rows)}",
+            f"- Successfully rescored: {rescored_count}",
+            f"- Changed after rescore: {changed_count}",
+            f"- Skipped: {skipped_count}",
+            f"- Errors: {error_count}",
+            f"- Rescore seconds: {elapsed:.2f}",
+        ]
+    )
+
+    return {
+        "status": "completed",
+        "output": "\n".join(output_lines).strip(),
+        "rescored_count": rescored_count,
+        "skipped_count": skipped_count,
+        "error_count": error_count,
+        "changed_count": changed_count,
+        "total_considered": len(rows),
+    }
 
 
 def discover_and_ingest() -> dict[str, Any]:

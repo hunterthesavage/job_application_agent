@@ -281,6 +281,32 @@ def get_existing_job_by_posting_url(job_posting_url: str):
     return None
 
 
+def list_jobs_for_rescoring(limit: int | None = None) -> list[Any]:
+    ensure_job_columns()
+
+    query = """
+        SELECT *
+        FROM jobs
+        WHERE active_status != 'Removed'
+        ORDER BY
+            CASE
+                WHEN workflow_status = 'New' THEN 0
+                WHEN workflow_status = 'Applied' THEN 1
+                ELSE 2
+            END,
+            updated_at DESC,
+            id DESC
+    """
+    params: tuple[Any, ...] = ()
+
+    if limit is not None and int(limit) > 0:
+        query += "\nLIMIT ?"
+        params = (int(limit),)
+
+    with db_connection() as conn:
+        return conn.execute(query, params).fetchall()
+
+
 def is_removed_duplicate_key(duplicate_key: str) -> bool:
     normalized = normalize_duplicate_key(duplicate_key)
     if not normalized:
@@ -521,6 +547,36 @@ def update_existing_job(existing_id: int, payload: dict[str, Any], preserve_appl
             ),
         )
         return was_promoted
+
+
+def update_job_scoring_fields(job_id: int, payload: dict[str, Any]) -> None:
+    ensure_job_columns()
+    coerced = coerce_job_payload(payload)
+
+    with db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET
+                fit_score = ?,
+                fit_tier = ?,
+                ai_priority = ?,
+                match_rationale = ?,
+                risk_flags = ?,
+                application_angle = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                coerced["fit_score"],
+                coerced["fit_tier"],
+                coerced["ai_priority"],
+                coerced["match_rationale"],
+                coerced["risk_flags"],
+                coerced["application_angle"],
+                int(job_id),
+            ),
+        )
 
 
 def upsert_job(job: Any, run_id: int | None = None) -> dict[str, Any]:

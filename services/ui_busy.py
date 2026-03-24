@@ -6,6 +6,7 @@ ACTION_LABELS = {
     "discover_only": "Find Job Links Only",
     "ingest_saved": "Add Saved Job Links",
     "ingest_pasted": "Add Pasted Job Links",
+    "rescore_existing_jobs": "Rescore Existing Jobs",
     "refresh_source_registry": "Refresh Source Registry",
     "health_check": "Run Health Check",
 }

@@ -1,6 +1,11 @@
 from services.ai_job_scoring import (
+    _apply_preferred_job_level_adjustment,
     apply_score_to_job_payload,
+    build_scoring_prompt,
+    build_scoring_profile_from_settings,
     build_default_score_result,
+    build_scoring_input,
+    load_scoring_profile_text,
     normalize_score_result,
 )
 from services.openai_key import get_effective_openai_api_key
@@ -115,3 +120,116 @@ def test_effective_openai_key_prefers_saved_key(monkeypatch):
     )
 
     assert get_effective_openai_api_key() == "saved-key-123"
+
+
+def test_build_scoring_input_includes_preferred_job_levels():
+    scoring_input = build_scoring_input(
+        {
+            "title": "VP Technology",
+            "company": "ExampleCo",
+        },
+        "Resume text",
+        preferred_job_levels=["VP", "SVP"],
+    )
+
+    assert scoring_input["job"]["detected_job_level"] == "VP"
+    assert scoring_input["candidate_preferences"]["preferred_job_levels"] == ["VP", "SVP"]
+
+
+def test_preferred_job_level_adjustment_penalizes_lower_level_titles():
+    result = _apply_preferred_job_level_adjustment(
+        {
+            "fit_score": 84,
+            "match_summary": "Strong technology match.",
+            "gaps_or_risks": [],
+        },
+        {
+            "title": "Senior Director of Infrastructure",
+        },
+        ["VP", "SVP", "C-Suite"],
+    )
+
+    assert result["fit_score"] < 84
+    assert result["recommended_action"] != "Apply"
+    assert any("below selected job levels" in item for item in result["gaps_or_risks"])
+
+
+def test_build_scoring_profile_from_settings_uses_profile_fields_not_voice():
+    profile_text = build_scoring_profile_from_settings(
+        {
+            "profile_summary": "Executive technology leader.",
+            "strengths_to_highlight": "Transformation, enterprise platforms",
+            "resume_text": "Led global infrastructure modernization.",
+            "cover_letter_voice": "Warm and polished",
+        }
+    )
+
+    assert "High Priority Candidate Signals:" in profile_text
+    assert "Executive Summary:" in profile_text
+    assert "Strengths to Highlight:" in profile_text
+    assert "Supporting Candidate Evidence:" in profile_text
+    assert "Resume Text:" in profile_text
+    assert "Warm and polished" not in profile_text
+
+
+def test_load_scoring_profile_text_prefers_saved_settings(monkeypatch):
+    monkeypatch.setattr(
+        "services.ai_job_scoring.load_settings",
+        lambda: {
+            "profile_summary": "Saved summary",
+            "strengths_to_highlight": "Saved strengths",
+            "resume_text": "Saved resume",
+        },
+    )
+    monkeypatch.setattr(
+        "services.ai_job_scoring.load_resume_profile_text",
+        lambda explicit_path=None, candidate_paths=None: ("File profile text", "profile_context.txt"),
+    )
+
+    profile_text, source = load_scoring_profile_text()
+
+    assert "Saved summary" in profile_text
+    assert source == "Settings -> Profile Context"
+
+
+def test_load_scoring_profile_text_falls_back_to_file(monkeypatch):
+    monkeypatch.setattr(
+        "services.ai_job_scoring.load_settings",
+        lambda: {
+            "profile_summary": "",
+            "strengths_to_highlight": "",
+            "resume_text": "",
+        },
+    )
+    monkeypatch.setattr(
+        "services.ai_job_scoring.load_resume_profile_text",
+        lambda explicit_path=None, candidate_paths=None: ("File profile text", "profile_context.txt"),
+    )
+
+    profile_text, source = load_scoring_profile_text()
+
+    assert profile_text == "File profile text"
+    assert source == "profile_context.txt"
+
+
+def test_build_scoring_prompt_includes_profile_weighting_instruction():
+    prompt = build_scoring_prompt(
+        {
+            "title": "VP Technology",
+            "company": "ExampleCo",
+            "description_text": "Lead enterprise technology strategy and transformation.",
+        },
+        (
+            "High Priority Candidate Signals:\n"
+            "Executive Summary:\nExecutive technology leader\n\n"
+            "Strengths to Highlight:\nTransformation\n\n"
+            "Supporting Candidate Evidence:\n"
+            "Resume Text:\nDetailed background"
+        ),
+        preferred_job_levels=["VP"],
+    )
+
+    assert "Weight candidate evidence in this order" in prompt
+    assert "1. Executive Summary" in prompt
+    assert "2. Strengths to Highlight" in prompt
+    assert "3. Resume Text" in prompt

@@ -7,6 +7,11 @@ import streamlit as st
 from config import APP_NAME, APP_VERSION, BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
 from services.backup import backup_database, restore_latest_backup
 from services.health import run_health_check
+from services.job_levels import (
+    JOB_LEVEL_OPTIONS,
+    parse_preferred_job_levels,
+    serialize_preferred_job_levels,
+)
 from services.openai_key import (
     delete_saved_openai_api_key,
     get_effective_openai_api_key,
@@ -556,6 +561,16 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
                 help="Controls the default sort used when you open New Roles.",
             )
 
+        st.markdown("---")
+        st.markdown("### AI Scoring Preferences")
+
+        preferred_job_levels = st.multiselect(
+            "Preferred Job Levels",
+            options=JOB_LEVEL_OPTIONS,
+            default=parse_preferred_job_levels(settings.get("preferred_job_levels", "")),
+            help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
+        )
+
         save_main = st.form_submit_button("Save Configuration", type="primary", use_container_width=False)
 
         if save_main:
@@ -565,6 +580,7 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
                         "default_min_fit_score": str(default_min_fit_score),
                         "default_jobs_per_page": str(default_jobs_per_page),
                         "default_new_roles_sort": str(default_new_roles_sort),
+                        "preferred_job_levels": serialize_preferred_job_levels(preferred_job_levels),
                     }
                 )
 
@@ -582,33 +598,37 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
 def render_profile_context_tab(settings: dict[str, str]) -> None:
     with st.form("settings_profile_context_form"):
         st.markdown("### Profile Context")
+        st.caption(
+            "This is the primary candidate context used by AI job scoring. "
+            "Cover letters also use it, while Cover Letter Voice only affects letter generation."
+        )
 
         resume_text = st.text_area(
             "Resume Text",
             value=settings.get("resume_text", ""),
             height=240,
-            help="Paste resume text here so the agent can better tailor cover letters and fit scoring.",
+            help="Primary source for AI scoring. Paste resume text here so scoring can compare your background to job requirements.",
         )
 
         profile_summary = st.text_area(
             "Executive Summary",
             value=settings.get("profile_summary", ""),
             height=140,
-            help="Short bio or leadership summary to influence cover letter tone and framing.",
+            help="Primary source for AI scoring. Use this for your high level leadership summary and target profile.",
         )
 
         strengths_to_highlight = st.text_area(
             "Strengths to Highlight",
             value=settings.get("strengths_to_highlight", ""),
             height=140,
-            help="Examples: AI transformation, enterprise IT leadership, ServiceNow, operational excellence.",
+            help="Primary source for AI scoring. Examples: AI transformation, enterprise IT leadership, ServiceNow, operational excellence.",
         )
 
         cover_letter_voice = st.text_area(
             "Cover Letter Voice",
             value=settings.get("cover_letter_voice", ""),
             height=120,
-            help="Describe how you want cover letters to sound.",
+            help="Used for cover letters only. This field does not affect job scoring.",
         )
 
         save_profile = st.form_submit_button("Save Profile Context", type="primary", use_container_width=False)

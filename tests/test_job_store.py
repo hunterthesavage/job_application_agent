@@ -57,3 +57,28 @@ def test_upsert_job_skips_removed_duplicate(temp_db_path, seeded_db, sample_job_
 
     assert result["status"] == "skipped_removed"
     assert result["job_id"] is None
+
+
+def test_update_job_scoring_fields_updates_only_scoring_columns(temp_db_path, sample_job_payload):
+    import services.job_store as job_store
+
+    inserted = job_store.upsert_job(sample_job_payload)
+    job_id = inserted["job_id"]
+
+    updated_payload = dict(sample_job_payload)
+    updated_payload["fit_score"] = 42
+    updated_payload["fit_tier"] = "Weak"
+    updated_payload["ai_priority"] = "Hold"
+    updated_payload["match_rationale"] = "Rescored rationale"
+    updated_payload["risk_flags"] = "Level mismatch"
+    updated_payload["application_angle"] = "Updated angle"
+
+    job_store.update_job_scoring_fields(job_id, updated_payload)
+
+    existing = job_store.get_existing_job_by_duplicate_key(sample_job_payload["duplicate_key"])
+    assert existing["fit_score"] == 42
+    assert existing["fit_tier"] == "Weak"
+    assert existing["ai_priority"] == "Hold"
+    assert existing["match_rationale"] == "Rescored rationale"
+    assert existing["risk_flags"] == "Level mismatch"
+    assert existing["application_angle"] == "Updated angle"

@@ -13,6 +13,7 @@ def test_settings_save_and_load(temp_db_path, monkeypatch):
             "default_min_fit_score": "80",
             "default_jobs_per_page": "20",
             "profile_summary": "Test summary",
+            "preferred_job_levels": "VP, SVP",
         }
     )
 
@@ -21,3 +22,4 @@ def test_settings_save_and_load(temp_db_path, monkeypatch):
     assert loaded["default_min_fit_score"] == "80"
     assert loaded["default_jobs_per_page"] == "20"
     assert loaded["profile_summary"] == "Test summary"
+    assert loaded["preferred_job_levels"] == "VP, SVP"

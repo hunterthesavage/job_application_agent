@@ -13,7 +13,13 @@ try:
 except ImportError:
     OpenAI = None
 
+from services.job_levels import (
+    get_level_preference_penalty,
+    infer_job_level,
+    parse_preferred_job_levels,
+)
 from services.openai_key import get_effective_openai_api_key
+from services.settings import load_settings
 
 
 SCORE_VERSION = "v2"
@@ -27,6 +33,39 @@ DEFAULT_PROFILE_PATHS = (
     "resume_profile.txt",
     "data/resume_profile.txt",
 )
+
+
+def build_scoring_profile_from_settings(settings: Dict[str, Any]) -> str:
+    high_priority_parts: List[str] = []
+    supporting_parts: List[str] = []
+
+    profile_summary = _clean(settings.get("profile_summary", ""))
+    strengths_to_highlight = _clean(settings.get("strengths_to_highlight", ""))
+    resume_text = _clean(settings.get("resume_text", ""))
+
+    if profile_summary:
+        high_priority_parts.append("Executive Summary:\n" + profile_summary)
+
+    if strengths_to_highlight:
+        high_priority_parts.append("Strengths to Highlight:\n" + strengths_to_highlight)
+
+    if resume_text:
+        supporting_parts.append("Resume Text:\n" + resume_text)
+
+    sections: List[str] = []
+    if high_priority_parts:
+        sections.append(
+            "High Priority Candidate Signals:\n"
+            + "\n\n".join(high_priority_parts)
+        )
+
+    if supporting_parts:
+        sections.append(
+            "Supporting Candidate Evidence:\n"
+            + "\n\n".join(supporting_parts)
+        )
+
+    return "\n\n".join(sections).strip()
 
 
 def _utc_now_iso() -> str:
@@ -170,7 +209,11 @@ def normalize_score_result(payload: Dict[str, Any], *, model: str = DEFAULT_MODE
     }
 
 
-def build_scoring_input(job_payload: Dict[str, Any], resume_profile_text: str) -> Dict[str, Any]:
+def build_scoring_input(
+    job_payload: Dict[str, Any],
+    resume_profile_text: str,
+    preferred_job_levels: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     description_text = (
         job_payload.get("description_text")
         or job_payload.get("job_description")
@@ -194,6 +237,7 @@ def build_scoring_input(job_payload: Dict[str, Any], resume_profile_text: str) -
         "job": {
             "company": job_payload.get("company"),
             "title": job_payload.get("title"),
+            "detected_job_level": infer_job_level(job_payload.get("title")),
             "location": job_payload.get("location"),
             "salary": salary_value,
             "job_url": job_url_value,
@@ -207,12 +251,19 @@ def build_scoring_input(job_payload: Dict[str, Any], resume_profile_text: str) -
             "existing_fit_tier": job_payload.get("fit_tier"),
             "existing_match_rationale": job_payload.get("match_rationale"),
         },
+        "candidate_preferences": {
+            "preferred_job_levels": preferred_job_levels or [],
+        },
         "resume_profile_text": _truncate_text(resume_profile_text, MAX_RESUME_CHARS),
     }
 
 
-def build_scoring_prompt(job_payload: Dict[str, Any], resume_profile_text: str) -> str:
-    scoring_input = build_scoring_input(job_payload, resume_profile_text)
+def build_scoring_prompt(
+    job_payload: Dict[str, Any],
+    resume_profile_text: str,
+    preferred_job_levels: Optional[List[str]] = None,
+) -> str:
+    scoring_input = build_scoring_input(job_payload, resume_profile_text, preferred_job_levels)
     schema = {
         "fit_score": "integer from 0 to 100",
         "confidence": "High, Medium, or Low",
@@ -235,6 +286,14 @@ def build_scoring_prompt(job_payload: Dict[str, Any], resume_profile_text: str) 
         "Do not inflate scores for senior-sounding titles alone.\n"
         "Prefer low confidence when the job description is sparse.\n"
         "Penalize jobs that are clearly outside the candidate's likely background.\n"
+        "Treat selected target job levels as a meaningful preference.\n"
+        "If the role title appears below the selected job levels, reduce the score materially.\n"
+        "If the role title appears slightly outside the selected levels, reduce the score modestly.\n"
+        "Weight candidate evidence in this order when the sections are present:\n"
+        "1. Executive Summary\n"
+        "2. Strengths to Highlight\n"
+        "3. Resume Text\n"
+        "Use Resume Text as supporting proof, not the main driver, when higher-priority sections are available.\n"
         "Extract likely must-have requirements from the job description before scoring.\n"
         "Separate must-have requirements from preferred requirements.\n"
         "Map resume/profile evidence to those requirements.\n"
@@ -250,6 +309,37 @@ def build_scoring_prompt(job_payload: Dict[str, Any], resume_profile_text: str) 
         f"Required JSON schema:\n{json.dumps(schema, indent=2)}\n\n"
         f"Scoring input:\n{json.dumps(scoring_input, indent=2)}"
     )
+
+
+def _apply_preferred_job_level_adjustment(
+    score_result: Dict[str, Any],
+    job_payload: Dict[str, Any],
+    preferred_job_levels: List[str],
+) -> Dict[str, Any]:
+    normalized = normalize_score_result(score_result)
+    penalty, detected_level, reason = get_level_preference_penalty(
+        job_payload.get("title") or job_payload.get("normalized_title") or "",
+        preferred_job_levels,
+    )
+    if penalty <= 0 or not reason:
+        return normalized
+
+    adjusted_score = max(0, int(normalized.get("fit_score", 0)) - penalty)
+    normalized["fit_score"] = adjusted_score
+    normalized["fit_label"] = fit_label_from_score(adjusted_score)
+    normalized["recommended_action"] = recommended_action_from_score(adjusted_score)
+
+    gaps = _clean_list(normalized.get("gaps_or_risks"))
+    gaps.append(reason)
+    normalized["gaps_or_risks"] = gaps
+
+    summary = _clean(normalized.get("match_summary"))
+    if detected_level:
+        addition = f"Detected title level: {detected_level}."
+        if addition not in summary:
+            normalized["match_summary"] = f"{summary} {addition}".strip()
+
+    return normalized
 
 
 def _extract_response_text(response: Any) -> str:
@@ -336,6 +426,25 @@ def load_resume_profile_text(
     return text, str(resolved)
 
 
+def load_scoring_profile_text(
+    explicit_path: str | Path | None = None,
+    candidate_paths: Optional[Sequence[str | Path]] = None,
+) -> Tuple[str, str]:
+    settings = load_settings()
+    settings_profile_text = build_scoring_profile_from_settings(settings)
+    if settings_profile_text:
+        return settings_profile_text, "Settings -> Profile Context"
+
+    file_profile_text, file_profile_source = load_resume_profile_text(
+        explicit_path=explicit_path,
+        candidate_paths=candidate_paths,
+    )
+    if file_profile_text:
+        return file_profile_text, file_profile_source
+
+    return "", ""
+
+
 def apply_score_to_job_payload(job_payload: Dict[str, Any], score_result: Dict[str, Any]) -> Dict[str, Any]:
     normalized = normalize_score_result(score_result)
 
@@ -407,6 +516,9 @@ class AIJobScoringService:
         return normalize_score_result(parsed, model=self.model)
 
     def score_job(self, job_payload: Dict[str, Any], resume_profile_text: str) -> Dict[str, Any]:
+        settings = load_settings()
+        preferred_job_levels = parse_preferred_job_levels(settings.get("preferred_job_levels", ""))
+
         if not resume_profile_text or not resume_profile_text.strip():
             return build_default_score_result(
                 status="skipped",
@@ -435,7 +547,11 @@ class AIJobScoringService:
                 gaps_or_risks=["Missing job title and description text"],
             )
 
-        prompt = build_scoring_prompt(job_payload, resume_profile_text)
+        prompt = build_scoring_prompt(
+            job_payload,
+            resume_profile_text,
+            preferred_job_levels=preferred_job_levels,
+        )
 
         try:
             result = self._call_model(prompt)
@@ -449,6 +565,11 @@ class AIJobScoringService:
                 gaps_or_risks=[f"Model execution error: {type(exc).__name__}"],
             )
 
+        result = _apply_preferred_job_level_adjustment(
+            result,
+            job_payload,
+            preferred_job_levels,
+        )
         result["debug_prompt_preview"] = prompt[:1500]
         return result
 

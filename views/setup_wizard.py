@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import streamlit as st
 
+from services.job_levels import (
+    JOB_LEVEL_OPTIONS,
+    parse_preferred_job_levels,
+    serialize_preferred_job_levels,
+)
 from services.openai_key import (
     delete_saved_openai_api_key,
     get_openai_api_key_details,
@@ -74,6 +79,10 @@ def _initialize_wizard_state(settings: dict[str, str]) -> None:
         st.session_state["wizard_target_titles"] = settings.get("target_titles", "")
     if "wizard_preferred_locations" not in st.session_state:
         st.session_state["wizard_preferred_locations"] = settings.get("preferred_locations", "")
+    if "wizard_preferred_job_levels" not in st.session_state:
+        st.session_state["wizard_preferred_job_levels"] = parse_preferred_job_levels(
+            settings.get("preferred_job_levels", "")
+        )
     if "wizard_include_keywords" not in st.session_state:
         st.session_state["wizard_include_keywords"] = settings.get("include_keywords", "")
     if "wizard_exclude_keywords" not in st.session_state:
@@ -240,6 +249,10 @@ def _render_search_step() -> None:
         st.session_state["wizard_target_titles_widget"] = st.session_state.get("wizard_target_titles", "")
     if "wizard_preferred_locations_widget" not in st.session_state:
         st.session_state["wizard_preferred_locations_widget"] = st.session_state.get("wizard_preferred_locations", "")
+    if "wizard_preferred_job_levels_widget" not in st.session_state:
+        st.session_state["wizard_preferred_job_levels_widget"] = list(
+            st.session_state.get("wizard_preferred_job_levels", [])
+        )
     if "wizard_include_keywords_widget" not in st.session_state:
         st.session_state["wizard_include_keywords_widget"] = st.session_state.get("wizard_include_keywords", "")
     if "wizard_exclude_keywords_widget" not in st.session_state:
@@ -265,6 +278,13 @@ def _render_search_step() -> None:
                 key="wizard_preferred_locations_widget",
                 height=120,
                 help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nYou can leave this blank only if Remote Only is turned on.",
+            )
+
+            preferred_job_levels = st.multiselect(
+                "Preferred Job Levels",
+                options=JOB_LEVEL_OPTIONS,
+                default=st.session_state.get("wizard_preferred_job_levels_widget", []),
+                help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
             )
 
             include_keywords = st.text_area(
@@ -303,6 +323,7 @@ def _render_search_step() -> None:
         if next_clicked:
             titles_clean = str(target_titles or "").strip()
             locations_clean = str(preferred_locations or "").strip()
+            preferred_job_levels_clean = serialize_preferred_job_levels(preferred_job_levels)
             include_clean = str(include_keywords or "").strip()
             exclude_clean = str(exclude_keywords or "").strip()
             minimum_clean = str(minimum_compensation or "").strip()
@@ -318,6 +339,7 @@ def _render_search_step() -> None:
                 {
                     "target_titles": titles_clean,
                     "preferred_locations": locations_clean,
+                    "preferred_job_levels": preferred_job_levels_clean,
                     "include_keywords": include_clean,
                     "exclude_keywords": exclude_clean,
                     "remote_only": "true" if remote_only else "false",
@@ -327,6 +349,8 @@ def _render_search_step() -> None:
 
             st.session_state["wizard_target_titles"] = titles_clean
             st.session_state["wizard_preferred_locations"] = locations_clean
+            st.session_state["wizard_preferred_job_levels"] = list(preferred_job_levels)
+            st.session_state["wizard_preferred_job_levels_widget"] = list(preferred_job_levels)
             st.session_state["wizard_include_keywords"] = include_clean
             st.session_state["wizard_exclude_keywords"] = exclude_clean
             st.session_state["wizard_remote_only"] = remote_only

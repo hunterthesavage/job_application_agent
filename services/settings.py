@@ -11,6 +11,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "cover_letter_output_folder": "",
     "cover_letter_filename_pattern": "CL_{company}.txt",
     "target_titles": "",
+    "preferred_job_levels": "",
     "preferred_locations": "",
     "include_keywords": "",
     "exclude_keywords": "",

@@ -6,12 +6,18 @@ import streamlit as st
 
 from config import JOB_URLS_FILE, LATEST_PIPELINE_LOG_PATH
 from services.ingestion import get_recent_ingestion_runs, get_source_registry_summary
+from services.job_levels import (
+    JOB_LEVEL_OPTIONS,
+    parse_preferred_job_levels,
+    serialize_preferred_job_levels,
+)
 from services.pipeline_runtime import (
     build_search_preview,
     discover_and_ingest,
     discover_job_links,
     ingest_pasted_urls,
     ingest_urls_from_file,
+    rescore_existing_jobs,
 )
 from services.settings import load_settings, save_settings
 from services.ui_busy import (
@@ -346,6 +352,27 @@ def _build_discover_only_flash(result: dict) -> tuple[str, str]:
     return "warning", "No job URLs were discovered."
 
 
+def _build_rescore_flash(result: dict) -> tuple[str, str]:
+    rescored_count = int(result.get("rescored_count", 0) or 0)
+    changed_count = int(result.get("changed_count", 0) or 0)
+    error_count = int(result.get("error_count", 0) or 0)
+    total_considered = int(result.get("total_considered", 0) or 0)
+
+    if rescored_count > 0:
+        return "success", (
+            f"Rescored {rescored_count} existing jobs. "
+            f"{changed_count} changed under the new scoring rules."
+        )
+
+    if total_considered == 0 and error_count == 0:
+        return "warning", "No existing jobs were available to rescore."
+
+    if error_count > 0:
+        return "warning", f"Rescore completed with {error_count} errors and no updated scores."
+
+    return "warning", "Rescore completed, but no jobs were updated."
+
+
 def _process_pending_action_before_render() -> None:
     action = get_action("pipeline")
     if not action or action.get("phase") != "execute":
@@ -394,6 +421,14 @@ def _process_pending_action_before_render() -> None:
                 _persist_pipeline_output(result)
                 level, message = _build_discover_only_flash(result)
                 _set_flash(level, message)
+
+            elif action_type == "rescore_existing_jobs":
+                result = rescore_existing_jobs()
+                st.session_state["pipeline_last_result"] = result
+                _persist_pipeline_output(result)
+                level, message = _build_rescore_flash(result)
+                _set_flash(level, message)
+                st.cache_data.clear()
 
     except Exception as exc:
         _set_flash("error", f"That action could not finish: {exc}")
@@ -765,6 +800,13 @@ def _render_run_inputs() -> None:
                 help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nUse full structured entries instead of comma-separated fragments.",
             )
 
+            preferred_job_levels = st.multiselect(
+                "Preferred Job Levels",
+                options=JOB_LEVEL_OPTIONS,
+                default=parse_preferred_job_levels(settings.get("preferred_job_levels", "")),
+                help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
+            )
+
             include_keywords = st.text_area(
                 "Include Keywords",
                 value=settings.get("include_keywords", ""),
@@ -795,6 +837,7 @@ def _render_run_inputs() -> None:
                 {
                     "target_titles": target_titles,
                     "preferred_locations": preferred_locations,
+                    "preferred_job_levels": serialize_preferred_job_levels(preferred_job_levels),
                     "include_keywords": include_keywords,
                     "exclude_keywords": exclude_keywords,
                     "remote_only": "true" if remote_only else "false",
@@ -866,6 +909,21 @@ def _render_action_deck() -> None:
                 "ingest_pasted",
                 payload={"manual_urls": manual_urls},
                 label="Add Pasted Job Links",
+            )
+            st.rerun()
+
+        st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
+        st.markdown(
+            '<div class="pipeline-card-copy">Use this when older jobs need their Fit Score and AI Recommendation refreshed under the latest scoring rules.</div>',
+            unsafe_allow_html=True,
+        )
+
+        if st.button("Rescore Existing Jobs", use_container_width=True, disabled=busy, key="pipeline_rescore_existing"):
+            st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+            queue_action(
+                "pipeline",
+                "rescore_existing_jobs",
+                label="Rescore Existing Jobs",
             )
             st.rerun()
 
