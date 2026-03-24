@@ -33,6 +33,30 @@ def db_connection():
         conn.close()
 
 
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _get_column_names(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    if not _table_exists(conn, table_name):
+        return set()
+
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    names: set[str] = set()
+
+    for row in rows:
+        try:
+            names.add(str(row["name"]))
+        except Exception:
+            names.add(str(row[1]))
+
+    return names
+
+
 def create_schema() -> None:
     with db_connection() as conn:
         conn.executescript(
@@ -67,6 +91,9 @@ def create_schema() -> None:
                 ats_type TEXT NOT NULL DEFAULT '',
                 requisition_id TEXT NOT NULL DEFAULT '',
                 source TEXT NOT NULL DEFAULT '',
+                source_type TEXT NOT NULL DEFAULT '',
+                source_trust TEXT NOT NULL DEFAULT '',
+                source_detail TEXT NOT NULL DEFAULT '',
                 compensation_raw TEXT NOT NULL DEFAULT '',
                 compensation_status TEXT NOT NULL DEFAULT '',
                 validation_status TEXT NOT NULL DEFAULT '',
@@ -84,6 +111,8 @@ def create_schema() -> None:
                 duplicate_key TEXT NOT NULL DEFAULT '',
                 active_status TEXT NOT NULL DEFAULT 'Active',
                 cover_letter_path TEXT NOT NULL DEFAULT '',
+                seen_count INTEGER NOT NULL DEFAULT 0,
+                last_seen_run_id INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -118,15 +147,6 @@ def create_schema() -> None:
             ON removed_jobs(duplicate_key)
             WHERE duplicate_key <> '';
 
-            CREATE TABLE IF NOT EXISTS import_runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_name TEXT NOT NULL,
-                started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                completed_at TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'started',
-                details_json TEXT NOT NULL DEFAULT ''
-            );
-
             CREATE TABLE IF NOT EXISTS cover_letter_artifacts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_duplicate_key TEXT NOT NULL DEFAULT '',
@@ -137,6 +157,22 @@ def create_schema() -> None:
             );
             """
         )
+
+
+def ensure_schema_compatibility() -> None:
+    jobs_add_columns = {
+        "source_type": "ALTER TABLE jobs ADD COLUMN source_type TEXT NOT NULL DEFAULT ''",
+        "source_trust": "ALTER TABLE jobs ADD COLUMN source_trust TEXT NOT NULL DEFAULT ''",
+        "source_detail": "ALTER TABLE jobs ADD COLUMN source_detail TEXT NOT NULL DEFAULT ''",
+        "seen_count": "ALTER TABLE jobs ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 0",
+        "last_seen_run_id": "ALTER TABLE jobs ADD COLUMN last_seen_run_id INTEGER NOT NULL DEFAULT 0",
+    }
+
+    with db_connection() as conn:
+        existing_jobs_columns = _get_column_names(conn, "jobs")
+        for column_name, statement in jobs_add_columns.items():
+            if column_name not in existing_jobs_columns:
+                conn.execute(statement)
 
 
 def seed_schema_migration(version: str) -> None:
@@ -152,7 +188,9 @@ def seed_schema_migration(version: str) -> None:
 
 def initialize_database() -> Path:
     create_schema()
+    ensure_schema_compatibility()
     seed_schema_migration("001_initial_foundation")
+    seed_schema_migration("002_jobs_source_metadata_columns")
     return DATABASE_PATH
 
 
