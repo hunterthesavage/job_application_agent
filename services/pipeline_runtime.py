@@ -8,6 +8,11 @@ from urllib.parse import urlparse
 from typing import Any
 
 from config import JOB_URLS_FILE, MANUAL_URLS_FILE
+from services.ai_job_scoring import (
+    apply_score_to_job_payload,
+    load_resume_profile_text,
+    score_accepted_job,
+)
 from services.ingestion import ingest_job_records
 from services.location_matching import (
     evaluate_location_filters,
@@ -899,6 +904,37 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
 
     build_seconds = time.perf_counter() - build_started_at
 
+    ai_scoring_started_at = time.perf_counter()
+    ai_scored_count = 0
+    ai_skipped_count = 0
+    ai_error_count = 0
+
+    resume_profile_text, resume_profile_source = load_resume_profile_text()
+
+    if accepted_jobs:
+        output_lines.append("")
+        if resume_profile_text:
+            output_lines.append(f"AI job scoring profile: {resume_profile_source}")
+            for payload in accepted_jobs:
+                score_result = score_accepted_job(payload, resume_profile_text)
+                apply_score_to_job_payload(payload, score_result)
+
+                score_status = safe_text(score_result.get("status", "")).lower()
+                if score_status == "scored":
+                    ai_scored_count += 1
+                elif score_status == "skipped":
+                    ai_skipped_count += 1
+                else:
+                    ai_error_count += 1
+        else:
+            ai_skipped_count = len(accepted_jobs)
+            output_lines.append(
+                "AI job scoring skipped: no resume/profile text file was found. "
+                "Checked default locations plus JOB_AGENT_RESUME_PROFILE if set."
+            )
+
+    ai_scoring_seconds = time.perf_counter() - ai_scoring_started_at
+
     ingest_started_at = time.perf_counter()
     summary = ingest_job_records(
         job_records=accepted_jobs,
@@ -919,7 +955,11 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
     output_lines.append(f"Inserted: {summary['inserted_count']}")
     output_lines.append(f"Updated: {summary['updated_count']}")
     output_lines.append(f"Skipped removed: {summary['skipped_removed_count']}")
+    output_lines.append(f"AI scored accepted jobs: {ai_scored_count}")
+    output_lines.append(f"AI skipped accepted jobs: {ai_skipped_count}")
+    output_lines.append(f"AI scoring errors: {ai_error_count}")
     output_lines.append(f"Build/validate seconds: {build_seconds:.2f}")
+    output_lines.append(f"AI scoring seconds: {ai_scoring_seconds:.2f}")
     output_lines.append(f"Ingest seconds: {ingest_seconds:.2f}")
 
     _append_run_quality_summary_lines(

@@ -262,6 +262,11 @@ def render_job_card(
     title = safe_value(row, "Title")
     location = safe_value(row, "Location")
     fit_score = safe_value(row, "Fit Score")
+    fit_tier = safe_value(row, "Fit Tier")
+    ai_recommendation = safe_value(row, "AI Recommendation")
+    match_rationale = safe_value(row, "Match Rationale")
+    risk_flags = safe_value(row, "Risk Flags")
+    application_angle = safe_value(row, "Application Angle")
     compensation_raw = safe_value(row, "Compensation Raw")
     job_url = safe_value(row, "Job Posting URL")
 
@@ -286,11 +291,30 @@ def render_job_card(
             pills.append(f'<span class="meta-pill location">Location: {html.escape(location)}</span>')
         if fit_score:
             pills.append(f'<span class="meta-pill fit">Fit Score: {html.escape(fit_score)}</span>')
+        if fit_tier:
+            pills.append(f'<span class="meta-pill fit">Tier: {html.escape(fit_tier)}</span>')
+        if ai_recommendation:
+            pills.append(f'<span class="meta-pill comp">Recommendation: {html.escape(ai_recommendation)}</span>')
         if compensation_raw:
             pills.append(f'<span class="meta-pill comp">Compensation: {html.escape(compensation_raw)}</span>')
 
         if pills:
             st.markdown(f'<div class="meta-row">{"".join(pills)}</div>', unsafe_allow_html=True)
+
+        if match_rationale or risk_flags or application_angle:
+            with st.expander("AI Fit Detail", expanded=False):
+                if match_rationale:
+                    st.markdown("**Why it matches**")
+                    st.write(match_rationale)
+
+                if risk_flags:
+                    st.markdown("**Risks / gaps**")
+                    for part in [item.strip(" -") for item in str(risk_flags).replace(";", "\n").splitlines() if item.strip()]:
+                        st.write(f"• {part}")
+
+                if application_angle:
+                    st.markdown("**Suggested application angle**")
+                    st.write(application_angle)
 
     with right:
         btn1, btn2, btn3, btn4 = st.columns([1.05, 0.95, 1.15, 0.95])

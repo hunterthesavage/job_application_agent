@@ -709,6 +709,7 @@ def create_job_record(job_url: str) -> JobRecord:
         match_rationale=rationale_with_risks,
         risk_flags="; ".join(risk_flags),
         application_angle=application_angle,
+        description_text=text,
         cover_letter_starter=cover_letter_starter,
         status="New",
         duplicate_key=duplicate_key,

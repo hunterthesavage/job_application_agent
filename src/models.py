@@ -28,6 +28,7 @@ class JobRecord:
     match_rationale: str
     risk_flags: str
     application_angle: str
+    description_text: str
     cover_letter_starter: str
     status: str
     duplicate_key: str
@@ -59,6 +60,7 @@ class JobRecord:
             self.match_rationale,
             self.risk_flags,
             self.application_angle,
+            self.description_text,
             self.cover_letter_starter,
             self.status,
             self.duplicate_key,
