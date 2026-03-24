@@ -13,6 +13,10 @@ from services.ai_job_scoring import (
     load_resume_profile_text,
     score_accepted_job,
 )
+from services.ai_job_scrub import (
+    apply_scrub_to_job_payload,
+    scrub_accepted_job,
+)
 from services.ingestion import ingest_job_records
 from services.location_matching import (
     evaluate_location_filters,
@@ -918,6 +922,8 @@ def _build_jobs_from_urls(urls: list[str], source_name: str, source_detail: str)
             for payload in accepted_jobs:
                 score_result = score_accepted_job(payload, resume_profile_text)
                 apply_score_to_job_payload(payload, score_result)
+                scrub_result = scrub_accepted_job(payload, resume_profile_text)
+                apply_scrub_to_job_payload(payload, scrub_result)
 
                 score_status = safe_text(score_result.get("status", "")).lower()
                 if score_status == "scored":
