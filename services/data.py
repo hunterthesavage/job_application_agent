@@ -2,6 +2,7 @@ import math
 import re
 import sqlite3
 import subprocess
+import webbrowser
 from datetime import datetime
 
 import pandas as pd
@@ -179,6 +180,14 @@ def run_command(command: list[str]) -> tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
+def open_url(url: str) -> bool:
+    try:
+        webbrowser.open_new_tab(str(url or "").strip())
+        return True
+    except Exception:
+        return False
+
+
 def safe_text(value: object) -> str:
     if value is None:
         return ""
@@ -209,6 +218,100 @@ def normalize_fit_score(value: object) -> float:
             except Exception:
                 return -1.0
         return -1.0
+
+
+def is_remote_location(location: str) -> bool:
+    text = safe_text(location).lower()
+    return "remote" in text
+
+
+def has_compensation(text: str) -> bool:
+    text = safe_text(text)
+    if not text:
+        return False
+
+    lowered = text.lower()
+    blockers = {
+        "not disclosed",
+        "unknown",
+        "n/a",
+        "na",
+        "none",
+        "not listed",
+        "not provided",
+    }
+
+    if lowered in blockers:
+        return False
+
+    return True
+
+
+def apply_new_role_filters(df: pd.DataFrame) -> pd.DataFrame:
+    df_filtered = df.copy()
+
+    min_fit = st.session_state.get("filter_min_fit", "Any")
+    discovery_state = st.session_state.get("filter_discovery_state", "All")
+    remote_only = st.session_state.get("filter_remote_only", False)
+    compensation_only = st.session_state.get("filter_compensation_only", False)
+
+    if min_fit != "Any" and "Fit Score" in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered["Fit Score"].apply(normalize_fit_score) >= float(min_fit)
+        ]
+
+    if discovery_state != "All" and "Discovery State" in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered["Discovery State"].apply(safe_text) == discovery_state
+        ]
+
+    if remote_only and "Location" in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered["Location"].apply(is_remote_location)
+        ]
+
+    if compensation_only and "Compensation Raw" in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered["Compensation Raw"].apply(has_compensation)
+        ]
+
+    return df_filtered
+
+
+def calculate_kpis(df_new_roles: pd.DataFrame, df_applied: pd.DataFrame) -> dict[str, str]:
+    new_roles_count = str(len(df_new_roles))
+
+    applied_this_week = "0"
+    if not df_applied.empty and "Applied Date" in df_applied.columns:
+        today = datetime.now().date()
+        count = 0
+
+        for value in df_applied["Applied Date"]:
+            text = safe_text(value)
+            if not text:
+                continue
+
+            try:
+                applied_date = datetime.strptime(text, "%Y-%m-%d").date()
+                if (today - applied_date).days <= 7:
+                    count += 1
+            except Exception:
+                continue
+
+        applied_this_week = str(count)
+
+    avg_fit = "—"
+    if not df_new_roles.empty and "Fit Score" in df_new_roles.columns:
+        scores = df_new_roles["Fit Score"].apply(normalize_fit_score)
+        valid_scores = scores[scores >= 0]
+        if not valid_scores.empty:
+            avg_fit = str(int(round(valid_scores.mean())))
+
+    return {
+        "new_roles": new_roles_count,
+        "applied_this_week": applied_this_week,
+        "avg_fit": avg_fit,
+    }
 
 
 def get_page_size(state_key: str, default: int = 10) -> int:
