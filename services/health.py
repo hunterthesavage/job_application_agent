@@ -15,7 +15,6 @@ REQUIRED_TABLES = [
     "app_settings",
     "jobs",
     "removed_jobs",
-    "import_runs",
     "cover_letter_artifacts",
     "ingestion_runs",
     "ingestion_run_items",

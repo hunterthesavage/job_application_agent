@@ -13,8 +13,10 @@ try:
 except ImportError:
     OpenAI = None
 
+from services.openai_key import get_effective_openai_api_key
 
-SCORE_VERSION = "v1"
+
+SCORE_VERSION = "v2"
 DEFAULT_MODEL = "gpt-4.1-mini"
 MAX_DESCRIPTION_CHARS = 6000
 MAX_RESUME_CHARS = 8000
@@ -50,6 +52,15 @@ def _clean(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _clean_list(values: Any) -> List[str]:
+    if not values:
+        return []
+    if not isinstance(values, (list, tuple)):
+        values = [values]
+    cleaned = [str(v).strip() for v in values if str(v).strip()]
+    return cleaned
 
 
 def _join_semicolon(values: Sequence[str]) -> str:
@@ -105,6 +116,12 @@ def build_default_score_result(
     gaps_or_risks: Optional[List[str]] = None,
     resume_signals_used: Optional[List[str]] = None,
     confidence: str = "Low",
+    must_have_requirements: Optional[List[str]] = None,
+    preferred_requirements: Optional[List[str]] = None,
+    matched_must_haves: Optional[List[str]] = None,
+    missing_must_haves: Optional[List[str]] = None,
+    matched_preferred: Optional[List[str]] = None,
+    missing_preferred: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     fit_score = _clamp_score(fit_score)
     return {
@@ -117,6 +134,12 @@ def build_default_score_result(
         "match_reasons": match_reasons or [],
         "gaps_or_risks": gaps_or_risks or [],
         "resume_signals_used": resume_signals_used or [],
+        "must_have_requirements": must_have_requirements or [],
+        "preferred_requirements": preferred_requirements or [],
+        "matched_must_haves": matched_must_haves or [],
+        "missing_must_haves": missing_must_haves or [],
+        "matched_preferred": matched_preferred or [],
+        "missing_preferred": missing_preferred or [],
         "scored_at": _utc_now_iso(),
         "model": model,
         "status": status,
@@ -132,9 +155,15 @@ def normalize_score_result(payload: Dict[str, Any], *, model: str = DEFAULT_MODE
         "confidence": _normalize_confidence(payload.get("confidence")),
         "recommended_action": recommended_action_from_score(fit_score),
         "match_summary": str(payload.get("match_summary") or ""),
-        "match_reasons": [str(x) for x in (payload.get("match_reasons") or []) if str(x).strip()],
-        "gaps_or_risks": [str(x) for x in (payload.get("gaps_or_risks") or []) if str(x).strip()],
-        "resume_signals_used": [str(x) for x in (payload.get("resume_signals_used") or []) if str(x).strip()],
+        "match_reasons": _clean_list(payload.get("match_reasons")),
+        "gaps_or_risks": _clean_list(payload.get("gaps_or_risks")),
+        "resume_signals_used": _clean_list(payload.get("resume_signals_used")),
+        "must_have_requirements": _clean_list(payload.get("must_have_requirements")),
+        "preferred_requirements": _clean_list(payload.get("preferred_requirements")),
+        "matched_must_haves": _clean_list(payload.get("matched_must_haves")),
+        "missing_must_haves": _clean_list(payload.get("missing_must_haves")),
+        "matched_preferred": _clean_list(payload.get("matched_preferred")),
+        "missing_preferred": _clean_list(payload.get("missing_preferred")),
         "scored_at": payload.get("scored_at") or _utc_now_iso(),
         "model": payload.get("model") or model,
         "status": payload.get("status") or "scored",
@@ -187,11 +216,18 @@ def build_scoring_prompt(job_payload: Dict[str, Any], resume_profile_text: str) 
     schema = {
         "fit_score": "integer from 0 to 100",
         "confidence": "High, Medium, or Low",
-        "match_summary": "1 to 3 sentences",
-        "match_reasons": ["bullet reason"],
-        "gaps_or_risks": ["bullet risk"],
-        "resume_signals_used": ["resume signal used in reasoning"],
+        "match_summary": "1 to 3 sentences that summarize the evidence-based fit",
+        "match_reasons": ["specific matched reason grounded in the resume/profile and job description"],
+        "gaps_or_risks": ["specific risk, missing evidence, or mismatch"],
+        "resume_signals_used": ["resume evidence actually used"],
+        "must_have_requirements": ["critical requirement extracted from the job description"],
+        "preferred_requirements": ["preferred or nice-to-have requirement extracted from the job description"],
+        "matched_must_haves": ["must-have requirement supported by resume evidence"],
+        "missing_must_haves": ["must-have requirement not supported by the available resume evidence"],
+        "matched_preferred": ["preferred requirement supported by resume evidence"],
+        "missing_preferred": ["preferred requirement not supported by the available resume evidence"],
     }
+
     return (
         "You are scoring how well a job matches a candidate profile.\n"
         "Return JSON only.\n"
@@ -199,12 +235,18 @@ def build_scoring_prompt(job_payload: Dict[str, Any], resume_profile_text: str) 
         "Do not inflate scores for senior-sounding titles alone.\n"
         "Prefer low confidence when the job description is sparse.\n"
         "Penalize jobs that are clearly outside the candidate's likely background.\n"
+        "Extract likely must-have requirements from the job description before scoring.\n"
+        "Separate must-have requirements from preferred requirements.\n"
+        "Map resume/profile evidence to those requirements.\n"
+        "Missing must-have requirements should reduce the score materially.\n"
+        "Missing preferred requirements should reduce the score modestly.\n"
+        "If the job description is vague, lower confidence and avoid overclaiming.\n"
         "Keep responses compact and specific.\n\n"
         "Scoring guidance:\n"
-        "- 80 to 100: strong fit, likely worth applying\n"
-        "- 60 to 79: plausible fit, some gaps or uncertainty\n"
-        "- 40 to 59: weak fit, meaningful mismatch or ambiguity\n"
-        "- 0 to 39: poor fit, major mismatch\n\n"
+        "- 80 to 100: strong fit with evidence on most core requirements\n"
+        "- 60 to 79: plausible fit with some gaps or uncertainty\n"
+        "- 40 to 59: weak fit with meaningful mismatch or missing evidence\n"
+        "- 0 to 39: poor fit with major mismatch or missing must-have evidence\n\n"
         f"Required JSON schema:\n{json.dumps(schema, indent=2)}\n\n"
         f"Scoring input:\n{json.dumps(scoring_input, indent=2)}"
     )
@@ -313,7 +355,7 @@ class AIJobScoringService:
     timeout_seconds: float = 30.0
 
     def _build_client(self) -> Optional[Any]:
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        api_key = get_effective_openai_api_key()
         if not api_key or OpenAI is None:
             return None
         return OpenAI(api_key=api_key, timeout=self.timeout_seconds)
@@ -327,7 +369,7 @@ class AIJobScoringService:
                 fit_score=0,
                 confidence="Low",
                 match_summary="AI job scoring was skipped because the OpenAI client or API key is not available.",
-                gaps_or_risks=["Missing OPENAI_API_KEY or openai package"],
+                gaps_or_risks=["Missing saved or environment OpenAI API key, or openai package"],
             )
 
         response = client.responses.create(
