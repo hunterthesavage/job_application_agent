@@ -1135,6 +1135,7 @@ def rescore_existing_jobs(limit: int = 0) -> dict[str, Any]:
     changed_count = 0
     output_lines = [
         f"AI job scoring profile: {resume_profile_source}",
+        f"Rescore limit: {'All active jobs' if not limit else limit}",
         f"Existing jobs selected for rescore: {len(rows)}",
         "",
     ]

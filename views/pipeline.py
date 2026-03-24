@@ -30,6 +30,14 @@ from services.ui_busy import (
 )
 
 
+RESCORE_LIMIT_OPTIONS = [
+    ("25", 25),
+    ("50", 50),
+    ("100", 100),
+    ("All", 0),
+]
+
+
 def _inject_pipeline_css() -> None:
     st.markdown(
         """
@@ -423,7 +431,7 @@ def _process_pending_action_before_render() -> None:
                 _set_flash(level, message)
 
             elif action_type == "rescore_existing_jobs":
-                result = rescore_existing_jobs()
+                result = rescore_existing_jobs(limit=int(payload.get("limit", 0) or 0))
                 st.session_state["pipeline_last_result"] = result
                 _persist_pipeline_output(result)
                 level, message = _build_rescore_flash(result)
@@ -918,12 +926,23 @@ def _render_action_deck() -> None:
             unsafe_allow_html=True,
         )
 
+        selected_rescore_label = st.selectbox(
+            "Rescore Range",
+            options=[label for label, _ in RESCORE_LIMIT_OPTIONS],
+            index=1,
+            disabled=busy,
+            key="pipeline_rescore_limit",
+            help="Use a smaller batch for faster maintenance runs. Choose All only when you want to refresh the full backlog.",
+        )
+        selected_rescore_limit = dict(RESCORE_LIMIT_OPTIONS).get(selected_rescore_label, 50)
+
         if st.button("Rescore Existing Jobs", use_container_width=True, disabled=busy, key="pipeline_rescore_existing"):
             st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
             queue_action(
                 "pipeline",
                 "rescore_existing_jobs",
-                label="Rescore Existing Jobs",
+                payload={"limit": selected_rescore_limit},
+                label=f"Rescore Existing Jobs ({selected_rescore_label})",
             )
             st.rerun()
 
