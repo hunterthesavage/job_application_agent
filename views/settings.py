@@ -1,3 +1,4 @@
+import html
 from pathlib import Path
 import os
 import subprocess
@@ -21,7 +22,7 @@ from services.openai_key import (
     mask_openai_api_key,
     save_openai_api_key,
 )
-from services.profile_context_templates import get_profile_context_template
+from services.profile_context_templates import generate_profile_context_from_resume
 from services.settings import DEFAULT_SETTINGS, load_settings, save_settings
 from services.status import get_system_status
 from ui.navigation import initialize_nav_state, render_button_nav
@@ -45,6 +46,56 @@ NEW_ROLES_SORT_OPTIONS = [
     "Highest Source Trust",
     "Company A-Z",
 ]
+
+
+def _inject_settings_css() -> None:
+    st.markdown(
+        """
+        <style>
+            .settings-step-heading {
+                display: flex;
+                align-items: center;
+                gap: 0.7rem;
+                margin-top: 0.9rem;
+                margin-bottom: 0.45rem;
+            }
+
+            .settings-step-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.95rem;
+                height: 1.95rem;
+                border-radius: 999px;
+                background: linear-gradient(180deg, rgba(96,165,250,0.24) 0%, rgba(59,130,246,0.16) 100%);
+                border: 1px solid rgba(96,165,250,0.42);
+                color: rgba(219,234,254,0.98);
+                font-size: 0.92rem;
+                font-weight: 840;
+                box-shadow: 0 8px 18px rgba(37,99,235,0.16);
+                flex-shrink: 0;
+            }
+
+            .settings-step-title {
+                font-size: 1.15rem;
+                font-weight: 820;
+                color: rgba(255,255,255,0.98);
+                letter-spacing: -0.02em;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_settings_step_heading(step: str, title: str) -> None:
+    markup = (
+        '<div class="settings-step-heading">'
+        f'<span class="settings-step-badge">{html.escape(step)}</span>'
+        f'<div class="settings-step-title">{html.escape(title)}</div>'
+        '</div>'
+    )
+    st.markdown(markup, unsafe_allow_html=True)
 
 
 def str_to_bool(value: str, default: bool = False) -> bool:
@@ -423,7 +474,11 @@ def render_system_status_tab() -> None:
 
     st.markdown("#### App Status")
     st.write(f"- Latest backup: {status.get('latest_backup_path', '—')}")
-    st.write(f"- OpenAI API key: {status.get('openai_api_key_status', 'Unknown')} | {status.get('openai_api_key_masked', 'Not saved')}")
+    st.write(
+        f"- OpenAI API key: {status.get('openai_api_key_status', 'Unknown')} | "
+        f"{status.get('openai_api_key_source', 'Unknown source')} | "
+        f"{status.get('openai_api_key_masked', 'Not saved')}"
+    )
     st.write(f"- Last cover letter: {status['last_cover_letter_path']}")
     st.write(f"- Last cover letter time: {status['last_cover_letter_at']}")
     st.write(f"- Last import: {status['last_import_at']}")
@@ -617,74 +672,124 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             st.rerun()
 
 def render_profile_context_tab(settings: dict[str, str]) -> None:
-    template = get_profile_context_template()
+    _inject_settings_css()
+
+    if "settings_resume_text_value" not in st.session_state:
+        st.session_state["settings_resume_text_value"] = settings.get("resume_text", "")
+    if "settings_profile_summary_value" not in st.session_state:
+        st.session_state["settings_profile_summary_value"] = settings.get("profile_summary", "")
+    if "settings_strengths_to_highlight_value" not in st.session_state:
+        st.session_state["settings_strengths_to_highlight_value"] = settings.get("strengths_to_highlight", "")
+    if "settings_cover_letter_voice_value" not in st.session_state:
+        st.session_state["settings_cover_letter_voice_value"] = settings.get("cover_letter_voice", "")
 
     st.markdown("### Profile Context")
     st.caption(
         "This is the primary candidate context used by AI scoring. If this is blank, discovery can still run, but accepted jobs will skip AI scoring unless a fallback profile file exists."
     )
 
-    helper_left, helper_right = st.columns([1.1, 2.2])
-    with helper_left:
-        if st.button("Load Starter Template", key="settings_load_profile_template"):
-            current_settings = load_settings()
-            save_settings(
-                {
-                    "resume_text": current_settings.get("resume_text", "") or template["resume_text"],
-                    "profile_summary": current_settings.get("profile_summary", "") or template["profile_summary"],
-                    "strengths_to_highlight": current_settings.get("strengths_to_highlight", "") or template["strengths_to_highlight"],
-                    "cover_letter_voice": current_settings.get("cover_letter_voice", "") or template["cover_letter_voice"],
-                }
+    resume_present = bool(str(st.session_state.get("settings_resume_text_value", "") or "").strip())
+    api_key_present = bool(get_effective_openai_api_key())
+    can_generate = resume_present and api_key_present
+
+    current_resume_text = str(st.session_state.get("settings_resume_text_value", "") or "")
+    current_profile_summary = str(st.session_state.get("settings_profile_summary_value", "") or "")
+    current_strengths = str(st.session_state.get("settings_strengths_to_highlight_value", "") or "")
+    current_cover_letter_voice = str(st.session_state.get("settings_cover_letter_voice_value", "") or "")
+
+    saved_resume_text = str(settings.get("resume_text", "") or "")
+    saved_profile_summary = str(settings.get("profile_summary", "") or "")
+    saved_strengths = str(settings.get("strengths_to_highlight", "") or "")
+    saved_cover_letter_voice = str(settings.get("cover_letter_voice", "") or "")
+
+    has_unsaved_changes = any(
+        [
+            current_resume_text != saved_resume_text,
+            current_profile_summary != saved_profile_summary,
+            current_strengths != saved_strengths,
+            current_cover_letter_voice != saved_cover_letter_voice,
+        ]
+    )
+
+    _render_settings_step_heading("1", "Paste Resume")
+    resume_text = st.text_area(
+        "Paste Resume",
+        key="settings_resume_text_value",
+        height=240,
+        help="Primary source for AI scoring. Paste resume text here so scoring can compare your background to job requirements.",
+    )
+
+    _render_settings_step_heading("2", "Generate from Resume")
+    if st.button(
+        "Generate from Resume",
+        key="settings_generate_profile_from_resume",
+        disabled=not can_generate,
+        help=(
+            "Generate Executive Summary, Strengths to Highlight, and Cover Letter Voice from the current resume text. This does not overwrite Paste Resume."
+            if can_generate
+            else "Paste resume text and add an OpenAI API key first."
+        ),
+        use_container_width=False,
+    ):
+        with st.spinner("Generating profile context from resume..."):
+            result = generate_profile_context_from_resume(
+                st.session_state.get("settings_resume_text_value", "")
             )
-            st.success("Starter template loaded into any empty Profile Context fields.")
+        if result.get("ok"):
+            st.session_state["settings_profile_summary_value"] = str(result.get("profile_summary", "") or "")
+            st.session_state["settings_strengths_to_highlight_value"] = str(result.get("strengths_to_highlight", "") or "")
+            st.session_state["settings_cover_letter_voice_value"] = str(result.get("cover_letter_voice", "") or "")
+            st.success("Generated profile fields from your resume text. Review them, then save.")
             st.rerun()
-    with helper_right:
-        st.caption(
-            "Use the starter if you want a fast first pass. It fills only empty fields, so it will not overwrite your existing Profile Context."
+        st.error(str(result.get("error", "") or "Could not generate profile context from resume."))
+
+    profile_summary = st.text_area(
+        "Executive Summary",
+        key="settings_profile_summary_value",
+        height=140,
+        help="Primary source for AI scoring. Use this for your high level leadership summary and target profile.",
+    )
+
+    strengths_to_highlight = st.text_area(
+        "Strengths to Highlight",
+        key="settings_strengths_to_highlight_value",
+        height=140,
+        help="Primary source for AI scoring. Examples: AI transformation, enterprise IT leadership, ServiceNow, operational excellence.",
+    )
+
+    cover_letter_voice = st.text_area(
+        "Cover Letter Voice",
+        key="settings_cover_letter_voice_value",
+        height=120,
+        help="Used for cover letters only. This field does not affect job scoring.",
+    )
+
+    _render_settings_step_heading("3", "Save Profile Context")
+    if not has_unsaved_changes:
+        st.caption("Make a change before saving Profile Context.")
+
+    if st.button(
+        "Save Profile Context",
+        type="primary",
+        use_container_width=False,
+        key="settings_save_profile_context",
+        disabled=not has_unsaved_changes,
+        help=(
+            "Save the current Profile Context changes."
+            if has_unsaved_changes
+            else "Save becomes available after you change one of the Profile Context fields."
+        ),
+    ):
+        save_settings(
+            {
+                "resume_text": resume_text,
+                "profile_summary": profile_summary,
+                "strengths_to_highlight": strengths_to_highlight,
+                "cover_letter_voice": cover_letter_voice,
+            }
         )
-
-    with st.form("settings_profile_context_form"):
-        resume_text = st.text_area(
-            "Resume Text",
-            value=settings.get("resume_text", ""),
-            height=240,
-            help="Primary source for AI scoring. Paste resume text here so scoring can compare your background to job requirements.",
-        )
-
-        profile_summary = st.text_area(
-            "Executive Summary",
-            value=settings.get("profile_summary", ""),
-            height=140,
-            help="Primary source for AI scoring. Use this for your high level leadership summary and target profile.",
-        )
-
-        strengths_to_highlight = st.text_area(
-            "Strengths to Highlight",
-            value=settings.get("strengths_to_highlight", ""),
-            height=140,
-            help="Primary source for AI scoring. Examples: AI transformation, enterprise IT leadership, ServiceNow, operational excellence.",
-        )
-
-        cover_letter_voice = st.text_area(
-            "Cover Letter Voice",
-            value=settings.get("cover_letter_voice", ""),
-            height=120,
-            help="Used for cover letters only. This field does not affect job scoring.",
-        )
-
-        save_profile = st.form_submit_button("Save Profile Context", type="primary", use_container_width=False)
-
-        if save_profile:
-            save_settings(
-                {
-                    "resume_text": resume_text,
-                    "profile_summary": profile_summary,
-                    "strengths_to_highlight": strengths_to_highlight,
-                    "cover_letter_voice": cover_letter_voice,
-                }
-            )
-            st.success("Profile context saved.")
-            st.rerun()
+        st.success("Profile context saved.")
+        st.rerun()
 
 
 def render_openai_api_tab() -> None:
@@ -719,6 +824,19 @@ def render_openai_api_tab() -> None:
         st.info("No OpenAI API key is configured yet. Save a local key below or provide OPENAI_API_KEY in the environment.")
         st.caption("Without a key, you can still discover and import jobs, but AI title expansion, scoring, scrub, and cover letters stay off.")
 
+    if str(details["active_source"]) == "environment" and not bool(details["saved_key_present"]):
+        st.warning(
+            "The app is currently using OPENAI_API_KEY from the environment. "
+            "There is no saved local key to delete from inside the app."
+        )
+        st.caption("If you want AI features fully off, unset OPENAI_API_KEY in the terminal or shell profile that launches the app, then restart it.")
+        st.code("unset OPENAI_API_KEY", language="bash")
+    elif bool(details["saved_key_present"]) and bool(details["environment_key_present"]):
+        st.caption(
+            "A saved local key is currently overriding OPENAI_API_KEY from the environment. "
+            "If you delete the saved local key, the environment key will become active."
+        )
+
     if "settings_openai_api_key_value" not in st.session_state:
         st.session_state["settings_openai_api_key_value"] = load_saved_openai_api_key()
 
@@ -744,11 +862,16 @@ def render_openai_api_tab() -> None:
 
     with action_col_2:
         if st.button(
-            "Delete Saved API Key",
+            "Delete Saved Local Key",
             use_container_width=True,
             type="secondary",
             key="delete_saved_openai_api_key_button",
-            disabled=not bool(details["saved_key_present"]),
+            disabled=not bool(details["can_delete_saved_key"]),
+            help=(
+                "Deletes only the locally saved key file for this machine."
+                if details["can_delete_saved_key"]
+                else "There is no saved local key file to delete."
+            ),
         ):
             try:
                 delete_saved_openai_api_key()
@@ -757,6 +880,9 @@ def render_openai_api_tab() -> None:
                 st.rerun()
             except Exception as exc:
                 st.error(f"Failed to delete saved API key: {exc}")
+
+    if not bool(details["can_delete_saved_key"]) and bool(details["environment_key_present"]):
+        st.caption("Delete is disabled because the active key is coming from the environment, not from a saved local file.")
 
     with st.expander("Advanced key diagnostics"):
         st.markdown(f"**Saved local key present:** {'Yes' if details['saved_key_present'] else 'No'}")

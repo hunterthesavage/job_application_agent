@@ -13,6 +13,11 @@ def save_openai_api_key(api_key: str) -> Path:
 
     OPENAI_API_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     OPENAI_API_KEY_FILE.write_text(key + "\n", encoding="utf-8")
+    try:
+        OPENAI_API_KEY_FILE.chmod(0o600)
+    except Exception:
+        # Best effort on platforms that may not support POSIX-like permissions.
+        pass
     return OPENAI_API_KEY_FILE
 
 
@@ -69,6 +74,7 @@ def get_openai_api_key_details() -> dict[str, object]:
         "environment_key_present": bool(env_key),
         "active_key_present": bool(active_key),
         "active_source": active_source,
+        "can_delete_saved_key": bool(saved_key),
         "saved_key_masked": mask_openai_api_key(saved_key),
         "environment_key_masked": mask_openai_api_key(env_key),
         "active_key_masked": mask_openai_api_key(active_key),

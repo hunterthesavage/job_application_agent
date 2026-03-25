@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 
 from config import DATABASE_PATH
 from services.backup import get_latest_backup
-from services.openai_key import load_saved_openai_api_key
+from services.openai_key import load_environment_openai_api_key, load_saved_openai_api_key
 from services.settings import load_settings
 
 
@@ -119,7 +118,7 @@ def run_health_check() -> dict:
         results["issues"].append("No cover letter output folder is configured yet.")
 
     saved_key = load_saved_openai_api_key()
-    env_key = str(os.getenv("OPENAI_API_KEY", "")).strip()
+    env_key = load_environment_openai_api_key()
     if saved_key:
         results["openai_api_key_present"] = True
         results["openai_api_key_source"] = "saved_file"

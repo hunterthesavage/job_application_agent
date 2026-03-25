@@ -12,6 +12,7 @@ from services.job_levels import (
     parse_preferred_job_levels,
     serialize_preferred_job_levels,
 )
+from services.openai_key import has_openai_api_key
 from services.readiness import get_readiness_summary
 from services.pipeline_runtime import (
     build_search_preview,
@@ -1388,8 +1389,7 @@ def _render_run_inputs() -> None:
 
 def _render_action_deck() -> None:
     busy = app_is_busy()
-    use_ai_title_expansion = bool(st.session_state.get("pipeline_use_ai_title_expansion", True))
-    use_ai_scoring = bool(st.session_state.get("pipeline_use_ai_scoring", True))
+    use_ai_in_run = bool(st.session_state.get("pipeline_use_ai_in_run", True))
     _render_section_shell(
         "Recommended path",
         "Find and add jobs in one pass",
@@ -1398,16 +1398,10 @@ def _render_action_deck() -> None:
         step="2",
     )
     st.toggle(
-        "Use AI title expansion in this run",
-        key="pipeline_use_ai_title_expansion",
+        "Use AI in this run",
+        key="pipeline_use_ai_in_run",
         disabled=busy,
-        help="When on, discovery may use OpenAI to suggest closely related title variants for search coverage.",
-    )
-    st.toggle(
-        "Use AI scoring and scrub in this run",
-        key="pipeline_use_ai_scoring",
-        disabled=busy,
-        help="When on, accepted jobs may run through AI scoring and the AI scrub pass before they are saved.",
+        help="When on, this run may use AI title expansion during discovery and AI scoring or scrub on accepted jobs.",
     )
 
     _render_ai_button_chip()
@@ -1417,8 +1411,8 @@ def _render_action_deck() -> None:
             "pipeline",
             "discover_and_ingest",
             payload={
-                "use_ai_title_expansion": use_ai_title_expansion,
-                "use_ai_scoring": use_ai_scoring,
+                "use_ai_title_expansion": use_ai_in_run,
+                "use_ai_scoring": use_ai_in_run,
             },
             label="Find and Add Jobs",
         )
@@ -1435,7 +1429,7 @@ def _render_action_deck() -> None:
         queue_action(
             "pipeline",
             "discover_only",
-            payload={"use_ai_title_expansion": use_ai_title_expansion},
+            payload={"use_ai_title_expansion": use_ai_in_run},
             label="Find Job Links Only",
         )
         st.rerun()
@@ -1446,7 +1440,7 @@ def _render_action_deck() -> None:
 def _render_action_deck_manual_only() -> None:
     busy = app_is_busy()
     manual_urls = st.session_state.get("pipeline_manual_urls", "")
-    use_ai_scoring = bool(st.session_state.get("pipeline_use_ai_scoring", True))
+    use_ai_in_run = bool(st.session_state.get("pipeline_use_ai_in_run", True))
 
     top_left, top_right = st.columns([1.15, 1])
 
@@ -1466,7 +1460,7 @@ def _render_action_deck_manual_only() -> None:
                 "ingest_pasted",
                 payload={
                     "manual_urls": manual_urls,
-                    "use_ai_scoring": use_ai_scoring,
+                    "use_ai_scoring": use_ai_in_run,
                 },
                 label="Add Pasted Job Links",
             )
@@ -1484,7 +1478,7 @@ def _render_action_deck_manual_only() -> None:
             queue_action(
                 "pipeline",
                 "ingest_saved",
-                payload={"use_ai_scoring": use_ai_scoring},
+                payload={"use_ai_scoring": use_ai_in_run},
                 label="Add Saved Job Links",
             )
             st.rerun()
@@ -1512,15 +1506,28 @@ def _render_action_deck_manual_only() -> None:
             )
         selected_stale_days = dict(RESCORE_STALE_OPTIONS).get(selected_stale_label, 7)
 
+        ai_ready_for_rescore = has_openai_api_key()
         matching_jobs = count_jobs_for_rescoring(stale_days=selected_stale_days or None)
         selected_jobs = matching_jobs if selected_rescore_limit == 0 else min(matching_jobs, selected_rescore_limit)
         st.caption(
             f"Current rescore policy matches {matching_jobs} jobs. "
             f"This run will process {selected_jobs}."
         )
+        if not ai_ready_for_rescore:
+            st.caption("Add an OpenAI API key in Settings -> OpenAI API to enable batch rescoring.")
 
         _render_ai_button_chip()
-        if st.button("Rescore Existing Jobs", use_container_width=True, disabled=busy, key="pipeline_rescore_existing"):
+        if st.button(
+            "Rescore Existing Jobs",
+            use_container_width=True,
+            disabled=busy or (not ai_ready_for_rescore),
+            key="pipeline_rescore_existing",
+            help=(
+                "Refresh existing jobs with current AI scoring and scrub rules."
+                if ai_ready_for_rescore
+                else "No OpenAI API key is configured. Add one in Settings > OpenAI API."
+            ),
+        ):
             st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
             queue_action(
                 "pipeline",

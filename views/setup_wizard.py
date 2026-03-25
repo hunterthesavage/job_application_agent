@@ -9,11 +9,12 @@ from services.job_levels import (
 )
 from services.openai_key import (
     delete_saved_openai_api_key,
+    get_effective_openai_api_key,
     get_openai_api_key_details,
     load_saved_openai_api_key,
     save_openai_api_key,
 )
-from services.profile_context_templates import get_profile_context_template
+from services.profile_context_templates import generate_profile_context_from_resume
 from services.settings import load_settings, save_settings
 from services.openai_title_suggestions import suggest_titles_with_openai
 from services.ui_busy import queue_action
@@ -368,83 +369,95 @@ def _render_search_step() -> None:
 
 
 def _render_profile_step() -> None:
-    template = get_profile_context_template()
-
     st.markdown("## Profile Context")
     st.write(
         "This is the main context used for AI scoring and cover letters. Discovery still works without it, but accepted jobs will skip AI scoring unless a fallback profile file exists."
     )
 
+    resume_present = bool(str(st.session_state.get("wizard_resume_text", "") or "").strip())
+    api_key_present = bool(get_effective_openai_api_key())
+    can_generate = resume_present and api_key_present
+
     helper_left, helper_right = st.columns([1.1, 2.2])
     with helper_left:
-        if st.button("Use Starter Template", key="wizard_use_profile_template"):
-            st.session_state["wizard_resume_text"] = st.session_state.get("wizard_resume_text", "") or template["resume_text"]
-            st.session_state["wizard_profile_summary"] = st.session_state.get("wizard_profile_summary", "") or template["profile_summary"]
-            st.session_state["wizard_strengths_to_highlight"] = (
-                st.session_state.get("wizard_strengths_to_highlight", "") or template["strengths_to_highlight"]
-            )
-            st.session_state["wizard_cover_letter_voice"] = (
-                st.session_state.get("wizard_cover_letter_voice", "") or template["cover_letter_voice"]
-            )
-            st.rerun()
+        if st.button(
+            "Generate from Resume",
+            key="wizard_generate_profile_from_resume",
+            disabled=not can_generate,
+            help=(
+                "Generate the profile fields from the current Resume Text."
+                if can_generate
+                else "Paste Resume Text and add an OpenAI API key first."
+            ),
+        ):
+            with st.spinner("Generating profile context from resume..."):
+                result = generate_profile_context_from_resume(
+                    st.session_state.get("wizard_resume_text", "")
+                )
+            if result.get("ok"):
+                st.session_state["wizard_profile_summary"] = str(result.get("profile_summary", "") or "")
+                st.session_state["wizard_strengths_to_highlight"] = str(result.get("strengths_to_highlight", "") or "")
+                st.session_state["wizard_cover_letter_voice"] = str(result.get("cover_letter_voice", "") or "")
+                st.success("Generated profile fields from your resume text.")
+                st.rerun()
+            st.error(str(result.get("error", "") or "Could not generate profile context from resume."))
     with helper_right:
-        st.caption("This fills only empty fields so you can start from a structured scoring profile instead of a blank page.")
+        st.caption("Paste resume text first, then generate the summary, strengths, and cover letter voice from that resume. This does not overwrite Resume Text.")
 
-    with st.form("setup_wizard_profile_form"):
-        resume_text = st.text_area(
-            "Resume Text",
-            value=st.session_state.get("wizard_resume_text", ""),
-            height=200,
-            help="Primary supporting evidence for AI scoring and cover letters.",
-        )
-        profile_summary = st.text_area(
-            "Executive Summary",
-            value=st.session_state.get("wizard_profile_summary", ""),
-            height=120,
-            help="High-priority scoring input. Use this for your executive summary and target profile.",
-        )
-        strengths_to_highlight = st.text_area(
-            "Strengths to Highlight",
-            value=st.session_state.get("wizard_strengths_to_highlight", ""),
-            height=120,
-            help="High-priority scoring input. Example: AI transformation, enterprise IT leadership, ServiceNow.",
-        )
-        cover_letter_voice = st.text_area(
-            "Cover Letter Voice",
-            value=st.session_state.get("wizard_cover_letter_voice", ""),
-            height=100,
-            help="Cover letters only. This does not affect job scoring.",
-        )
+    resume_text = st.text_area(
+        "Resume Text",
+        key="wizard_resume_text",
+        height=200,
+        help="Primary supporting evidence for AI scoring and cover letters.",
+    )
+    profile_summary = st.text_area(
+        "Executive Summary",
+        key="wizard_profile_summary",
+        height=120,
+        help="High-priority scoring input. Use this for your executive summary and target profile.",
+    )
+    strengths_to_highlight = st.text_area(
+        "Strengths to Highlight",
+        key="wizard_strengths_to_highlight",
+        height=120,
+        help="High-priority scoring input. Example: AI transformation, enterprise IT leadership, ServiceNow.",
+    )
+    cover_letter_voice = st.text_area(
+        "Cover Letter Voice",
+        key="wizard_cover_letter_voice",
+        height=100,
+        help="Cover letters only. This does not affect job scoring.",
+    )
 
-        c1, c2, c3 = st.columns([1, 1.2, 1])
-        with c1:
-            back_clicked = st.form_submit_button("Back", use_container_width=True)
-        with c2:
-            save_clicked = st.form_submit_button("Save and Continue", type="primary", use_container_width=True)
-        with c3:
-            skip_clicked = st.form_submit_button("Skip for Now", use_container_width=True)
+    c1, c2, c3 = st.columns([1, 1.2, 1])
+    with c1:
+        back_clicked = st.button("Back", use_container_width=True, key="wizard_profile_back")
+    with c2:
+        save_clicked = st.button("Save and Continue", type="primary", use_container_width=True, key="wizard_profile_save_continue")
+    with c3:
+        skip_clicked = st.button("Skip for Now", use_container_width=True, key="wizard_profile_skip")
 
-        if back_clicked:
-            _go_back()
-            st.rerun()
-        if save_clicked:
-            save_settings(
-                {
-                    "resume_text": str(resume_text or "").strip(),
-                    "profile_summary": str(profile_summary or "").strip(),
-                    "strengths_to_highlight": str(strengths_to_highlight or "").strip(),
-                    "cover_letter_voice": str(cover_letter_voice or "").strip(),
-                }
-            )
-            st.session_state["wizard_resume_text"] = str(resume_text or "").strip()
-            st.session_state["wizard_profile_summary"] = str(profile_summary or "").strip()
-            st.session_state["wizard_strengths_to_highlight"] = str(strengths_to_highlight or "").strip()
-            st.session_state["wizard_cover_letter_voice"] = str(cover_letter_voice or "").strip()
-            _go_next()
-            st.rerun()
-        if skip_clicked:
-            _go_next()
-            st.rerun()
+    if back_clicked:
+        _go_back()
+        st.rerun()
+    if save_clicked:
+        save_settings(
+            {
+                "resume_text": str(resume_text or "").strip(),
+                "profile_summary": str(profile_summary or "").strip(),
+                "strengths_to_highlight": str(strengths_to_highlight or "").strip(),
+                "cover_letter_voice": str(cover_letter_voice or "").strip(),
+            }
+        )
+        st.session_state["wizard_resume_text"] = str(resume_text or "").strip()
+        st.session_state["wizard_profile_summary"] = str(profile_summary or "").strip()
+        st.session_state["wizard_strengths_to_highlight"] = str(strengths_to_highlight or "").strip()
+        st.session_state["wizard_cover_letter_voice"] = str(cover_letter_voice or "").strip()
+        _go_next()
+        st.rerun()
+    if skip_clicked:
+        _go_next()
+        st.rerun()
 
 
 def _render_openai_step() -> None:
@@ -469,6 +482,16 @@ def _render_openai_step() -> None:
         st.success("AI-assisted features are ready to use during setup and later runs.")
     else:
         st.caption("Without a key, you can still finish setup and discover jobs, but AI title suggestions, scoring, scrub, and cover letters will stay off.")
+
+    if str(details["active_source"]) == "environment" and not bool(details["saved_key_present"]):
+        st.caption(
+            "This app is using OPENAI_API_KEY from the environment. There is no saved local key to delete here."
+        )
+    elif bool(details["saved_key_present"]) and bool(details["environment_key_present"]):
+        st.caption(
+            "A saved local key is currently overriding the environment key. "
+            "If you delete the saved key, the environment key will become active."
+        )
 
     st.text_input(
         "OpenAI API Key",
@@ -498,8 +521,8 @@ def _render_openai_step() -> None:
             _go_next()
             st.rerun()
 
-    if details["saved_key_present"]:
-        if st.button("Delete Saved API Key", type="secondary", key="wizard_delete_saved_openai"):
+    if details["can_delete_saved_key"]:
+        if st.button("Delete Saved Local Key", type="secondary", key="wizard_delete_saved_openai"):
             try:
                 delete_saved_openai_api_key()
                 st.session_state["wizard_openai_api_key_value"] = ""

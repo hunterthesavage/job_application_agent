@@ -422,7 +422,7 @@ def render_job_card(
                     st.write(source_detail)
 
     with right:
-        btn1, btn2, btn3, btn4 = st.columns([1.05, 0.95, 1.15, 0.95])
+        btn1, btn2, btn3, btn4 = st.columns(4)
 
         api_key = get_effective_openai_api_key()
         cover_letter_enabled = bool(api_key)
