@@ -672,6 +672,36 @@ def _build_rescore_flash(result: dict) -> tuple[str, str]:
     return "warning", "Rescore completed, but no jobs were updated."
 
 
+def _wizard_first_run_has_results(result: dict) -> bool:
+    summary = result.get("ingest", {}).get("summary", {}) if isinstance(result.get("ingest", {}), dict) else {}
+    inserted_count = int(summary.get("inserted_count", 0) or 0)
+    updated_count = int(summary.get("updated_count", 0) or 0)
+    net_new_count = int(summary.get("net_new_count", inserted_count) or 0)
+    rediscovered_count = int(summary.get("rediscovered_count", 0) or 0)
+    changed_count = inserted_count + updated_count
+
+    return any(value > 0 for value in [changed_count, net_new_count, rediscovered_count])
+
+
+def _maybe_route_after_wizard_first_run(result: dict) -> None:
+    if not st.session_state.pop("_wizard_first_discovery_redirect", False):
+        return
+
+    if _wizard_first_run_has_results(result):
+        st.session_state["top_nav_selection"] = "New Roles"
+        st.session_state["_post_wizard_run_message"] = {
+            "kind": "success",
+            "text": "Your first discovery run found jobs. Review them in New Roles.",
+        }
+    else:
+        st.session_state["top_nav_selection"] = "Pipeline"
+        st.session_state["pipeline_subnav_selection"] = "Overview"
+        st.session_state["_post_wizard_run_message"] = {
+            "kind": "warning",
+            "text": "Your first discovery run did not add jobs yet. Review Pipeline for diagnostics and research tools.",
+        }
+
+
 def _process_pending_action_before_render() -> None:
     action = get_action("pipeline")
     if not action or action.get("phase") != "execute":
@@ -689,6 +719,7 @@ def _process_pending_action_before_render() -> None:
                     use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
                 )
                 st.session_state["pipeline_last_result"] = result
+                _maybe_route_after_wizard_first_run(result)
                 _persist_pipeline_output(result)
                 level, message = _build_discover_and_ingest_flash(result)
                 _set_flash(level, message)

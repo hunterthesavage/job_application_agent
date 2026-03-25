@@ -55,7 +55,9 @@ def _start_first_discovery() -> None:
             "setup_wizard_dismissed": "true",
         }
     )
+    st.session_state["_wizard_first_discovery_redirect"] = True
     st.session_state["top_nav_selection"] = "Pipeline"
+    st.session_state["pipeline_subnav_selection"] = "Overview"
     st.session_state["_post_wizard_run_message"] = {
         "kind": "info",
         "text": "Starting your first discovery run now.",
