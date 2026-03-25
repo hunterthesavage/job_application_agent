@@ -49,56 +49,90 @@ These files and folders are local runtime state and should not be committed:
 - `.env`
 - `service_account.json`
 
-## MAC OS
+## Mac Setup
 
-### Option 1: one-time install script
+### Easiest option
 
-From the repo root:
+1. Download or clone this repository to your Mac.
+2. Open the `job_application_agent` folder.
+3. Double-click `install_mac.command`.
+4. After setup finishes, double-click `run_app.command`.
+
+What this does:
+- creates the app's private Python environment
+- installs the required packages
+- starts the app locally on your Mac
+
+### If macOS blocks `install_mac.command`
+
+Because this app is unsigned, macOS Gatekeeper may show a warning the first time.
+
+If that happens:
+1. In Finder, `Control`-click or right-click `install_mac.command`
+2. Click `Open`
+3. Click `Open` again in the warning dialog
+
+After that first approval, you should be able to use the launcher normally.
+
+### Terminal option for Mac
+
+If you prefer Terminal, make sure you are **inside the project folder** before running install commands.
+
+Copy and paste this whole block:
 
 ```bash
+cd ~
+git clone https://github.com/hunterthesavage/job_application_agent.git
+cd job_application_agent
+
 chmod +x install_mac.sh run_app.sh install_mac.command run_app.command
 ./install_mac.sh
 ```
 
-The install script will:
-- create `.venv`
-- upgrade `pip`
-- install requirements
-- create local data folders
-- create placeholder `.gitkeep` files where helpful
-- make the launcher executable
+Important:
+- `cd job_application_agent` is required
+- if you stay in `~` instead of the project folder, the install files will not be found
 
-### Option 2: macOS double-click launchers
+### Launch later on Mac
 
-If you do not want to use Terminal commands every time:
+After setup is complete:
 
-- double-click `install_mac.command` for first-time setup
-- double-click `run_app.command` after setup to start the app
+- double-click `run_app.command`
 
-The first time you open a `.command` file, macOS may ask you to confirm that you want to run it.
-
-
-##  Windows PC
-
-### Option 1: Windows launchers
-
-For Windows users:
-
-- run `install_windows.bat` for first-time setup
-- run `run_app_windows.bat` after setup to start the app
-
-These launchers expect Python 3 to already be installed on Windows.
-
-### Option 2: manual install
+Or from Terminal:
 
 ```bash
-python3 -m venv .venv
+cd ~/job_application_agent
 source .venv/bin/activate
+./run_app.sh
+```
+
+## Windows Setup
+
+### Easiest option
+
+1. Download or clone this repository to your Windows PC.
+2. Make sure Python 3 is already installed.
+3. Open the `job_application_agent` folder.
+4. Double-click `install_windows.bat`.
+5. After setup finishes, double-click `run_app_windows.bat`.
+
+### Notes for Windows users
+
+- the Windows launchers are included for convenience
+- Windows support is still more lightly tested than Mac
+- if Python 3 is missing, install it first from [python.org](https://www.python.org/downloads/windows/)
+
+### Terminal option for Windows
+
+If you prefer a terminal install, open Command Prompt or PowerShell, move into the project folder, and run:
+
+```bat
+py -3 -m venv .venv
+.venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-mkdir -p data backups logs
-[ -f data/.gitkeep ] || touch data/.gitkeep
-[ -f backups/.gitkeep ] || touch backups/.gitkeep
+run_app_windows.bat
 ```
 
 
