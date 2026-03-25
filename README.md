@@ -67,62 +67,67 @@ If that happens:
 
 ## Windows Setup
 
-### Step 1) Install App on Windows PC
+### Step 1) Install Python in Command Prompt
 
-Choose one of these options.
-
-#### Option A: Download the ZIP file
-
-1. Open the GitHub page for this project.
-2. Click the green `Code` button.
-3. Click `Download ZIP`.
-4. Open the downloaded ZIP file.
-5. Open the unzipped folder.
-6. If you see another folder with the same project name inside it, open that inner folder.
-7. Stop when you are in the folder that contains both:
-   - `app.py`
-   - `requirements.txt`
-
-#### Option B: Clone it with Terminal
-
-1. Open Command Prompt or PowerShell.
-2. Copy and paste this block:
+Open Command Prompt and try this first:
 
 ```bat
-cd %USERPROFILE%
-git clone https://github.com/hunterthesavage/job_application_agent.git
-cd job_application_agent
+winget install --id Python.Python.3.12 --source winget
 ```
 
-### Step 2) Launch App on Windows PC
-
-1. Complete `Step 1` above so the app is on your PC.
-2. Make sure Python 3 is already installed.
-3. Open the project folder that contains:
-   - `app.py`
-   - `requirements.txt`
-4. For the most reliable first-time setup, use the terminal instructions below.
-5. After setup succeeds, you can use `run_app_windows.bat` for future launches.
+Then:
+1. close Command Prompt
+2. open a new Command Prompt window
 
 ### Notes for Windows users
 
 - Windows support is still more lightly tested than Mac
-- install Python 3 first from [python.org](https://www.python.org/downloads/windows/)
-- if you prefer Command Prompt, this may work on many Windows PCs:
-  ```bat
-  winget install --id Python.Python.3.12 --source winget
-  ```
-- during Python install, enable `Add Python to PATH`
+- if the `winget` command does not work on your PC, install Python 3 first from [python.org](https://www.python.org/downloads/windows/)
+- if you install Python manually, enable `Add Python to PATH`
 - the most reliable first-run path is the Command Prompt flow below
 - after setup, `run_app_windows.bat` is the easiest way to reopen the app
 
-### Terminal option for Windows
+### Step 2) Download the app in Command Prompt
 
-Open Command Prompt, move into the project folder that contains `app.py` and `requirements.txt`, and run these one at a time:
+In the new Command Prompt window, run these one at a time:
+
+```bat
+cd /d "%USERPROFILE%\Downloads"
+```
+
+```bat
+curl -L -o job_application_agent.zip https://github.com/hunterthesavage/job_application_agent/archive/refs/heads/main.zip
+```
+
+```bat
+tar -xf job_application_agent.zip
+```
+
+```bat
+cd /d "%USERPROFILE%\Downloads\job_application_agent-main"
+```
+
+If you see another `job_application_agent-main` folder inside, run:
+
+```bat
+cd job_application_agent-main
+```
+
+Then confirm you are in the right place:
 
 ```bat
 dir app.py
+```
+
+```bat
 dir requirements.txt
+```
+
+### Step 3) Install requirements and run the app
+
+Run these one at a time:
+
+```bat
 py -3 -m venv .venv
 call .venv\Scripts\activate.bat
 py -3 -m pip install --upgrade pip
