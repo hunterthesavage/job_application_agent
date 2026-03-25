@@ -89,6 +89,18 @@ streamlit run app.py
 
 On first launch, the app should open to the Setup Wizard when there are no jobs and setup has not been completed.
 
+## Release Candidate Validation
+
+For a soft-launch checkpoint, run the release checks:
+
+```bash
+./scripts/run_release_checks.sh
+```
+
+Use the full checklist in:
+
+- `docs/soft-launch-checklist.md`
+
 ## Clean reset
 
 Use:
