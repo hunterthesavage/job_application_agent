@@ -49,7 +49,7 @@ These files and folders are local runtime state and should not be committed:
 - `.env`
 - `service_account.json`
 
-## Quick install on macOS
+## MAC OS
 
 ### Option 1: one-time install script
 
@@ -76,6 +76,9 @@ If you do not want to use Terminal commands every time:
 - double-click `run_app.command` after setup to start the app
 
 The first time you open a `.command` file, macOS may ask you to confirm that you want to run it.
+
+
+##  Windows PC
 
 ### Option 1: Windows launchers
 
