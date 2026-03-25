@@ -6,6 +6,7 @@ import subprocess
 import streamlit as st
 
 from config import APP_NAME, APP_VERSION, BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
+from services.backlog import get_backlog_summary
 from services.backup import backup_database, restore_latest_backup
 from services.health import run_health_check
 from services.job_levels import (
@@ -33,6 +34,11 @@ SETTINGS_NAV_OPTIONS = [
     "Profile Context",
     "OpenAI API",
     "System Status",
+]
+
+STATUS_NAV_OPTIONS = [
+    "Overview",
+    "Backlog",
 ]
 
 
@@ -81,6 +87,64 @@ def _inject_settings_css() -> None:
                 font-weight: 820;
                 color: rgba(255,255,255,0.98);
                 letter-spacing: -0.02em;
+            }
+
+            .settings-backlog-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 0.9rem;
+                margin-bottom: 1rem;
+            }
+
+            .settings-backlog-card {
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 22px;
+                background: linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.98) 100%);
+                box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+                padding: 1rem 1rem 0.85rem 1rem;
+                height: 100%;
+            }
+
+            .settings-backlog-card.high {
+                background:
+                    radial-gradient(circle at top right, rgba(248,113,113,0.13), transparent 28%),
+                    linear-gradient(180deg, rgba(20,18,28,0.97) 0%, rgba(12,12,20,0.99) 100%);
+            }
+
+            .settings-backlog-card.medium {
+                background:
+                    radial-gradient(circle at top right, rgba(250,204,21,0.13), transparent 28%),
+                    linear-gradient(180deg, rgba(20,20,28,0.97) 0%, rgba(12,12,20,0.99) 100%);
+            }
+
+            .settings-backlog-card.low {
+                background:
+                    radial-gradient(circle at top right, rgba(96,165,250,0.13), transparent 28%),
+                    linear-gradient(180deg, rgba(16,22,36,0.97) 0%, rgba(10,14,24,0.99) 100%);
+            }
+
+            .settings-backlog-kicker {
+                font-size: 0.78rem;
+                font-weight: 800;
+                letter-spacing: 0.09em;
+                text-transform: uppercase;
+                color: rgba(255,255,255,0.62);
+                margin-bottom: 0.3rem;
+            }
+
+            .settings-backlog-count {
+                font-size: 2rem;
+                font-weight: 840;
+                line-height: 1;
+                color: rgba(255,255,255,0.98);
+                letter-spacing: -0.03em;
+                margin-bottom: 0.25rem;
+            }
+
+            .settings-backlog-copy {
+                font-size: 0.9rem;
+                line-height: 1.45;
+                color: rgba(255,255,255,0.72);
             }
         </style>
         """,
@@ -458,13 +522,8 @@ def _render_reset_notice() -> None:
         st.success(f"App reset complete. Removed {removed_count} local item(s). Setup Wizard is ready again.")
 
 
-def render_system_status_tab() -> None:
+def _render_status_overview() -> None:
     status = get_system_status()
-
-    st.markdown("### System Status")
-    st.caption("Use this page for maintenance, backups, and a quick read on the current local app state.")
-    st.caption(f"{APP_NAME} version {APP_VERSION}")
-    st.caption(f"Database path: {DATABASE_PATH}")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Jobs", status["jobs_total"])
@@ -531,6 +590,93 @@ def render_system_status_tab() -> None:
         _render_health_check_result(last_health_check_result)
 
     _render_reset_app_section()
+
+
+def _render_backlog_priority_card(priority: str, count: int, copy: str) -> str:
+    priority_class = priority.strip().lower()
+    return (
+        f'<div class="settings-backlog-card {priority_class}">'
+        f'<div class="settings-backlog-kicker">{html.escape(priority)} priority</div>'
+        f'<div class="settings-backlog-count">{count}</div>'
+        f'<div class="settings-backlog-copy">{html.escape(copy)}</div>'
+        '</div>'
+    )
+
+
+def _render_status_backlog() -> None:
+    summary = get_backlog_summary()
+    counts = summary.get("counts", {}) or {}
+    items_by_priority = summary.get("items_by_priority", {}) or {}
+    recently_completed = summary.get("recently_completed", []) or []
+    percent = int(summary.get("soft_launch_percent", 0) or 0)
+
+    st.markdown("### Backlog")
+    st.caption("This is the current launch-focused backlog based on what has already shipped, what still needs validation, and what can safely wait.")
+
+    progress_left, progress_right = st.columns([1.15, 2.2])
+    with progress_left:
+        st.metric("Soft Launch Progress", f"{percent}%")
+    with progress_right:
+        st.info(
+            "The goal is to finish validation and launch hardening first. "
+            "High-priority items should move before new feature expansion."
+        )
+
+    card_markup = (
+        '<div class="settings-backlog-grid">'
+        + _render_backlog_priority_card(
+            "High",
+            int(counts.get("High", 0) or 0),
+            "Launch blockers or validation gaps that should move before broader sharing.",
+        )
+        + _render_backlog_priority_card(
+            "Medium",
+            int(counts.get("Medium", 0) or 0),
+            "Important usability and architecture cleanup that improves trust but does not block testing today.",
+        )
+        + _render_backlog_priority_card(
+            "Low",
+            int(counts.get("Low", 0) or 0),
+            "Useful cleanup and longer-horizon work that can wait until after soft launch feedback.",
+        )
+        + '</div>'
+    )
+    st.markdown(card_markup, unsafe_allow_html=True)
+
+    for priority in ("High", "Medium", "Low"):
+        items = items_by_priority.get(priority, []) or []
+        with st.expander(f"{priority} Priority ({len(items)})", expanded=(priority == "High")):
+            for item in items:
+                st.markdown(f"**{item.get('title', 'Backlog item')}**")
+                st.write(str(item.get("detail", "") or ""))
+
+    if recently_completed:
+        with st.expander("Recently completed", expanded=False):
+            for item in recently_completed:
+                st.write(f"- {item}")
+
+
+def render_system_status_tab() -> None:
+    _inject_settings_css()
+    initialize_nav_state("settings_status_subnav_selection", "Overview")
+
+    st.markdown("### System Status")
+    st.caption("Use this area for maintenance, local app health, and launch tracking.")
+    st.caption(f"{APP_NAME} version {APP_VERSION}")
+    st.caption(f"Database path: {DATABASE_PATH}")
+
+    selected_status_section = render_button_nav(
+        options=STATUS_NAV_OPTIONS,
+        state_key="settings_status_subnav_selection",
+        key_prefix="settings_status_subnav",
+        selected_button_type="tertiary",
+    )
+    st.markdown("<div style='height: 0.6rem;'></div>", unsafe_allow_html=True)
+
+    if selected_status_section == "Backlog":
+        _render_status_backlog()
+    else:
+        _render_status_overview()
 
 
 def render_configuration_tab(settings: dict[str, str]) -> None:

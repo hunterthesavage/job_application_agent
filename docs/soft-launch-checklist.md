@@ -1,6 +1,6 @@
 # Soft Launch Checklist
 
-Current estimate: **89% to soft launch**
+Current estimate: **91% to soft launch**
 
 Use this checklist to track launch readiness and avoid adding more features before the core experience is validated.
 
