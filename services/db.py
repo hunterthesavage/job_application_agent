@@ -155,6 +155,88 @@ def create_schema() -> None:
                 output_path TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS companies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                canonical_domain TEXT NOT NULL DEFAULT '',
+                industry TEXT NOT NULL DEFAULT '',
+                size_band TEXT NOT NULL DEFAULT '',
+                hq TEXT NOT NULL DEFAULT '',
+                priority_tier TEXT NOT NULL DEFAULT '',
+                exec_relevance_score REAL NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_companies_canonical_domain
+            ON companies(canonical_domain)
+            WHERE canonical_domain <> '';
+
+            CREATE INDEX IF NOT EXISTS idx_companies_name
+            ON companies(name);
+
+            CREATE TABLE IF NOT EXISTS hiring_endpoints (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL,
+                endpoint_url TEXT NOT NULL,
+                endpoint_type TEXT NOT NULL DEFAULT 'careers_page',
+                ats_vendor TEXT NOT NULL DEFAULT '',
+                extraction_method TEXT NOT NULL DEFAULT '',
+                discovery_source TEXT NOT NULL DEFAULT '',
+                confidence_score REAL NOT NULL DEFAULT 0,
+                health_score REAL NOT NULL DEFAULT 0,
+                review_status TEXT NOT NULL DEFAULT '',
+                careers_url_status TEXT NOT NULL DEFAULT '',
+                is_primary INTEGER NOT NULL DEFAULT 0,
+                last_validated_at TEXT NOT NULL DEFAULT '',
+                next_check_at TEXT NOT NULL DEFAULT '',
+                active INTEGER NOT NULL DEFAULT 1,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(company_id, endpoint_url),
+                FOREIGN KEY(company_id) REFERENCES companies(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hiring_endpoints_company_id
+            ON hiring_endpoints(company_id);
+
+            CREATE INDEX IF NOT EXISTS idx_hiring_endpoints_ats_vendor
+            ON hiring_endpoints(ats_vendor);
+
+            CREATE TABLE IF NOT EXISTS endpoint_validation_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                endpoint_id INTEGER NOT NULL,
+                checked_at TEXT NOT NULL,
+                success INTEGER NOT NULL DEFAULT 0,
+                jobs_found INTEGER,
+                latency_ms INTEGER,
+                parser_name TEXT NOT NULL DEFAULT '',
+                parser_version TEXT NOT NULL DEFAULT '',
+                failure_reason TEXT NOT NULL DEFAULT '',
+                content_fingerprint TEXT NOT NULL DEFAULT '',
+                source_payload_json TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(endpoint_id) REFERENCES hiring_endpoints(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_endpoint_validation_runs_endpoint_id
+            ON endpoint_validation_runs(endpoint_id);
+
+            CREATE TABLE IF NOT EXISTS source_layer_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                finished_at TEXT NOT NULL DEFAULT '',
+                mode TEXT NOT NULL DEFAULT 'legacy',
+                import_file_path TEXT NOT NULL DEFAULT '',
+                imported_records INTEGER NOT NULL DEFAULT 0,
+                selected_endpoints INTEGER NOT NULL DEFAULT 0,
+                discovered_urls INTEGER NOT NULL DEFAULT 0,
+                accepted_jobs INTEGER NOT NULL DEFAULT 0,
+                errors INTEGER NOT NULL DEFAULT 0,
+                notes TEXT NOT NULL DEFAULT ''
+            );
             """
         )
 
@@ -191,6 +273,7 @@ def initialize_database() -> Path:
     ensure_schema_compatibility()
     seed_schema_migration("001_initial_foundation")
     seed_schema_migration("002_jobs_source_metadata_columns")
+    seed_schema_migration("003_source_layer_foundation")
     return DATABASE_PATH
 
 
