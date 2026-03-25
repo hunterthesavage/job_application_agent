@@ -2,6 +2,15 @@
 
 Local-first Streamlit app for discovering, validating, reviewing, and managing executive-level job opportunities.
 
+## Status
+
+This project is currently **experimental**.
+
+It is usable and actively tested, but:
+- the workflow is still evolving
+- AI-assisted behaviors may change between releases
+- legacy Google Sheets tooling is optional and not part of the main local-first setup path
+
 ## Version
 
 Current release: **1.0.0**
@@ -15,7 +24,7 @@ Current release: **1.0.0**
 - SQLite-first local storage
 - Local OpenAI key handling
 - Backup, health, and reset tooling
-- Legacy Google Sheets import support
+- Optional legacy Google Sheets import support
 
 ## Repo structure
 
@@ -38,6 +47,7 @@ These files and folders are local runtime state and should not be committed:
 - `backups/`
 - `logs/`
 - `.env`
+- `service_account.json`
 
 ## Quick install on macOS
 
@@ -75,6 +85,11 @@ For Windows users:
 - run `run_app_windows.bat` after setup to start the app
 
 These launchers expect Python 3 to already be installed on Windows.
+
+If you are sharing the app publicly, the simplest story is:
+
+- macOS: `install_mac.command`, then `run_app.command`
+- Windows: `install_windows.bat`, then `run_app_windows.bat`
 
 ### Option 2: manual install
 
@@ -203,6 +218,18 @@ streamlit run app.py
 ## First launch
 
 On first launch, the app should open to the Setup Wizard when there are no jobs and setup has not been completed.
+
+## Public repo note
+
+This repository is designed to be safe to share publicly as a local-first app.
+
+It does **not** expect you to commit:
+- your local database
+- saved OpenAI API keys
+- backups or logs
+- `service_account.json`
+
+Legacy Google Sheets support is optional. If you do not use that path, you can ignore `service_account.json` and the related import scripts.
 
 ## Release Candidate Validation
 

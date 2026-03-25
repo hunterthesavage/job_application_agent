@@ -19,7 +19,8 @@ MANUAL_URLS_FILE = DATA_DIR / "manual_urls.txt"
 DEFAULT_STORAGE_BACKEND = "sqlite"
 
 # Legacy Google Sheets compatibility
-SPREADSHEET_ID = "1h0LEK4-t6-j7rmdxjWeO8XY_Kx9L5HfQpOdkJtf_p_E"
+# Leave blank by default for public/local-first installs.
+SPREADSHEET_ID = ""
 NEW_ROLES_SHEET = "New Validated Roles"
 APPLIED_SHEET = "Applied Roles"
 REMOVED_SHEET = "Removed Roles"
