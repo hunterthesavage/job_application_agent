@@ -9,7 +9,6 @@ This project is currently **experimental**.
 It is usable and actively tested, but:
 - The workflow is still evolving
 - AI-assisted behaviors may change between releases
-- legacy Google Sheets tooling is optional and not part of the main local-first setup path
 
 ## Version
 
@@ -24,7 +23,6 @@ Current release: **1.0.0**
 - SQLite-first local storage
 - Local OpenAI key handling
 - Backup, health, and reset tooling
-- Optional legacy Google Sheets import support
 
 ## Repo structure
 
@@ -47,83 +45,52 @@ These files and folders are local runtime state and should not be committed:
 - `backups/`
 - `logs/`
 - `.env`
-- `service_account.json`
 
 ## Mac Setup
 
-### Step 1: Get the app onto your Mac
+### Recommended setup
 
-Choose one of these options.
-
-#### Option A: Download the ZIP file
-
-1. Open the GitHub page for this project (https://github.com/hunterthesavage/job_application_agent/).
-2. Click the green `Code` button.
-3. Click `Download ZIP`.
-4. Open the downloaded ZIP file.
-5. Open the unzipped `job_application_agent` folder.
-
-#### Option B: Clone it with Terminal
-
-1. Open the `Terminal` app.
-2. Copy and paste this block:
+Open the `Terminal` app and copy and paste this whole command:
 
 ```bash
-cd ~
-git clone https://github.com/hunterthesavage/job_application_agent.git
-cd job_application_agent
+cd ~ && ( [ -d job_application_agent/.git ] || git clone https://github.com/hunterthesavage/job_application_agent.git job_application_agent ) && cd ~/job_application_agent && chmod +x install_mac.sh run_app.sh install_mac.command run_app.command && ./install_mac.sh
 ```
-
-### Easiest option
-
-1. Complete `Step 1` above so the app is on your Mac.
-2. Open the `job_application_agent` folder.
-3. Double-click `install_mac.command`.
-4. After setup finishes, double-click `run_app.command`.
 
 What this does:
-- creates the app's private Python environment
+- downloads the app into your home folder if it is not already there
+- moves into the correct project folder
+- fixes launcher permissions
 - installs the required packages
-- starts the app locally on your Mac
+- prepares the app to launch locally
 
-### If macOS blocks `install_mac.command`
+This is the best Mac setup path because it avoids Finder security prompts on the installer.
 
-Because this app is unsigned, macOS Gatekeeper may show a warning the first time.
+### Launch the app later on Mac
 
-If that happens:
-1. In Finder, `Control`-click or right-click `install_mac.command`
-2. Click `Open`
-3. Click `Open` again in the warning dialog
-
-After that first approval, you should be able to use the launcher normally.
-
-### Terminal option for Mac
-
-If you prefer Terminal, make sure you are **inside the project folder** before running install commands.
-
-Copy and paste this whole block:
-
-```bash
-chmod +x install_mac.sh run_app.sh install_mac.command run_app.command
-./install_mac.sh
-```
-
-Important:
-- `Step 1` must already be completed
-- `cd job_application_agent` is required if you used Terminal to download the app
-- if you stay in `~` instead of the project folder, the install files will not be found
-
-### Launch later on Mac
-
-After setup is complete:
+After setup is complete, either:
 
 - double-click `run_app.command`
 
-Or from Terminal:
+or run:
 
 ```bash
 cd ~/job_application_agent
-source .venv/bin/activate
+./run_app.sh
+```
+
+### If `run_app.command` is blocked later
+
+Because this app is unsigned, macOS Gatekeeper may still warn the first time you open the launcher by double-clicking it.
+
+If that happens:
+1. In Finder, `Control`-click or right-click `run_app.command`
+2. Click `Open`
+3. Click `Open` again in the warning dialog
+
+If you do not want to deal with that, use the Terminal launcher instead:
+
+```bash
+cd ~/job_application_agent
 ./run_app.sh
 ```
 
@@ -193,9 +160,6 @@ It does **not** expect you to commit:
 - your local database
 - saved OpenAI API keys
 - backups or logs
-- `service_account.json`
-
-Legacy Google Sheets support is optional. If you do not use that path, you can ignore `service_account.json` and the related import scripts.
 
 ## Release Candidate Validation
 
