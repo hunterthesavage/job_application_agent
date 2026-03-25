@@ -67,29 +67,50 @@ If that happens:
 
 ## Windows Setup
 
-### Step 1) Install Python in Command Prompt
+### Notes for Windows users
 
-Open Command Prompt and try this first:
+- Windows support is still more lightly tested than Mac
+- for now, use **Python x64**, not **Python ARM64**
+- the most reliable first-run path is the Command Prompt flow below
+- after setup, `run_app_windows.bat` is the easiest way to reopen the app
+
+### Step 1) Install Python x64
+
+Open Command Prompt and run:
 
 ```bat
-winget install --id Python.Python.3.12 --source winget
+cd /d "%USERPROFILE%\Downloads"
 ```
+
+```bat
+curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
+```
+
+```bat
+start /wait python-3.13.12-amd64.exe
+```
+
+In the installer:
+1. check `Add Python to PATH`
+2. use the default install options
 
 Then:
 1. close Command Prompt
 2. open a new Command Prompt window
 
-### Notes for Windows users
-
-- Windows support is still more lightly tested than Mac
-- if the `winget` command does not work on your PC, install Python 3 first from [python.org](https://www.python.org/downloads/windows/)
-- if you install Python manually, enable `Add Python to PATH`
-- the most reliable first-run path is the Command Prompt flow below
-- after setup, `run_app_windows.bat` is the easiest way to reopen the app
-
 ### Step 2) Download the app in Command Prompt
 
-In the new Command Prompt window, run these one at a time:
+Optional cleanup if you already extracted an older copy:
+
+```bat
+rmdir /s /q "%USERPROFILE%\Downloads\job_application_agent-main"
+```
+
+```bat
+del /q "%USERPROFILE%\Downloads\job_application_agent.zip"
+```
+
+Now download the latest app ZIP:
 
 ```bat
 cd /d "%USERPROFILE%\Downloads"
@@ -125,15 +146,39 @@ dir requirements.txt
 
 ### Step 3) Install requirements and run the app
 
-Run these one at a time:
+Create the virtual environment:
 
 ```bat
 py -3 -m venv .venv
+```
+
+Activate it:
+
+```bat
 call .venv\Scripts\activate.bat
+```
+
+Confirm the active Python:
+
+```bat
 python --version
+```
+
+Upgrade pip:
+
+```bat
 python -m pip install --upgrade pip
-python -m pip install pandas==3.0.1
+```
+
+Install requirements:
+
+```bat
 python -m pip install -r requirements.txt
+```
+
+Launch the app:
+
+```bat
 python -m streamlit run app.py --server.headless true --server.port 8505
 ```
 
