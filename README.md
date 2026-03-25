@@ -77,7 +77,11 @@ Choose one of these options.
 2. Click the green `Code` button.
 3. Click `Download ZIP`.
 4. Open the downloaded ZIP file.
-5. Open the unzipped `job_application_agent` folder.
+5. Open the unzipped folder.
+6. If you see another folder with the same project name inside it, open that inner folder.
+7. Stop when you are in the folder that contains both:
+   - `app.py`
+   - `requirements.txt`
 
 #### Option B: Clone it with Terminal
 
@@ -94,28 +98,37 @@ cd job_application_agent
 
 1. Complete `Step 1` above so the app is on your PC.
 2. Make sure Python 3 is already installed.
-3. Open the `job_application_agent` folder.
-4. Double-click `install_windows.bat`.
-5. After setup finishes, double-click `run_app_windows.bat`.
+3. Open the project folder that contains:
+   - `app.py`
+   - `requirements.txt`
+4. For the most reliable first-time setup, use the terminal instructions below.
+5. After setup succeeds, you can use `run_app_windows.bat` for future launches.
 
 ### Notes for Windows users
 
-- The Windows launchers are included for convenience
 - Windows support is still more lightly tested than Mac
-- if Python 3 is missing, install it first from [python.org](https://www.python.org/downloads/windows/)
+- install Python 3 first from [python.org](https://www.python.org/downloads/windows/)
+- during Python install, enable `Add Python to PATH`
+- the most reliable first-run path is the Command Prompt flow below
+- after setup, `run_app_windows.bat` is the easiest way to reopen the app
 
 ### Terminal option for Windows
 
-If you prefer a terminal install, open Command Prompt or PowerShell, move into the project folder, and run:
+Open Command Prompt, move into the project folder that contains `app.py` and `requirements.txt`, and run these one at a time:
 
 ```bat
-cd %USERPROFILE%\job_application_agent
+dir app.py
+dir requirements.txt
 py -3 -m venv .venv
-.venv\Scripts\activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-run_app_windows.bat
+call .venv\Scripts\activate.bat
+py -3 -m pip install --upgrade pip
+py -3 -m pip install -r requirements.txt
+py -3 -m streamlit run app.py --server.headless true --server.port 8505
 ```
+
+Then open:
+
+- [http://localhost:8505](http://localhost:8505)
 
 ## First launch
 
