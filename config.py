@@ -17,11 +17,3 @@ JOB_URLS_FILE = DATA_DIR / "job_urls.txt"
 MANUAL_URLS_FILE = DATA_DIR / "manual_urls.txt"
 
 DEFAULT_STORAGE_BACKEND = "sqlite"
-
-# Legacy Google Sheets compatibility
-# Leave blank by default for public/local-first installs.
-SPREADSHEET_ID = ""
-NEW_ROLES_SHEET = "New Validated Roles"
-APPLIED_SHEET = "Applied Roles"
-REMOVED_SHEET = "Removed Roles"
-SETTINGS_SHEET = "Settings"

@@ -1,14 +1,17 @@
 import json
 import re
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
+from services.db import db_connection
+from services.ingestion import ingest_job_records
+from services.source_trust import enrich_job_payload
 from src.models import JobRecord, now_string
-from src.sheets import append_job_record, get_existing_duplicate_keys
 
 
 RUNTIME_SETTINGS_FILE = "runtime_settings.json"
@@ -32,6 +35,39 @@ US_STATE_CODES = {
     "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt",
     "va", "wa", "wv", "wi", "wy", "dc",
 }
+
+
+def get_existing_duplicate_keys() -> set[str]:
+    keys: set[str] = set()
+
+    with db_connection() as conn:
+        for table_name in ("jobs", "removed_jobs"):
+            rows = conn.execute(
+                f"""
+                SELECT duplicate_key
+                FROM {table_name}
+                WHERE TRIM(COALESCE(duplicate_key, '')) <> ''
+                """
+            ).fetchall()
+            for row in rows:
+                value = safe_text(row["duplicate_key"])
+                if value:
+                    keys.add(value)
+
+    return keys
+
+
+def persist_job_record(job: JobRecord) -> None:
+    payload = enrich_job_payload(asdict(job), source_hint="Legacy CLI")
+    summary = ingest_job_records(
+        job_records=[payload],
+        source_name="legacy_cli_validator",
+        source_detail="src.validate_job_url",
+        run_type="validate_urls_legacy",
+    )
+
+    if int(summary.get("error_count", 0)) > 0:
+        raise RuntimeError("Failed to persist validated job locally.")
 
 
 def safe_text(value: object) -> str:
@@ -1156,7 +1192,7 @@ def main() -> None:
                 skipped_count += 1
                 continue
 
-            append_job_record(job)
+            persist_job_record(job)
             existing_keys.add(job.duplicate_key)
 
             print("Job processed successfully.")

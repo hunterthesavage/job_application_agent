@@ -170,7 +170,6 @@ The repo is now shareable with trusted testers, but still feels more builder-fri
 
 ### Dependency and packaging cleanup
 Some dependencies and legacy paths still reflect the app’s earlier evolution. The current codebase should continue to be reviewed for:
-- legacy Google Sheets assumptions
 - optional vs required dependencies
 - cross-platform setup expectations
 
