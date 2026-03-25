@@ -100,17 +100,7 @@ Then:
 
 ### Step 2) Download the app in Command Prompt
 
-Optional cleanup if you already extracted an older copy:
-
-```bat
-rmdir /s /q "%USERPROFILE%\Downloads\job_application_agent-main"
-```
-
-```bat
-del /q "%USERPROFILE%\Downloads\job_application_agent.zip"
-```
-
-Now download the latest app ZIP:
+Download the latest app ZIP:
 
 ```bat
 cd /d "%USERPROFILE%\Downloads"
@@ -128,13 +118,9 @@ tar -xf job_application_agent.zip
 cd /d "%USERPROFILE%\Downloads\job_application_agent-main"
 ```
 
-If you see another `job_application_agent-main` folder inside, run:
+### Step 3) Confirm you are in the right folder
 
-```bat
-cd job_application_agent-main
-```
-
-Then confirm you are in the right place:
+You should be in the folder that contains both `app.py` and `requirements.txt`.
 
 ```bat
 dir app.py
@@ -144,39 +130,49 @@ dir app.py
 dir requirements.txt
 ```
 
-### Step 3) Install requirements and run the app
+### Step 4) Create the virtual environment
 
-Create the virtual environment:
+Run:
 
 ```bat
 py -3 -m venv .venv
 ```
 
-Activate it:
+### Step 5) Activate the virtual environment
+
+Run:
 
 ```bat
 call .venv\Scripts\activate.bat
 ```
 
-Confirm the active Python:
+### Step 6) Confirm the active Python
+
+Run:
 
 ```bat
 python --version
 ```
 
-Upgrade pip:
+### Step 7) Upgrade pip
+
+Run:
 
 ```bat
 python -m pip install --upgrade pip
 ```
 
-Install requirements:
+### Step 8) Install requirements
+
+Run:
 
 ```bat
 python -m pip install -r requirements.txt
 ```
 
-Launch the app:
+### Step 9) Launch the app
+
+Run:
 
 ```bat
 python -m streamlit run app.py --server.headless true --server.port 8505

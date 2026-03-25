@@ -171,6 +171,29 @@ def str_to_bool(value: str, default: bool = False) -> bool:
 def pick_folder_dialog(initial_path: str) -> str:
     start_path = str(Path(initial_path).expanduser()) if initial_path else str(Path.home())
 
+    if os.name == "nt":
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            selected = filedialog.askdirectory(
+                initialdir=start_path,
+                title="Select Cover Letter Output Folder",
+                mustexist=False,
+            )
+            root.destroy()
+            if selected:
+                return selected
+            return initial_path
+        except Exception as exc:
+            st.session_state["cover_letter_output_settings_saved_message"] = (
+                f"Could not open folder picker: {exc}"
+            )
+            return initial_path
+
     script = f'''
 set startFolder to POSIX file "{start_path}" as alias
 try
@@ -196,9 +219,13 @@ POSIX path of chosenFolder
 
         stderr_text = (result.stderr or "").strip()
         if stderr_text and "User canceled" not in stderr_text:
-            st.warning(f"Could not open folder picker: {stderr_text}")
+            st.session_state["cover_letter_output_settings_saved_message"] = (
+                f"Could not open folder picker: {stderr_text}"
+            )
     except Exception as exc:
-        st.warning(f"Could not open folder picker: {exc}")
+        st.session_state["cover_letter_output_settings_saved_message"] = (
+            f"Could not open folder picker: {exc}"
+        )
 
     return initial_path
 

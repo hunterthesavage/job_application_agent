@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 import streamlit as st
 
 from services.job_levels import (
@@ -27,6 +29,56 @@ SETUP_WIZARD_STEPS = [
     "Search Criteria",
     "AI Review",
 ]
+
+
+def _inject_wizard_css() -> None:
+    st.markdown(
+        """
+        <style>
+            .wizard-step-heading {
+                display: flex;
+                align-items: center;
+                gap: 0.7rem;
+                margin-top: 0.9rem;
+                margin-bottom: 0.45rem;
+            }
+
+            .wizard-step-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.95rem;
+                height: 1.95rem;
+                border-radius: 999px;
+                background: linear-gradient(180deg, rgba(96,165,250,0.24) 0%, rgba(59,130,246,0.16) 100%);
+                border: 1px solid rgba(96,165,250,0.42);
+                color: rgba(219,234,254,0.98);
+                font-size: 0.92rem;
+                font-weight: 840;
+                box-shadow: 0 8px 18px rgba(37,99,235,0.16);
+                flex-shrink: 0;
+            }
+
+            .wizard-step-title {
+                font-size: 1.15rem;
+                font-weight: 820;
+                color: rgba(255,255,255,0.98);
+                letter-spacing: -0.02em;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_wizard_step_heading(step: str, title: str) -> None:
+    markup = (
+        '<div class="wizard-step-heading">'
+        f'<span class="wizard-step-badge">{html.escape(step)}</span>'
+        f'<div class="wizard-step-title">{html.escape(title)}</div>'
+        "</div>"
+    )
+    st.markdown(markup, unsafe_allow_html=True)
 
 
 def _current_step_index() -> int:
@@ -373,67 +425,87 @@ def _render_profile_step() -> None:
     st.write(
         "This is the main context used for AI scoring and cover letters. Discovery still works without it, but accepted jobs will skip AI scoring unless a fallback profile file exists."
     )
+    _inject_wizard_css()
 
     resume_present = bool(str(st.session_state.get("wizard_resume_text", "") or "").strip())
     api_key_present = bool(get_effective_openai_api_key())
     can_generate = resume_present and api_key_present
+    settings = load_settings()
+    has_unsaved_changes = any(
+        [
+            str(st.session_state.get("wizard_resume_text", "") or "") != str(settings.get("resume_text", "") or ""),
+            str(st.session_state.get("wizard_profile_summary", "") or "") != str(settings.get("profile_summary", "") or ""),
+            str(st.session_state.get("wizard_strengths_to_highlight", "") or "") != str(settings.get("strengths_to_highlight", "") or ""),
+            str(st.session_state.get("wizard_cover_letter_voice", "") or "") != str(settings.get("cover_letter_voice", "") or ""),
+        ]
+    )
 
-    helper_left, helper_right = st.columns([1.1, 2.2])
-    with helper_left:
-        if st.button(
-            "Generate from Resume",
-            key="wizard_generate_profile_from_resume",
-            disabled=not can_generate,
-            help=(
-                "Generate the profile fields from the current Resume Text."
-                if can_generate
-                else "Paste Resume Text and add an OpenAI API key first."
-            ),
-        ):
-            with st.spinner("Generating profile context from resume..."):
-                result = generate_profile_context_from_resume(
-                    st.session_state.get("wizard_resume_text", "")
-                )
-            if result.get("ok"):
-                st.session_state["wizard_profile_summary"] = str(result.get("profile_summary", "") or "")
-                st.session_state["wizard_strengths_to_highlight"] = str(result.get("strengths_to_highlight", "") or "")
-                st.session_state["wizard_cover_letter_voice"] = str(result.get("cover_letter_voice", "") or "")
-                st.success("Generated profile fields from your resume text.")
-                st.rerun()
-            st.error(str(result.get("error", "") or "Could not generate profile context from resume."))
-    with helper_right:
-        st.caption("Paste resume text first, then generate the summary, strengths, and cover letter voice from that resume. This does not overwrite Resume Text.")
-
+    _render_wizard_step_heading("1", "Paste Resume")
     resume_text = st.text_area(
-        "Resume Text",
+        "Paste Resume",
         key="wizard_resume_text",
-        height=200,
+        height=240,
         help="Primary supporting evidence for AI scoring and cover letters.",
     )
+
+    _render_wizard_step_heading("2", "Generate from Resume")
+    if st.button(
+        "Generate from Resume",
+        key="wizard_generate_profile_from_resume",
+        disabled=not can_generate,
+        help=(
+            "Generate Executive Summary, Strengths to Highlight, and Cover Letter Voice from the current resume text. This does not overwrite Paste Resume."
+            if can_generate
+            else "Paste resume text and add an OpenAI API key first."
+        ),
+        use_container_width=False,
+    ):
+        with st.spinner("Generating profile context from resume..."):
+            result = generate_profile_context_from_resume(
+                st.session_state.get("wizard_resume_text", "")
+            )
+        if result.get("ok"):
+            st.session_state["wizard_profile_summary"] = str(result.get("profile_summary", "") or "")
+            st.session_state["wizard_strengths_to_highlight"] = str(result.get("strengths_to_highlight", "") or "")
+            st.session_state["wizard_cover_letter_voice"] = str(result.get("cover_letter_voice", "") or "")
+            st.success("Generated profile fields from your resume text. Review them, then save.")
+            st.rerun()
+        st.error(str(result.get("error", "") or "Could not generate profile context from resume."))
+
     profile_summary = st.text_area(
         "Executive Summary",
         key="wizard_profile_summary",
-        height=120,
+        height=140,
         help="High-priority scoring input. Use this for your executive summary and target profile.",
     )
     strengths_to_highlight = st.text_area(
         "Strengths to Highlight",
         key="wizard_strengths_to_highlight",
-        height=120,
+        height=140,
         help="High-priority scoring input. Example: AI transformation, enterprise IT leadership, ServiceNow.",
     )
     cover_letter_voice = st.text_area(
         "Cover Letter Voice",
         key="wizard_cover_letter_voice",
-        height=100,
+        height=120,
         help="Cover letters only. This does not affect job scoring.",
     )
 
-    c1, c2, c3 = st.columns([1, 1.2, 1])
+    _render_wizard_step_heading("3", "Save Profile Context")
+    if not has_unsaved_changes:
+        st.caption("Make a change before saving Profile Context.")
+
+    c1, c2, c3 = st.columns([1, 1.25, 1])
     with c1:
         back_clicked = st.button("Back", use_container_width=True, key="wizard_profile_back")
     with c2:
-        save_clicked = st.button("Save and Continue", type="primary", use_container_width=True, key="wizard_profile_save_continue")
+        save_clicked = st.button(
+            "Save and Continue",
+            type="primary",
+            use_container_width=True,
+            key="wizard_profile_save_continue",
+            disabled=not has_unsaved_changes,
+        )
     with c3:
         skip_clicked = st.button("Skip for Now", use_container_width=True, key="wizard_profile_skip")
 
