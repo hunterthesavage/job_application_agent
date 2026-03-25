@@ -130,9 +130,11 @@ Run these one at a time:
 ```bat
 py -3 -m venv .venv
 call .venv\Scripts\activate.bat
-py -3 -m pip install --upgrade pip
-py -3 -m pip install -r requirements.txt
-py -3 -m streamlit run app.py --server.headless true --server.port 8505
+python --version
+python -m pip install --upgrade pip
+python -m pip install pandas==3.0.1
+python -m pip install -r requirements.txt
+python -m streamlit run app.py --server.headless true --server.port 8505
 ```
 
 Then open:
