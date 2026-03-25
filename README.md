@@ -24,31 +24,10 @@ Current release: **1.0.0**
 - Local OpenAI key handling
 - Backup, health, and reset tooling
 
-## Repo structure
 
-- `app.py` - main Streamlit entrypoint
-- `views/` - Streamlit views
-- `services/` - business logic
-- `ui/` - shared UI helpers
-- `src/` - utility scripts
-- `tests/` - test suite
-- `config.py` - shared config and paths
+## macOS Setup
 
-## Local-only state
-
-These files and folders are local runtime state and should not be committed:
-
-- `data/job_agent.db`
-- `data/openai_api_key.txt`
-- `data/openai_api_key.meta.json`
-- `data/openai_api_state.json`
-- `backups/`
-- `logs/`
-- `.env`
-
-## Mac Setup
-
-### Recommended setup
+### Step 1) Install App
 
 Open the `Terminal` app and copy and paste this whole command:
 
@@ -63,9 +42,7 @@ What this does:
 - installs the required packages
 - prepares the app to launch locally
 
-This is the best Mac setup path because it avoids Finder security prompts on the installer.
-
-### Launch the app later on Mac
+### Step 2) Launch App 
 
 After setup is complete, either:
 
@@ -87,16 +64,10 @@ If that happens:
 2. Click `Open`
 3. Click `Open` again in the warning dialog
 
-If you do not want to deal with that, use the Terminal launcher instead:
-
-```bash
-cd ~/job_application_agent
-./run_app.sh
-```
 
 ## Windows Setup
 
-### Step 1: Get the app onto your Windows PC
+### Step 1) Install App on Windows PC
 
 Choose one of these options.
 
@@ -119,7 +90,7 @@ git clone https://github.com/hunterthesavage/job_application_agent.git
 cd job_application_agent
 ```
 
-### Easiest option
+### Step 2) Launch App on Windows PC
 
 1. Complete `Step 1` above so the app is on your PC.
 2. Make sure Python 3 is already installed.
@@ -129,7 +100,7 @@ cd job_application_agent
 
 ### Notes for Windows users
 
-- the Windows launchers are included for convenience
+- The Windows launchers are included for convenience
 - Windows support is still more lightly tested than Mac
 - if Python 3 is missing, install it first from [python.org](https://www.python.org/downloads/windows/)
 
@@ -146,11 +117,31 @@ pip install -r requirements.txt
 run_app_windows.bat
 ```
 
-
-
 ## First launch
 
 On first launch, the app should open to the Setup Wizard when there are no jobs and setup has not been completed.
+
+## Repo structure
+
+- `app.py` - main Streamlit entrypoint
+- `views/` - Streamlit views
+- `services/` - business logic
+- `ui/` - shared UI helpers
+- `src/` - utility scripts
+- `tests/` - test suite
+- `config.py` - shared config and paths
+
+## Local-only state
+
+These files and folders are local runtime state and should not be committed:
+
+- `data/job_agent.db`
+- `data/openai_api_key.txt`
+- `data/openai_api_key.meta.json`
+- `data/openai_api_state.json`
+- `backups/`
+- `logs/`
+- `.env`
 
 ## Public repo note
 
