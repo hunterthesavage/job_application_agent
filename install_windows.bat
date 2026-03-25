@@ -27,6 +27,8 @@ if %errorlevel%==0 (
     if errorlevel 1 (
         echo Python 3 is required but was not found.
         echo Install Python from https://www.python.org/downloads/windows/
+        echo On many Windows PCs, this Command Prompt command may also work:
+        echo winget install --id Python.Python.3.12 --source winget
         echo During install, enable "Add Python to PATH".
         pause
         exit /b 1

@@ -108,6 +108,10 @@ cd job_application_agent
 
 - Windows support is still more lightly tested than Mac
 - install Python 3 first from [python.org](https://www.python.org/downloads/windows/)
+- if you prefer Command Prompt, this may work on many Windows PCs:
+  ```bat
+  winget install --id Python.Python.3.12 --source winget
+  ```
 - during Python install, enable `Add Python to PATH`
 - the most reliable first-run path is the Command Prompt flow below
 - after setup, `run_app_windows.bat` is the easiest way to reopen the app
