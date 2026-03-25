@@ -7,7 +7,7 @@ Local-first Streamlit app for discovering, validating, reviewing, and managing e
 This project is currently **experimental**.
 
 It is usable and actively tested, but:
-- the workflow is still evolving
+- The workflow is still evolving
 - AI-assisted behaviors may change between releases
 - legacy Google Sheets tooling is optional and not part of the main local-first setup path
 
@@ -57,7 +57,7 @@ Choose one of these options.
 
 #### Option A: Download the ZIP file
 
-1. Open the GitHub page for this project.
+1. Open the GitHub page for this project (https://github.com/hunterthesavage/job_application_agent/).
 2. Click the green `Code` button.
 3. Click `Download ZIP`.
 4. Open the downloaded ZIP file.
