@@ -30,6 +30,8 @@ from services.location_matching import (
 )
 from services.matching_profiles import expand_title_terms
 from services.settings import load_settings
+from services.source_layer import get_source_layer_mode
+from services.source_layer_shadow import run_shadow_endpoint_selection
 from services.source_trust import enrich_job_payload
 from services.job_qualifier import qualify_job
 from src import discover_job_urls as discover_module
@@ -1089,14 +1091,30 @@ def build_search_preview() -> dict[str, Any]:
 
 def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]:
     settings = load_settings()
+    source_layer_mode = get_source_layer_mode()
     discovery_result = discover_module.discover_urls(settings, use_ai_expansion=use_ai_title_expansion)
 
     discovered_urls = discovery_result.get("all_urls", [])
     discover_module.save_output_urls(JOB_URLS_FILE, discovered_urls)
 
+    output_parts: list[str] = []
+    if discovery_result.get("output"):
+        output_parts.append(str(discovery_result.get("output", "") or ""))
+
+    if source_layer_mode == "shadow":
+        shadow_result = run_shadow_endpoint_selection(settings)
+        shadow_output = safe_text(shadow_result.get("output", ""))
+        if shadow_output:
+            output_parts.append(shadow_output)
+    elif source_layer_mode == "next_gen":
+        output_parts.append(
+            "Next-gen source layer mode requested, but live next-gen discovery is not enabled yet. "
+            "Falling back to legacy discovery for this run."
+        )
+
     return {
         "status": "completed",
-        "output": discovery_result.get("output", ""),
+        "output": "\n\n".join(part for part in output_parts if part).strip(),
         "job_urls_file": str(JOB_URLS_FILE),
         "url_count": len(discovered_urls),
         "urls": discovered_urls,
@@ -1111,6 +1129,7 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         ),
         "plan": discover_module.build_search_plan(settings),
         "drop_summary": discovery_result.get("drop_summary", {}),
+        "source_layer_mode": source_layer_mode,
     }
 
 
@@ -1317,6 +1336,7 @@ def discover_and_ingest(
     use_ai_scoring: bool = True,
 ) -> dict[str, Any]:
     total_started_at = time.perf_counter()
+    source_layer_mode = get_source_layer_mode()
 
     discovery_started_at = time.perf_counter()
     discovery_result = discover_job_links(use_ai_title_expansion=use_ai_title_expansion)
@@ -1333,6 +1353,7 @@ def discover_and_ingest(
         combined_output_parts.append(discovery_result["output"])
 
     discovery_summary_lines = [
+        f"Source layer mode: {source_layer_mode}",
         f"Discovery seconds: {discovery_seconds:.2f}",
         f"Discovered URLs before cap: {original_discovered_count}",
     ]

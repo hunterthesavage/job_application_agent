@@ -23,6 +23,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "openai_api_key_validated": "false",
     "openai_api_key_last_validated_at": "",
     "openai_api_key_validated_hash": "",
+    "source_layer_mode": "legacy",
 }
 
 
