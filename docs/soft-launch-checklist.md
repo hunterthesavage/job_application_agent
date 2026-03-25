@@ -1,6 +1,6 @@
 # Soft Launch Checklist
 
-Current estimate: **84% to soft launch**
+Current estimate: **89% to soft launch**
 
 Use this checklist to track launch readiness and avoid adding more features before the core experience is validated.
 
@@ -91,4 +91,3 @@ Expected:
 1. Complete the end-to-end release candidate pass from a true fresh clone
 2. Run one external friend test without hand-holding
 3. Fix only launch blockers, confusion points, or persistence issues
-

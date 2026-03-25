@@ -689,10 +689,6 @@ def _maybe_route_after_wizard_first_run(result: dict) -> None:
 
     if _wizard_first_run_has_results(result):
         st.session_state["top_nav_selection"] = "New Roles"
-        st.session_state["_post_wizard_run_message"] = {
-            "kind": "success",
-            "text": "Your first discovery run found jobs. Review them in New Roles.",
-        }
     else:
         st.session_state["top_nav_selection"] = "Pipeline"
         st.session_state["pipeline_subnav_selection"] = "Overview"
