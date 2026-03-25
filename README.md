@@ -80,13 +80,7 @@ Open Command Prompt and run:
 
 ```bat
 cd /d "%USERPROFILE%\Downloads"
-```
-
-```bat
 curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
-```
-
-```bat
 start /wait python-3.13.12-amd64.exe
 ```
 
@@ -104,73 +98,26 @@ Download the latest app ZIP:
 
 ```bat
 cd /d "%USERPROFILE%\Downloads"
-```
-
-```bat
 curl -L -o job_application_agent.zip https://github.com/hunterthesavage/job_application_agent/archive/refs/heads/main.zip
-```
-
-```bat
 tar -xf job_application_agent.zip
-```
-
-```bat
 cd /d "%USERPROFILE%\Downloads\job_application_agent-main"
-```
-
-### Step 3) Confirm you are in the right folder
-
-You should be in the folder that contains both `app.py` and `requirements.txt`.
-
-```bat
 dir app.py
-```
-
-```bat
 dir requirements.txt
 ```
 
-### Step 4) Create the virtual environment
+### Step 3) Create the virtual environment and install requirements
 
 Run:
 
 ```bat
 py -3 -m venv .venv
-```
-
-### Step 5) Activate the virtual environment
-
-Run:
-
-```bat
 call .venv\Scripts\activate.bat
-```
-
-### Step 6) Confirm the active Python
-
-Run:
-
-```bat
 python --version
-```
-
-### Step 7) Upgrade pip
-
-Run:
-
-```bat
 python -m pip install --upgrade pip
-```
-
-### Step 8) Install requirements
-
-Run:
-
-```bat
 python -m pip install -r requirements.txt
 ```
 
-### Step 9) Launch the app
+### Step 4) Launch the app
 
 Run:
 
