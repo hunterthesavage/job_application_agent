@@ -51,9 +51,32 @@ These files and folders are local runtime state and should not be committed:
 
 ## Mac Setup
 
+### Step 1: Get the app onto your Mac
+
+Choose one of these options.
+
+#### Option A: Download the ZIP file
+
+1. Open the GitHub page for this project.
+2. Click the green `Code` button.
+3. Click `Download ZIP`.
+4. Open the downloaded ZIP file.
+5. Open the unzipped `job_application_agent` folder.
+
+#### Option B: Clone it with Terminal
+
+1. Open the `Terminal` app.
+2. Copy and paste this block:
+
+```bash
+cd ~
+git clone https://github.com/hunterthesavage/job_application_agent.git
+cd job_application_agent
+```
+
 ### Easiest option
 
-1. Download or clone this repository to your Mac.
+1. Complete `Step 1` above so the app is on your Mac.
 2. Open the `job_application_agent` folder.
 3. Double-click `install_mac.command`.
 4. After setup finishes, double-click `run_app.command`.
@@ -81,16 +104,13 @@ If you prefer Terminal, make sure you are **inside the project folder** before r
 Copy and paste this whole block:
 
 ```bash
-cd ~
-git clone https://github.com/hunterthesavage/job_application_agent.git
-cd job_application_agent
-
 chmod +x install_mac.sh run_app.sh install_mac.command run_app.command
 ./install_mac.sh
 ```
 
 Important:
-- `cd job_application_agent` is required
+- `Step 1` must already be completed
+- `cd job_application_agent` is required if you used Terminal to download the app
 - if you stay in `~` instead of the project folder, the install files will not be found
 
 ### Launch later on Mac
@@ -109,9 +129,32 @@ source .venv/bin/activate
 
 ## Windows Setup
 
+### Step 1: Get the app onto your Windows PC
+
+Choose one of these options.
+
+#### Option A: Download the ZIP file
+
+1. Open the GitHub page for this project.
+2. Click the green `Code` button.
+3. Click `Download ZIP`.
+4. Open the downloaded ZIP file.
+5. Open the unzipped `job_application_agent` folder.
+
+#### Option B: Clone it with Terminal
+
+1. Open Command Prompt or PowerShell.
+2. Copy and paste this block:
+
+```bat
+cd %USERPROFILE%
+git clone https://github.com/hunterthesavage/job_application_agent.git
+cd job_application_agent
+```
+
 ### Easiest option
 
-1. Download or clone this repository to your Windows PC.
+1. Complete `Step 1` above so the app is on your PC.
 2. Make sure Python 3 is already installed.
 3. Open the `job_application_agent` folder.
 4. Double-click `install_windows.bat`.
@@ -128,6 +171,7 @@ source .venv/bin/activate
 If you prefer a terminal install, open Command Prompt or PowerShell, move into the project folder, and run:
 
 ```bat
+cd %USERPROFILE%\job_application_agent
 py -3 -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
