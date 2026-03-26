@@ -76,21 +76,17 @@ If that happens:
 
 ### Step 1) Install Python x64
 
-Open Command Prompt and run:
+Use this exact installer:
+
+- [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
+
+Or open Command Prompt and run:
 
 ```bat
 cd /d "%USERPROFILE%\Downloads"
 curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
 start /wait python-3.13.12-amd64.exe
 ```
-
-If you want to try `winget` first, this may work on some Windows PCs:
-
-```bat
-winget install --id Python.Python.3.12 --source winget
-```
-
-If `winget` installs Python ARM64 on your machine, use the x64 installer block above instead.
 
 In the installer:
 1. check `Add Python to PATH`
