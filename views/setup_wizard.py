@@ -531,6 +531,9 @@ def _render_openai_step() -> None:
     st.write(
         "Optional, but recommended. This powers AI title suggestions during setup, AI scoring, AI scrub, and cover letters."
     )
+    st.markdown("Create or manage your API key here: [OpenAI API keys](https://platform.openai.com/api-keys)")
+    st.markdown("Check billing or credits here: [OpenAI Billing](https://platform.openai.com/settings/organization/billing/overview)")
+    st.markdown("Reference: [Where do I find my OpenAI API key?](https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key)")
 
     details = get_openai_api_key_details()
     source_label_map = {
