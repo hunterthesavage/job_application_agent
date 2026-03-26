@@ -6,7 +6,7 @@ import streamlit as st
 from config import APP_NAME, APP_VERSION
 from services.settings import load_settings
 from services.status import get_system_status
-from services.ui_busy import app_is_busy
+from services.ui_busy import app_is_busy, current_busy_label, get_action
 from ui.navigation import initialize_nav_state, render_button_nav
 
 
@@ -133,20 +133,48 @@ def render_boot_loading_card() -> st.delta_generator.DeltaGenerator:
     return placeholder
 
 
-def render_first_discovery_loading_screen() -> None:
+def render_pipeline_loading_screen() -> None:
+    busy_label = str(current_busy_label() or "Working").strip()
+    is_first_discovery = bool(st.session_state.get("_wizard_first_discovery_loading", False))
+
+    title = "Searching all the corners of the internet for your best fits."
+    copy = "Building search queries, probing trusted sources, and lining up the strongest roles so your first results feel worth the wait."
+    kicker = "First Search"
+
+    if not is_first_discovery:
+        kicker = "Pipeline Run"
+        lowered = busy_label.lower()
+        if "rescore" in lowered:
+            title = "Rechecking your saved jobs for fresher signals."
+            copy = "Refreshing live pages, applying updated scoring, and tightening stale job data before the results come back into view."
+        elif "links only" in lowered:
+            title = "Searching for new job links without changing your saved roles."
+            copy = "Expanding the search surface, validating URLs, and collecting the strongest discovery leads for review."
+        elif "pasted" in lowered or "saved job links" in lowered:
+            title = "Validating the job links you handed over."
+            copy = "Checking each link, extracting the important details, and preparing the strongest matches for the app."
+        else:
+            title = "Searching all the corners of the internet for your best fits."
+            copy = "Running the full discovery flow, validating links, and stacking the best-fit roles where you can review them next."
+
     st.markdown(
         """
         <style>
-        @keyframes firstDiscoveryPulse {
+        @keyframes pipelineRunPulse {
             0% { transform: scale(0.88); opacity: 0.58; box-shadow: 0 0 0 0 rgba(96,165,250,0.40); }
             70% { transform: scale(1.03); opacity: 1; box-shadow: 0 0 0 20px rgba(96,165,250,0.0); }
             100% { transform: scale(0.94); opacity: 0.72; box-shadow: 0 0 0 0 rgba(96,165,250,0.0); }
         }
-        @keyframes firstDiscoverySweep {
+        @keyframes pipelineRunSweep {
             0% { transform: rotate(0deg); opacity: 0.55; }
             100% { transform: rotate(360deg); opacity: 1; }
         }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"""
         <div style="
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 24px;
@@ -176,7 +204,7 @@ def render_first_discovery_loading_screen() -> None:
                     height:24px;
                     border-radius:999px;
                     background: radial-gradient(circle, rgba(191,219,254,1) 0%, rgba(96,165,250,0.98) 65%, rgba(37,99,235,0.98) 100%);
-                    animation: firstDiscoveryPulse 1.8s ease-out infinite;
+                    animation: pipelineRunPulse 1.8s ease-out infinite;
                 "></div>
                 <div style="
                     position:absolute;
@@ -194,18 +222,18 @@ def render_first_discovery_loading_screen() -> None:
                     border-right: 2px solid transparent;
                     border-bottom: 2px solid transparent;
                     border-left: 2px solid transparent;
-                    animation: firstDiscoverySweep 1.15s linear infinite;
+                    animation: pipelineRunSweep 1.15s linear infinite;
                 "></div>
             </div>
             <div>
                 <div style="font-size:0.8rem;font-weight:800;letter-spacing:0.10em;text-transform:uppercase;color:rgba(147,197,253,0.92);margin-bottom:0.28rem;">
-                    First Search
+                    {kicker}
                 </div>
                 <div style="font-size:1.28rem;font-weight:820;color:rgba(255,255,255,0.97);margin-bottom:0.34rem;line-height:1.08;">
-                    Searching all the corners of the internet for your best fits.
+                    {title}
                 </div>
                 <div style="font-size:0.97rem;color:rgba(255,255,255,0.74);line-height:1.48;max-width:760px;">
-                    Building search queries, probing trusted sources, and lining up the strongest roles so your first results feel worth the wait.
+                    {copy}
                 </div>
             </div>
         </div>
@@ -267,14 +295,17 @@ def main() -> None:
     if boot_placeholder is not None:
         boot_placeholder.empty()
 
-    render_hero()
+    pipeline_action = get_action("pipeline")
+    show_pipeline_loading = bool(pipeline_action) and app_is_busy()
+
+    render_hero(show_busy_banner=not show_pipeline_loading)
 
     if should_show_setup_wizard():
         render_setup_wizard()
         return
 
-    if st.session_state.get("_wizard_first_discovery_loading", False) and app_is_busy():
-        render_first_discovery_loading_screen()
+    if show_pipeline_loading:
+        render_pipeline_loading_screen()
         process_pipeline_action_cycle()
         return
 

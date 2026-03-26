@@ -712,67 +712,66 @@ def _process_pending_action_before_render() -> None:
         payload = action.get("payload", {})
         label = action.get("label", "Working")
 
-        with st.spinner(f"{label}..."):
-            if action_type == "discover_and_ingest":
-                result = discover_and_ingest(
-                    use_ai_title_expansion=bool(payload.get("use_ai_title_expansion", True)),
+        if action_type == "discover_and_ingest":
+            result = discover_and_ingest(
+                use_ai_title_expansion=bool(payload.get("use_ai_title_expansion", True)),
+                use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
+            )
+            st.session_state["pipeline_last_result"] = result
+            _maybe_route_after_wizard_first_run(result)
+            _persist_pipeline_output(result)
+            level, message = _build_discover_and_ingest_flash(result)
+            _set_flash(level, message)
+            st.cache_data.clear()
+
+        elif action_type == "ingest_pasted":
+            result = ingest_pasted_urls(
+                payload.get("manual_urls", ""),
+                use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
+            )
+            st.session_state["pipeline_last_result"] = result
+            _persist_pipeline_output(result)
+            level, message = _build_ingest_flash(result, "Pasted job link import")
+            _set_flash(level, message)
+            st.cache_data.clear()
+
+        elif action_type == "ingest_saved":
+            if not _job_urls_file_exists():
+                st.session_state["pipeline_last_result"] = {
+                    "status": "skipped",
+                    "output": f"No saved job link file found yet at: {JOB_URLS_FILE}",
+                }
+                _set_flash("warning", "No saved job links file exists yet. Run discovery first or paste job links.")
+            else:
+                result = ingest_urls_from_file(
+                    JOB_URLS_FILE,
                     use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
                 )
                 st.session_state["pipeline_last_result"] = result
-                _maybe_route_after_wizard_first_run(result)
                 _persist_pipeline_output(result)
-                level, message = _build_discover_and_ingest_flash(result)
+                level, message = _build_ingest_flash(result, "Saved job link import")
                 _set_flash(level, message)
                 st.cache_data.clear()
 
-            elif action_type == "ingest_pasted":
-                result = ingest_pasted_urls(
-                    payload.get("manual_urls", ""),
-                    use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
-                )
-                st.session_state["pipeline_last_result"] = result
-                _persist_pipeline_output(result)
-                level, message = _build_ingest_flash(result, "Pasted job link import")
-                _set_flash(level, message)
-                st.cache_data.clear()
+        elif action_type == "discover_only":
+            result = discover_job_links(
+                use_ai_title_expansion=bool(payload.get("use_ai_title_expansion", True)),
+            )
+            st.session_state["pipeline_last_result"] = result
+            _persist_pipeline_output(result)
+            level, message = _build_discover_only_flash(result)
+            _set_flash(level, message)
 
-            elif action_type == "ingest_saved":
-                if not _job_urls_file_exists():
-                    st.session_state["pipeline_last_result"] = {
-                        "status": "skipped",
-                        "output": f"No saved job link file found yet at: {JOB_URLS_FILE}",
-                    }
-                    _set_flash("warning", "No saved job links file exists yet. Run discovery first or paste job links.")
-                else:
-                    result = ingest_urls_from_file(
-                        JOB_URLS_FILE,
-                        use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
-                    )
-                    st.session_state["pipeline_last_result"] = result
-                    _persist_pipeline_output(result)
-                    level, message = _build_ingest_flash(result, "Saved job link import")
-                    _set_flash(level, message)
-                    st.cache_data.clear()
-
-            elif action_type == "discover_only":
-                result = discover_job_links(
-                    use_ai_title_expansion=bool(payload.get("use_ai_title_expansion", True)),
-                )
-                st.session_state["pipeline_last_result"] = result
-                _persist_pipeline_output(result)
-                level, message = _build_discover_only_flash(result)
-                _set_flash(level, message)
-
-            elif action_type == "rescore_existing_jobs":
-                result = rescore_existing_jobs(
-                    limit=int(payload.get("limit", 0) or 0),
-                    stale_days=int(payload.get("stale_days", 0) or 0),
-                )
-                st.session_state["pipeline_last_result"] = result
-                _persist_pipeline_output(result)
-                level, message = _build_rescore_flash(result)
-                _set_flash(level, message)
-                st.cache_data.clear()
+        elif action_type == "rescore_existing_jobs":
+            result = rescore_existing_jobs(
+                limit=int(payload.get("limit", 0) or 0),
+                stale_days=int(payload.get("stale_days", 0) or 0),
+            )
+            st.session_state["pipeline_last_result"] = result
+            _persist_pipeline_output(result)
+            level, message = _build_rescore_flash(result)
+            _set_flash(level, message)
+            st.cache_data.clear()
 
     except Exception as exc:
         _set_flash("error", f"That action could not finish: {exc}")

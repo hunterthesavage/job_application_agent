@@ -93,11 +93,11 @@ def _render_ai_button_chip() -> None:
     )
 
 
-def render_hero() -> None:
+def render_hero(*, show_busy_banner: bool = True) -> None:
     badge_text, badge_class = _get_openai_badge()
 
     busy_text = ""
-    if app_is_busy() and current_busy_label():
+    if show_busy_banner and app_is_busy() and current_busy_label():
         busy_text = f'<div class="app-busy-banner">Working: {html.escape(current_busy_label())}</div>'
 
     st.markdown(
