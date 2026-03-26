@@ -82,14 +82,13 @@ curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/py
 start /wait python-3.13.12-amd64.exe
 ```
 
-  NOTE: The above may install the wrong version needed. If so, use this exact installer instead:
+	NOTE: The above may install the wrong version needed. If so, use this exact installer instead:
+		- [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
 
-  - [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
-
-  In the installer:
-  1. check `Add Python to PATH`
-  2. use the default install options
-  Or open Command Prompt and run:
+	In the installer:
+	1. check `Add Python to PATH`
+	2. use the default install options
+	Or open Command Prompt and run:
 
 
 Then:
