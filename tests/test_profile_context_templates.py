@@ -29,13 +29,13 @@ def test_generate_profile_context_from_resume_parses_openai_json(monkeypatch):
     monkeypatch.setattr(templates, "get_effective_openai_api_key", lambda: "sk-test")
 
     class _Response:
-        def __enter__(self):
-            return self
+        status_code = 200
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+        def raise_for_status(self):
+            return None
 
-        def read(self):
+        @property
+        def text(self):
             payload = {
                 "choices": [
                     {
@@ -51,9 +51,9 @@ def test_generate_profile_context_from_resume_parses_openai_json(monkeypatch):
                     }
                 ]
             }
-            return json.dumps(payload).encode("utf-8")
+            return json.dumps(payload)
 
-    monkeypatch.setattr(templates.urllib.request, "urlopen", lambda request, timeout=60: _Response())
+    monkeypatch.setattr(templates.requests, "post", lambda *args, **kwargs: _Response())
 
     result = templates.generate_profile_context_from_resume("Led enterprise transformation.")
 

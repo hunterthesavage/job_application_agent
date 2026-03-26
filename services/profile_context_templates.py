@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
-import urllib.request
+
+import requests
 
 from services.openai_key import get_effective_openai_api_key
 
@@ -79,19 +79,20 @@ def generate_profile_context_from_resume(resume_text: str) -> dict[str, object]:
         "temperature": 0.3,
     }
 
-    request = urllib.request.Request(
-        OPENAI_CHAT_COMPLETIONS_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
+    headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    }
 
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            raw = response.read().decode("utf-8")
+        response = requests.post(
+            OPENAI_CHAT_COMPLETIONS_URL,
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        raw = response.text
         data = json.loads(raw)
         content = (
             data.get("choices", [{}])[0]
@@ -122,14 +123,22 @@ def generate_profile_context_from_resume(resume_text: str) -> dict[str, object]:
             "model": OPENAI_PROFILE_TEMPLATE_MODEL,
         }
 
-    except urllib.error.HTTPError as exc:
+    except requests.HTTPError as exc:
         try:
-            detail = exc.read().decode("utf-8")
+            detail = exc.response.text
         except Exception:
             detail = str(exc)
         return {
             "ok": False,
-            "error": f"OpenAI request failed ({exc.code}). {detail}",
+            "error": f"OpenAI request failed ({getattr(exc.response, 'status_code', 'unknown')}). {detail}",
+            "profile_summary": "",
+            "strengths_to_highlight": "",
+            "cover_letter_voice": "",
+        }
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "error": f"OpenAI request failed. {exc}",
             "profile_summary": "",
             "strengths_to_highlight": "",
             "cover_letter_voice": "",
