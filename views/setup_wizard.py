@@ -641,7 +641,7 @@ def _render_ai_review_step() -> None:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button(
-                    "Accept Title Suggestions and Find Jobs",
+                    "Accept Titles and Find Jobs",
                     type="primary",
                     use_container_width=True,
                     key="wizard_accept_titles",
