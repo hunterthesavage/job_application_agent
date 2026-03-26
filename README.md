@@ -76,7 +76,13 @@ If that happens:
 
 ### Step 1) Install Python x64
 
-Use this exact installer:
+```bat
+cd /d "%USERPROFILE%\Downloads"
+curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
+start /wait python-3.13.12-amd64.exe
+```
+
+NOTE: The above may install the wrong version needed. If so, use this exact installer instead:
 
 - [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
 
@@ -85,11 +91,6 @@ In the installer:
 2. use the default install options
 Or open Command Prompt and run:
 
-```bat
-cd /d "%USERPROFILE%\Downloads"
-curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
-start /wait python-3.13.12-amd64.exe
-```
 
 Then:
 1. close Command Prompt
