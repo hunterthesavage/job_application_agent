@@ -519,10 +519,6 @@ def _render_profile_step() -> None:
                 "cover_letter_voice": str(cover_letter_voice or "").strip(),
             }
         )
-        st.session_state["wizard_resume_text"] = str(resume_text or "").strip()
-        st.session_state["wizard_profile_summary"] = str(profile_summary or "").strip()
-        st.session_state["wizard_strengths_to_highlight"] = str(strengths_to_highlight or "").strip()
-        st.session_state["wizard_cover_letter_voice"] = str(cover_letter_voice or "").strip()
         _go_next()
         st.rerun()
     if skip_clicked:
