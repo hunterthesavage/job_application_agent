@@ -5,7 +5,6 @@ import pandas as pd
 import streamlit as st
 
 from config import APP_NAME, APP_VERSION
-from services.cover_letters import generate_cover_letter_for_job_id
 from services.data import (
     clean_display_title,
     get_page_size,
@@ -14,9 +13,8 @@ from services.data import (
 )
 from services.openai_key import get_effective_openai_api_key
 from services.settings import load_settings
-from services.sqlite_actions import mark_job_as_applied, remove_job
 from services.status import get_system_status
-from services.ui_busy import app_is_busy, current_busy_label, start_busy, stop_busy
+from services.ui_busy import app_is_busy, current_busy_label, queue_action
 
 
 PAGE_SIZE_OPTIONS = [5, 10, 20, 500]
@@ -442,19 +440,13 @@ def render_job_card(
                 disabled=app_is_busy() or (not cover_letter_enabled),
                 help=cover_letter_help,
             ):
-                try:
-                    start_busy("Generating cover letter")
-                    with st.spinner("Creating cover letter file..."):
-                        result = generate_cover_letter_for_job_id(job_id)
-                    st.success("Cover letter created.")
-                    st.text(result["output_path"])
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as exc:
-                    st.error("Failed to generate cover letter.")
-                    st.text(str(exc))
-                finally:
-                    stop_busy()
+                queue_action(
+                    "new_roles",
+                    "generate_cover_letter",
+                    payload={"job_id": int(job_id)},
+                    label="Generating Cover Letter",
+                )
+                st.rerun()
 
         with btn2:
             apply_disabled = not bool(job_url)
@@ -481,38 +473,38 @@ def render_job_card(
                 type="secondary",
                 disabled=app_is_busy() or (not st.session_state[apply_ready_key]),
             ):
-                try:
-                    start_busy("Marking job as applied")
-                    with st.spinner("Marking job as applied..."):
-                        mark_job_as_applied(job_id)
-                    st.session_state[apply_ready_key] = False
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as exc:
-                    st.error("Failed to move job.")
-                    st.text(str(exc))
-                finally:
-                    stop_busy()
+                queue_action(
+                    "new_roles",
+                    "mark_applied",
+                    payload={"job_id": int(job_id), "apply_ready_key": apply_ready_key},
+                    label="Marking Job as Applied",
+                )
+                st.rerun()
 
         with btn4:
+            confirm_remove_key = f"confirm_remove_job_{job_id}"
+            remove_label = "Confirm Remove" if st.session_state.get(confirm_remove_key, False) else "Remove Job"
             if st.button(
-                "Remove Job",
+                remove_label,
                 key=f"remove_job_{job_id}",
                 use_container_width=True,
                 type="secondary",
                 disabled=app_is_busy(),
             ):
-                try:
-                    start_busy("Removing job")
-                    with st.spinner("Removing job..."):
-                        remove_job(job_id)
-                    st.session_state[apply_ready_key] = False
-                    st.cache_data.clear()
+                if not st.session_state.get(confirm_remove_key, False):
+                    st.session_state[confirm_remove_key] = True
                     st.rerun()
-                except Exception as exc:
-                    st.error("Failed to remove job.")
-                    st.text(str(exc))
-                finally:
-                    stop_busy()
+
+                st.session_state.pop(confirm_remove_key, None)
+                queue_action(
+                    "new_roles",
+                    "remove_job",
+                    payload={"job_id": int(job_id), "apply_ready_key": apply_ready_key},
+                    label="Removing Job",
+                )
+                st.rerun()
+
+            if st.session_state.get(confirm_remove_key, False):
+                st.caption("Click Confirm Remove to permanently remove this job from New Roles.")
 
     st.markdown("</div>", unsafe_allow_html=True)

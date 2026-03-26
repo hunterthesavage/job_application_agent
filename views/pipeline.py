@@ -1375,7 +1375,23 @@ def _render_run_inputs() -> None:
 
             st.caption("Minimum Compensation is not shown here yet because it is not currently a primary live run control in this workflow.")
 
-        save_run_inputs = st.form_submit_button("Save Run Inputs", type="primary", use_container_width=False)
+        has_run_input_changes = any(
+            [
+                str(target_titles) != str(settings.get("target_titles", "")),
+                str(preferred_locations) != str(settings.get("preferred_locations", "")),
+                serialize_preferred_job_levels(preferred_job_levels) != str(settings.get("preferred_job_levels", "")),
+                str(include_keywords) != str(settings.get("include_keywords", "")),
+                str(exclude_keywords) != str(settings.get("exclude_keywords", "")),
+                ("true" if remote_only else "false") != str(settings.get("remote_only", "true")),
+            ]
+        )
+
+        save_run_inputs = st.form_submit_button(
+            "Save Run Inputs",
+            type="primary",
+            use_container_width=False,
+            disabled=not has_run_input_changes,
+        )
 
         if save_run_inputs:
             save_settings(
@@ -1448,6 +1464,8 @@ def _render_action_deck_manual_only() -> None:
     busy = app_is_busy()
     manual_urls = st.session_state.get("pipeline_manual_urls", "")
     use_ai_in_run = bool(st.session_state.get("pipeline_use_ai_in_run", True))
+    has_manual_urls = bool(str(manual_urls or "").strip())
+    saved_job_links_exist = _job_urls_file_exists()
 
     top_left, top_right = st.columns([1.15, 1])
 
@@ -1460,7 +1478,13 @@ def _render_action_deck_manual_only() -> None:
         )
 
         _render_ai_button_chip()
-        if st.button("Add Pasted Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_pasted"):
+        if st.button(
+            "Add Pasted Job Links",
+            use_container_width=True,
+            disabled=busy or (not has_manual_urls),
+            key="pipeline_ingest_pasted",
+            help="Paste one or more job links first." if not has_manual_urls else None,
+        ):
             st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
             queue_action(
                 "pipeline",
@@ -1480,7 +1504,17 @@ def _render_action_deck_manual_only() -> None:
         )
 
         _render_ai_button_chip()
-        if st.button("Add Saved Job Links", use_container_width=True, disabled=busy, key="pipeline_ingest_saved"):
+        if st.button(
+            "Add Saved Job Links",
+            use_container_width=True,
+            disabled=busy or (not saved_job_links_exist),
+            key="pipeline_ingest_saved",
+            help=(
+                "Saved job links file found and ready to import."
+                if saved_job_links_exist
+                else "No saved job links file exists yet. Run discovery first or paste job links."
+            ),
+        ):
             st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
             queue_action(
                 "pipeline",

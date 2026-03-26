@@ -38,20 +38,33 @@ NEW_ROLES_SORT_OPTIONS = [
 ]
 
 
-def _set_flash(level: str, message: str) -> None:
+def _set_flash(level: str, message: str, surface: str = "inline") -> None:
     st.session_state["new_roles_flash_level"] = level
     st.session_state["new_roles_flash_message"] = message
+    st.session_state["new_roles_flash_surface"] = surface
 
 
 def _render_flash() -> None:
     message = st.session_state.pop("new_roles_flash_message", "")
     level = st.session_state.pop("new_roles_flash_level", "success")
+    surface = st.session_state.pop("new_roles_flash_surface", "inline")
 
     if not message:
         return
 
+    if surface == "toast":
+        icon = "✅"
+        if level == "error":
+            icon = "❌"
+        elif level == "warning":
+            icon = "⚠️"
+        st.toast(message, icon=icon)
+        return
+
     if level == "error":
         st.error(message)
+    elif level == "warning":
+        st.warning(message)
     else:
         st.success(message)
 
@@ -76,29 +89,31 @@ def _process_pending_action_before_render() -> None:
     try:
         action_type = action.get("type")
         payload = action.get("payload", {})
-        label = action.get("label", "Working")
 
-        with st.spinner(f"{label}..."):
-            if action_type == "generate_cover_letter":
-                result = generate_cover_letter_for_job_id(int(payload["job_id"]))
-                _set_flash("success", f"✓ Cover letter created: {result['output_path']}")
-                st.cache_data.clear()
+        if action_type == "generate_cover_letter":
+            result = generate_cover_letter_for_job_id(int(payload["job_id"]))
+            _set_flash(
+                "success",
+                f"Cover letter created and saved to: {result['output_path']}",
+                surface="toast",
+            )
+            st.cache_data.clear()
 
-            elif action_type == "mark_applied":
-                mark_job_as_applied(int(payload["job_id"]))
-                apply_ready_key = payload.get("apply_ready_key", "")
-                if apply_ready_key:
-                    st.session_state[apply_ready_key] = False
-                _set_flash("success", "✓ Job marked as applied")
-                st.cache_data.clear()
+        elif action_type == "mark_applied":
+            mark_job_as_applied(int(payload["job_id"]))
+            apply_ready_key = payload.get("apply_ready_key", "")
+            if apply_ready_key:
+                st.session_state[apply_ready_key] = False
+            _set_flash("success", "✓ Job marked as applied")
+            st.cache_data.clear()
 
-            elif action_type == "remove_job":
-                remove_job(int(payload["job_id"]))
-                apply_ready_key = payload.get("apply_ready_key", "")
-                if apply_ready_key:
-                    st.session_state[apply_ready_key] = False
-                _set_flash("success", "✓ Job removed")
-                st.cache_data.clear()
+        elif action_type == "remove_job":
+            remove_job(int(payload["job_id"]))
+            apply_ready_key = payload.get("apply_ready_key", "")
+            if apply_ready_key:
+                st.session_state[apply_ready_key] = False
+            _set_flash("success", "✓ Job removed")
+            st.cache_data.clear()
 
     except Exception as exc:
         _set_flash("error", f"Action failed: {exc}")
@@ -113,6 +128,11 @@ def _advance_pending_action_after_render() -> None:
     if action and action.get("phase") == "prepare":
         move_action_to_execute("new_roles")
         st.rerun()
+
+
+def process_new_roles_action_cycle() -> None:
+    _process_pending_action_before_render()
+    _advance_pending_action_after_render()
 
 
 def _parse_compensation_value(value) -> float:

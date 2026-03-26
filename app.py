@@ -133,7 +133,7 @@ def render_boot_loading_card() -> st.delta_generator.DeltaGenerator:
     return placeholder
 
 
-def render_pipeline_loading_screen() -> None:
+def render_action_loading_screen(scope: str) -> None:
     busy_label = str(current_busy_label() or "Working").strip()
     is_first_discovery = bool(st.session_state.get("_wizard_first_discovery_loading", False))
 
@@ -141,7 +141,22 @@ def render_pipeline_loading_screen() -> None:
     copy = "Building search queries, probing trusted sources, and lining up the strongest roles so your first results feel worth the wait."
     kicker = "First Search"
 
-    if not is_first_discovery:
+    if scope == "new_roles":
+        kicker = "New Roles Action"
+        lowered = busy_label.lower()
+        if "cover letter" in lowered:
+            title = "Writing a tailored cover letter for this role."
+            copy = "Combining your profile context, the job details, and your saved output folder so the finished draft lands where you expect it."
+        elif "applied" in lowered:
+            title = "Moving this role into your applied workflow."
+            copy = "Updating the workflow state, refreshing the lists, and getting the role out of New Roles cleanly."
+        elif "remove" in lowered:
+            title = "Removing this role from your review list."
+            copy = "Cleaning up the record so your New Roles view stays focused on the jobs you still care about."
+        else:
+            title = "Finishing your requested New Roles action."
+            copy = "Updating the role, saving the result, and refreshing the app state before you continue."
+    elif not is_first_discovery:
         kicker = "Pipeline Run"
         lowered = busy_label.lower()
         if "rescore" in lowered:
@@ -284,7 +299,7 @@ def main() -> None:
     from ui.components import render_hero
     from ui.styles import inject_custom_css
     from views.applied_roles import render_applied_roles
-    from views.new_roles import render_new_roles
+    from views.new_roles import process_new_roles_action_cycle, render_new_roles
     from views.pipeline import process_pipeline_action_cycle, render_pipeline
     from views.settings import render_settings
     from views.setup_wizard import render_setup_wizard
@@ -296,17 +311,24 @@ def main() -> None:
         boot_placeholder.empty()
 
     pipeline_action = get_action("pipeline")
+    new_roles_action = get_action("new_roles")
     show_pipeline_loading = bool(pipeline_action) and app_is_busy()
+    show_new_roles_loading = bool(new_roles_action) and app_is_busy()
 
-    render_hero(show_busy_banner=not show_pipeline_loading)
+    render_hero(show_busy_banner=not (show_pipeline_loading or show_new_roles_loading))
 
     if should_show_setup_wizard():
         render_setup_wizard()
         return
 
     if show_pipeline_loading:
-        render_pipeline_loading_screen()
+        render_action_loading_screen("pipeline")
         process_pipeline_action_cycle()
+        return
+
+    if show_new_roles_loading:
+        render_action_loading_screen("new_roles")
+        process_new_roles_action_cycle()
         return
 
     initialize_top_nav(default_value="New Roles")

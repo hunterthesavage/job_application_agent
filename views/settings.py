@@ -7,7 +7,7 @@ import streamlit as st
 
 from config import APP_NAME, APP_VERSION, BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
 from services.backlog import get_backlog_summary
-from services.backup import backup_database, restore_latest_backup
+from services.backup import backup_database, get_latest_backup, restore_latest_backup
 from services.health import run_health_check
 from services.job_levels import (
     JOB_LEVEL_OPTIONS,
@@ -558,6 +558,54 @@ def _render_reset_notice() -> None:
         st.success(f"App reset complete. Removed {removed_count} local item(s). Setup Wizard is ready again.")
 
 
+def _render_maintenance_notice() -> None:
+    notice = st.session_state.pop("settings_maintenance_notice", None)
+    if not isinstance(notice, dict):
+        return
+
+    kind = str(notice.get("kind", "info") or "info").strip().lower()
+    message = str(notice.get("message", "") or "").strip()
+    details = str(notice.get("details", "") or "").strip()
+
+    if not message:
+        return
+
+    styles = {
+        "success": ("rgba(34,197,94,0.16)", "rgba(134,239,172,0.95)", "rgba(34,197,94,0.34)"),
+        "warning": ("rgba(250,204,21,0.14)", "rgba(254,240,138,0.95)", "rgba(250,204,21,0.30)"),
+        "error": ("rgba(248,113,113,0.16)", "rgba(254,202,202,0.96)", "rgba(248,113,113,0.32)"),
+        "info": ("rgba(96,165,250,0.14)", "rgba(191,219,254,0.96)", "rgba(96,165,250,0.30)"),
+    }
+    background, text_color, border = styles.get(kind, styles["info"])
+    details_markup = f'<div style="margin-top:0.35rem;font-size:0.92rem;opacity:0.9;">{html.escape(details)}</div>' if details else ""
+    st.markdown(
+        f"""
+        <div id="settings-maintenance-notice" style="
+            margin-bottom: 0.8rem;
+            border-radius: 16px;
+            border: 1px solid {border};
+            background: {background};
+            color: {text_color};
+            padding: 0.85rem 1rem;
+        ">
+            <div style="font-weight:700;">{html.escape(message)}</div>
+            {details_markup}
+        </div>
+        <script>
+            setTimeout(function() {{
+                const node = window.parent.document.getElementById("settings-maintenance-notice");
+                if (node) {{
+                    node.style.transition = "opacity 0.35s ease";
+                    node.style.opacity = "0";
+                    setTimeout(function() {{ node.remove(); }}, 350);
+                }}
+            }}, 4500);
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _render_status_overview() -> None:
     status = get_system_status()
 
@@ -583,23 +631,39 @@ def _render_status_overview() -> None:
     st.caption("Run this when you want to confirm the local install is healthy before sharing it or troubleshooting it.")
 
     st.markdown("### Backup and Maintenance")
+    st.caption("Backups and restores change local app data only. Create Backup makes a timestamped copy. Restore Latest Backup replaces the current local database with the newest saved backup.")
+    _render_maintenance_notice()
     b1, b2, b3 = st.columns(3)
+    latest_backup = get_latest_backup()
 
     with b1:
-        if st.button("Create Backup", use_container_width=True, type="secondary"):
+        if st.button(
+            "Create Backup",
+            use_container_width=True,
+            type="secondary",
+            help="Create a timestamped local backup of the current app database.",
+        ):
             try:
                 with st.spinner("Creating backup..."):
                     backup_path = backup_database()
 
-                st.success("Backup created.")
-                st.text(str(backup_path))
+                st.session_state["settings_maintenance_notice"] = {
+                    "kind": "success",
+                    "message": "Backup created.",
+                    "details": str(backup_path),
+                }
                 st.rerun()
             except Exception as exc:
                 st.error("Backup failed.")
                 st.text(str(exc))
 
     with b2:
-        if st.button("Run Health Check", use_container_width=True, type="secondary"):
+        if st.button(
+            "Run Health Check",
+            use_container_width=True,
+            type="secondary",
+            help="Run a local diagnostic sweep across the database, backups, key status, and cover letter output path.",
+        ):
             with st.spinner("Running health check..."):
                 result = run_health_check()
 
@@ -607,18 +671,41 @@ def _render_status_overview() -> None:
             st.rerun()
 
     with b3:
-        if st.button("Restore Latest Backup", use_container_width=True, type="secondary"):
+        restore_confirmed = bool(st.session_state.get("settings_confirm_restore_latest_backup", False))
+        restore_label = "Confirm Restore" if restore_confirmed else "Restore Latest Backup"
+        if st.button(
+            restore_label,
+            use_container_width=True,
+            type="secondary",
+            disabled=latest_backup is None,
+            help=(
+                "Replace the current local database with the latest backup."
+                if latest_backup is not None
+                else "No backup exists yet, so there is nothing to restore."
+            ),
+        ):
+            if not restore_confirmed:
+                st.session_state["settings_confirm_restore_latest_backup"] = True
+                st.rerun()
+
             try:
                 with st.spinner("Restoring latest backup..."):
                     restored_from = restore_latest_backup()
 
-                st.success("Latest backup restored.")
-                st.text(str(restored_from))
+                st.session_state["settings_maintenance_notice"] = {
+                    "kind": "success",
+                    "message": "Latest backup restored.",
+                    "details": str(restored_from),
+                }
                 st.cache_data.clear()
+                st.session_state.pop("settings_confirm_restore_latest_backup", None)
                 st.rerun()
             except Exception as exc:
                 st.error("Restore failed.")
                 st.text(str(exc))
+                st.session_state.pop("settings_confirm_restore_latest_backup", None)
+        if restore_confirmed and latest_backup is not None:
+            st.caption("Click Confirm Restore to replace the current local database with the latest backup.")
 
     last_health_check_result = st.session_state.get("settings_last_health_check_result")
     if isinstance(last_health_check_result, dict):
@@ -785,76 +872,104 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
         else:
             st.success(saved_message)
 
-    with st.form("settings_configuration_form"):
-        st.markdown("---")
-        st.markdown("### Page Defaults")
+    st.markdown("---")
+    st.markdown("### Page Defaults")
 
-        d1, d2, d3 = st.columns(3)
+    current_fit = str(settings.get("default_min_fit_score", "75"))
+    if current_fit not in FIT_OPTIONS:
+        current_fit = "75"
 
-        current_fit = str(settings.get("default_min_fit_score", "75"))
-        if current_fit not in FIT_OPTIONS:
-            current_fit = "75"
+    current_page_size = str(settings.get("default_jobs_per_page", "10"))
+    if current_page_size not in PAGE_SIZE_OPTIONS:
+        current_page_size = "10"
 
-        current_page_size = str(settings.get("default_jobs_per_page", "10"))
-        if current_page_size not in PAGE_SIZE_OPTIONS:
-            current_page_size = "10"
+    current_new_roles_sort = str(settings.get("default_new_roles_sort", "Newest First"))
+    if current_new_roles_sort not in NEW_ROLES_SORT_OPTIONS:
+        current_new_roles_sort = "Newest First"
 
-        with d1:
-            default_min_fit_score = st.selectbox(
-                "Default Minimum Fit Score",
-                FIT_OPTIONS,
-                index=FIT_OPTIONS.index(current_fit),
-            )
+    saved_levels = parse_preferred_job_levels(settings.get("preferred_job_levels", ""))
 
-        current_new_roles_sort = str(settings.get("default_new_roles_sort", "Newest First"))
-        if current_new_roles_sort not in NEW_ROLES_SORT_OPTIONS:
-            current_new_roles_sort = "Newest First"
+    if "settings_default_min_fit_score_value" not in st.session_state:
+        st.session_state["settings_default_min_fit_score_value"] = current_fit
+    if "settings_default_jobs_per_page_value" not in st.session_state:
+        st.session_state["settings_default_jobs_per_page_value"] = current_page_size
+    if "settings_default_new_roles_sort_value" not in st.session_state:
+        st.session_state["settings_default_new_roles_sort_value"] = current_new_roles_sort
+    if "settings_preferred_job_levels_value" not in st.session_state:
+        st.session_state["settings_preferred_job_levels_value"] = saved_levels
 
-        with d2:
-            default_jobs_per_page = st.selectbox(
-                "Default Jobs Per Page",
-                PAGE_SIZE_OPTIONS,
-                index=PAGE_SIZE_OPTIONS.index(current_page_size),
-            )
+    d1, d2, d3 = st.columns(3)
 
-        with d3:
-            default_new_roles_sort = st.selectbox(
-                "Default New Roles Sort",
-                NEW_ROLES_SORT_OPTIONS,
-                index=NEW_ROLES_SORT_OPTIONS.index(current_new_roles_sort),
-                help="Controls the default sort used when you open New Roles.",
-            )
-
-        st.markdown("---")
-        st.markdown("### AI Scoring Preferences")
-
-        preferred_job_levels = st.multiselect(
-            "Preferred Job Levels",
-            options=JOB_LEVEL_OPTIONS,
-            default=parse_preferred_job_levels(settings.get("preferred_job_levels", "")),
-            help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
+    with d1:
+        st.selectbox(
+            "Default Minimum Fit Score",
+            FIT_OPTIONS,
+            key="settings_default_min_fit_score_value",
         )
 
-        save_main = st.form_submit_button("Save Configuration", type="primary", use_container_width=False)
+    with d2:
+        st.selectbox(
+            "Default Jobs Per Page",
+            PAGE_SIZE_OPTIONS,
+            key="settings_default_jobs_per_page_value",
+        )
 
-        if save_main:
-            with st.spinner("Saving configuration..."):
-                save_settings(
-                    {
-                        "default_min_fit_score": str(default_min_fit_score),
-                        "default_jobs_per_page": str(default_jobs_per_page),
-                        "default_new_roles_sort": str(default_new_roles_sort),
-                        "preferred_job_levels": serialize_preferred_job_levels(preferred_job_levels),
-                    }
-                )
+    with d3:
+        st.selectbox(
+            "Default New Roles Sort",
+            NEW_ROLES_SORT_OPTIONS,
+            key="settings_default_new_roles_sort_value",
+            help="Controls the default sort used when you open New Roles.",
+        )
 
-                apply_configuration_defaults_to_session(
-                    default_min_fit_score=str(default_min_fit_score),
-                    default_jobs_per_page=str(default_jobs_per_page),
-                )
+    st.markdown("---")
+    st.markdown("### AI Scoring Preferences")
 
-            st.success("Configuration saved.")
-            st.rerun()
+    st.multiselect(
+        "Preferred Job Levels",
+        options=JOB_LEVEL_OPTIONS,
+        key="settings_preferred_job_levels_value",
+        help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
+    )
+
+    has_configuration_changes = any(
+        [
+            str(st.session_state.get("settings_default_min_fit_score_value", current_fit)) != str(settings.get("default_min_fit_score", "Any")),
+            str(st.session_state.get("settings_default_jobs_per_page_value", current_page_size)) != str(settings.get("default_jobs_per_page", "10")),
+            str(st.session_state.get("settings_default_new_roles_sort_value", current_new_roles_sort)) != str(settings.get("default_new_roles_sort", "Newest First")),
+            serialize_preferred_job_levels(st.session_state.get("settings_preferred_job_levels_value", saved_levels)) != str(settings.get("preferred_job_levels", "")),
+        ]
+    )
+
+    if st.button(
+        "Save Configuration",
+        type="primary",
+        use_container_width=False,
+        disabled=not has_configuration_changes,
+        key="settings_save_configuration_button",
+    ):
+        default_min_fit_score = str(st.session_state.get("settings_default_min_fit_score_value", current_fit))
+        default_jobs_per_page = str(st.session_state.get("settings_default_jobs_per_page_value", current_page_size))
+        default_new_roles_sort = str(st.session_state.get("settings_default_new_roles_sort_value", current_new_roles_sort))
+        preferred_job_levels = st.session_state.get("settings_preferred_job_levels_value", saved_levels)
+
+        with st.spinner("Saving configuration..."):
+            save_settings(
+                {
+                    "default_min_fit_score": str(default_min_fit_score),
+                    "default_jobs_per_page": str(default_jobs_per_page),
+                    "default_new_roles_sort": str(default_new_roles_sort),
+                    "preferred_job_levels": serialize_preferred_job_levels(preferred_job_levels),
+                }
+            )
+
+            apply_configuration_defaults_to_session(
+                default_min_fit_score=str(default_min_fit_score),
+                default_jobs_per_page=str(default_jobs_per_page),
+            )
+
+        st.success("Configuration saved.")
+        st.rerun()
 
 def render_profile_context_tab(settings: dict[str, str]) -> None:
     _inject_settings_css()
@@ -1035,9 +1150,23 @@ def render_openai_api_tab() -> None:
     )
 
     action_col_1, action_col_2 = st.columns(2)
+    current_saved_key = str(load_saved_openai_api_key() or "")
+    current_key_value = str(st.session_state.get("settings_openai_api_key_value", "") or "")
+    api_key_dirty = bool(current_key_value.strip()) and current_key_value != current_saved_key
 
     with action_col_1:
-        if st.button("Save API Key", use_container_width=True, type="primary", key="save_openai_api_key_button"):
+        if st.button(
+            "Save API Key",
+            use_container_width=True,
+            type="primary",
+            key="save_openai_api_key_button",
+            disabled=not api_key_dirty,
+            help=(
+                "Save this key locally for this machine."
+                if api_key_dirty
+                else "Paste a new API key before saving."
+            ),
+        ):
             try:
                 saved_path = save_openai_api_key(st.session_state.get("settings_openai_api_key_value", ""))
                 st.success(f"Saved API key locally: {saved_path}")

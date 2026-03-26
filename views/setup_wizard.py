@@ -642,7 +642,14 @@ def _render_ai_review_step() -> None:
 
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("Accept Title Suggestions", type="primary", use_container_width=True, key="wizard_accept_titles"):
+                if st.button(
+                    "Accept Title Suggestions",
+                    type="primary",
+                    use_container_width=True,
+                    key="wizard_accept_titles",
+                    disabled=not bool(selected),
+                    help="Select at least one suggested title first." if not selected else None,
+                ):
                     updated = _append_comma_separated(st.session_state.get("wizard_target_titles", ""), selected)
                     st.session_state["wizard_target_titles"] = updated
                     st.session_state["wizard_target_titles_widget"] = updated
