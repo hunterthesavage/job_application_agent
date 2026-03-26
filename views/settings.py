@@ -508,11 +508,16 @@ def _render_reset_app_section() -> None:
         st.cache_data.clear()
 
         for key in list(st.session_state.keys()):
-            if key.startswith("wizard_") or key.startswith("settings_"):
+            if (
+                key.startswith("wizard_")
+                or key.startswith("setup_wizard_")
+                or key.startswith("settings_")
+            ):
                 st.session_state.pop(key, None)
 
         st.session_state["_app_initialized"] = False
         st.session_state["_wizard_run_discovery_on_load"] = False
+        st.session_state.pop("_post_wizard_run_message", None)
         st.session_state["top_nav_selection"] = "New Roles"
         st.session_state["settings_subnav_selection"] = "Configuration"
         st.session_state["reset_notice"] = {
