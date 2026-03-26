@@ -25,7 +25,7 @@ Current release: **1.0.0**
 - Backup, health, and reset tooling
 
 
-## macOS Setup
+# macOS Setup
 
 ### Step 1) Install App
 
@@ -65,7 +65,7 @@ If that happens:
 3. Click `Open` again in the warning dialog
 
 
-## Windows Setup
+# Windows Setup
 
 ### Notes for Windows users
 
@@ -80,6 +80,9 @@ Use this exact installer:
 
 - [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
 
+In the installer:
+1. check `Add Python to PATH`
+2. use the default install options
 Or open Command Prompt and run:
 
 ```bat
@@ -87,10 +90,6 @@ cd /d "%USERPROFILE%\Downloads"
 curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
 start /wait python-3.13.12-amd64.exe
 ```
-
-In the installer:
-1. check `Add Python to PATH`
-2. use the default install options
 
 Then:
 1. close Command Prompt
@@ -105,8 +104,6 @@ cd /d "%USERPROFILE%\Downloads"
 curl -L -o job_application_agent.zip https://github.com/hunterthesavage/job_application_agent/archive/refs/heads/main.zip
 tar -xf job_application_agent.zip
 cd /d "%USERPROFILE%\Downloads\job_application_agent-main"
-dir app.py
-dir requirements.txt
 ```
 
 ### Step 3) Create the virtual environment and install requirements
@@ -118,6 +115,7 @@ py -3 -m venv .venv
 call .venv\Scripts\activate.bat
 python --version
 python -m pip install --upgrade pip
+
 python -m pip install -r requirements.txt
 ```
 
