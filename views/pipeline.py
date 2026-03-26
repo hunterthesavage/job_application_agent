@@ -689,6 +689,8 @@ def _maybe_route_after_wizard_first_run(result: dict) -> None:
     if not st.session_state.pop("_wizard_first_discovery_redirect", False):
         return
 
+    st.session_state.pop("_wizard_first_discovery_loading", None)
+
     if _wizard_first_run_has_results(result):
         st.session_state["top_nav_selection"] = "New Roles"
     else:
@@ -785,6 +787,11 @@ def _advance_pending_action_after_render() -> None:
     if action and action.get("phase") == "prepare":
         move_action_to_execute("pipeline")
         st.rerun()
+
+
+def process_pipeline_action_cycle() -> None:
+    _process_pending_action_before_render()
+    _advance_pending_action_after_render()
 
 
 def _render_search_summary(*, show_heading: bool = True) -> None:

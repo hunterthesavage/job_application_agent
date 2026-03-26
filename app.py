@@ -6,6 +6,7 @@ import streamlit as st
 from config import APP_NAME, APP_VERSION
 from services.settings import load_settings
 from services.status import get_system_status
+from services.ui_busy import app_is_busy
 from ui.navigation import initialize_nav_state, render_button_nav
 
 
@@ -131,6 +132,87 @@ def render_boot_loading_card() -> st.delta_generator.DeltaGenerator:
     )
     return placeholder
 
+
+def render_first_discovery_loading_screen() -> None:
+    st.markdown(
+        """
+        <style>
+        @keyframes firstDiscoveryPulse {
+            0% { transform: scale(0.88); opacity: 0.58; box-shadow: 0 0 0 0 rgba(96,165,250,0.40); }
+            70% { transform: scale(1.03); opacity: 1; box-shadow: 0 0 0 20px rgba(96,165,250,0.0); }
+            100% { transform: scale(0.94); opacity: 0.72; box-shadow: 0 0 0 0 rgba(96,165,250,0.0); }
+        }
+        @keyframes firstDiscoverySweep {
+            0% { transform: rotate(0deg); opacity: 0.55; }
+            100% { transform: rotate(360deg); opacity: 1; }
+        }
+        </style>
+        <div style="
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 24px;
+            background:
+                radial-gradient(circle at top right, rgba(96,165,250,0.14), transparent 30%),
+                linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.99) 100%);
+            box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+            padding: 1.35rem 1.4rem 1.2rem 1.4rem;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            display:flex;
+            align-items:center;
+            gap:1.05rem;
+        ">
+            <div style="
+                position:relative;
+                width:58px;
+                height:58px;
+                flex:0 0 58px;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+            ">
+                <div style="
+                    position:absolute;
+                    width:24px;
+                    height:24px;
+                    border-radius:999px;
+                    background: radial-gradient(circle, rgba(191,219,254,1) 0%, rgba(96,165,250,0.98) 65%, rgba(37,99,235,0.98) 100%);
+                    animation: firstDiscoveryPulse 1.8s ease-out infinite;
+                "></div>
+                <div style="
+                    position:absolute;
+                    width:54px;
+                    height:54px;
+                    border-radius:999px;
+                    border: 2px solid rgba(96,165,250,0.22);
+                "></div>
+                <div style="
+                    position:absolute;
+                    width:54px;
+                    height:54px;
+                    border-radius:999px;
+                    border-top: 2px solid rgba(125,211,252,0.96);
+                    border-right: 2px solid transparent;
+                    border-bottom: 2px solid transparent;
+                    border-left: 2px solid transparent;
+                    animation: firstDiscoverySweep 1.15s linear infinite;
+                "></div>
+            </div>
+            <div>
+                <div style="font-size:0.8rem;font-weight:800;letter-spacing:0.10em;text-transform:uppercase;color:rgba(147,197,253,0.92);margin-bottom:0.28rem;">
+                    First Search
+                </div>
+                <div style="font-size:1.28rem;font-weight:820;color:rgba(255,255,255,0.97);margin-bottom:0.34rem;line-height:1.08;">
+                    Searching all the corners of the internet for your best fits.
+                </div>
+                <div style="font-size:0.97rem;color:rgba(255,255,255,0.74);line-height:1.48;max-width:760px;">
+                    Building search queries, probing trusted sources, and lining up the strongest roles so your first results feel worth the wait.
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 def initialize_app_once() -> None:
     if st.session_state.get("_app_initialized", False):
         return
@@ -175,7 +257,7 @@ def main() -> None:
     from ui.styles import inject_custom_css
     from views.applied_roles import render_applied_roles
     from views.new_roles import render_new_roles
-    from views.pipeline import render_pipeline
+    from views.pipeline import process_pipeline_action_cycle, render_pipeline
     from views.settings import render_settings
     from views.setup_wizard import render_setup_wizard
 
@@ -189,6 +271,11 @@ def main() -> None:
 
     if should_show_setup_wizard():
         render_setup_wizard()
+        return
+
+    if st.session_state.get("_wizard_first_discovery_loading", False) and app_is_busy():
+        render_first_discovery_loading_screen()
+        process_pipeline_action_cycle()
         return
 
     initialize_top_nav(default_value="New Roles")
