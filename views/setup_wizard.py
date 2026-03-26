@@ -623,9 +623,7 @@ def _render_ai_review_step() -> None:
 
     suggestions = st.session_state.get("wizard_title_suggestions", []) or []
     notes = str(st.session_state.get("wizard_title_suggestions_notes", "") or "").strip()
-    choice_made = bool(st.session_state.get("wizard_ai_review_choice_made", False))
-
-    if suggestions and not choice_made:
+    if suggestions:
         with st.container(border=True):
             st.markdown("### Suggested Titles")
             if notes:
@@ -643,7 +641,7 @@ def _render_ai_review_step() -> None:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button(
-                    "Accept Title Suggestions",
+                    "Accept Title Suggestions and Find Jobs",
                     type="primary",
                     use_container_width=True,
                     key="wizard_accept_titles",
@@ -655,22 +653,16 @@ def _render_ai_review_step() -> None:
                     st.session_state["wizard_target_titles_widget"] = updated
                     save_settings({"target_titles": updated})
                     st.session_state["wizard_ai_review_choice_made"] = True
-                    st.session_state["wizard_ai_review_message"] = "Selected title suggestions were added. Review the final Target Titles below, then click Find and Add Jobs."
+                    st.session_state["wizard_ai_review_message"] = "Selected title suggestions were added. Starting your first job search now."
+                    _start_first_discovery()
                     st.rerun()
             with c2:
-                if st.button("Cancel", use_container_width=True, key="wizard_cancel_titles"):
+                if st.button("Find Jobs Without Changes", use_container_width=True, key="wizard_cancel_titles"):
                     st.session_state["wizard_ai_review_choice_made"] = True
-                    st.session_state["wizard_ai_review_message"] = "No AI title updates were applied. Review the final Target Titles below, then click Find and Add Jobs."
+                    st.session_state["wizard_ai_review_message"] = "Using your current titles. Starting your first job search now."
+                    _start_first_discovery()
                     st.rerun()
     else:
-        st.markdown("### Target Titles")
-        st.text_area(
-            "Target Titles",
-            value=str(st.session_state.get("wizard_target_titles", "") or ""),
-            height=140,
-            disabled=True,
-            label_visibility="collapsed",
-        )
         c1, c2 = st.columns([1.4, 1])
         with c1:
             if st.button("Find and Add Jobs", type="primary", use_container_width=True, key="wizard_find_and_add_jobs"):

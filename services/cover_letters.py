@@ -54,29 +54,7 @@ def load_profile_context_from_settings(settings: dict[str, str]) -> str:
     return "\n\n".join(parts).strip()
 
 
-def infer_candidate_name_from_resume_text(resume_text: str) -> str:
-    for raw_line in str(resume_text or "").splitlines():
-        line = safe_text(raw_line)
-        if not line:
-            continue
-        if len(line) > 60 or any(char.isdigit() for char in line):
-            continue
-        if any(token in line for token in ("@", "http", "www.", "linkedin", "github", "resume", "curriculum vitae", ":")):
-            continue
-
-        parts = [part for part in re.split(r"\s+", line) if part]
-        if not (2 <= len(parts) <= 4):
-            continue
-        if not all(re.fullmatch(r"[A-Za-z][A-Za-z'.-]*", part) for part in parts):
-            continue
-        if not all(part[0].isupper() for part in parts if part):
-            continue
-        return line
-
-    return ""
-
-
-def generate_letter(profile_context: str, job: dict[str, str], candidate_name: str = "") -> str:
+def generate_letter(profile_context: str, job: dict[str, str]) -> str:
     api_key = get_effective_openai_api_key()
     if not api_key:
         raise ValueError(
@@ -84,12 +62,6 @@ def generate_letter(profile_context: str, job: dict[str, str], candidate_name: s
         )
 
     client = OpenAI(api_key=api_key)
-
-    signature_requirement = (
-        f"- sign as {candidate_name}"
-        if safe_text(candidate_name)
-        else "- do not invent a candidate name or signature if one is not clearly provided"
-    )
 
     prompt = f"""
 Candidate profile:
@@ -116,7 +88,7 @@ Requirements:
 - emphasize leadership, transformation, execution
 - avoid generic phrasing
 - plain text only
-{signature_requirement}
+- do not add a signature, sign-off line, or candidate name at the end
 """.strip()
 
     response = client.responses.create(
@@ -182,9 +154,8 @@ def generate_cover_letter_for_job_id(job_id: int) -> dict[str, str]:
 
     settings = load_settings()
     profile_context = load_profile_context_from_settings(settings)
-    candidate_name = infer_candidate_name_from_resume_text(settings.get("resume_text", ""))
 
-    letter = generate_letter(profile_context, job, candidate_name=candidate_name)
+    letter = generate_letter(profile_context, job)
     output_path = save_letter_to_file(letter, settings, job)
     record_cover_letter_artifact(job_id, str(output_path))
 
