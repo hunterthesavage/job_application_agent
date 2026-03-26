@@ -6,7 +6,7 @@ from typing import Any
 from services.ai_job_scoring import load_scoring_profile_text
 from services.job_levels import parse_preferred_job_levels
 from services.openai_key import has_openai_api_key
-from services.settings import load_settings
+from services.settings import get_default_cover_letter_output_folder, load_settings
 
 
 def _status_label(is_ready: bool, missing_text: str = "Needs Setup", ready_text: str = "Ready") -> str:
@@ -52,8 +52,6 @@ def _build_readiness_note(
         return "You can still discover jobs now, but OpenAI-backed features stay off until an API key is configured."
     if not scoring_profile_ready:
         return "OpenAI is configured, but AI scoring stays off until Profile Context is filled in or a fallback profile file is present."
-    if not cover_letter_folder_ready:
-        return "AI scoring is ready. Set a cover letter output folder before generating cover letters."
     return "Most of the app is ready. Review the tiles below for any missing setup."
 
 
@@ -67,8 +65,6 @@ def _build_next_step(
         return "Next step: add an OpenAI API key in Settings -> OpenAI API so AI title expansion, scoring, scrub, and cover letters can turn on."
     if not scoring_profile_ready:
         return "Next step: fill in Settings -> Profile Context so accepted jobs can be scored against your background."
-    if not cover_letter_folder_ready:
-        return "Next step: set a cover letter output folder in Settings -> Configuration before generating letters."
     return "Next step: run Find and Add Jobs, then review New Roles and rescore older jobs only when needed."
 
 
@@ -83,10 +79,10 @@ def get_readiness_summary() -> dict[str, Any]:
     preferred_levels_ready = bool(preferred_levels)
 
     cover_letter_folder = str(settings.get("cover_letter_output_folder", "") or "").strip()
-    cover_letter_folder_ready = False
-    if cover_letter_folder:
-        folder = Path(cover_letter_folder).expanduser()
-        cover_letter_folder_ready = folder.exists() and folder.is_dir()
+    if not cover_letter_folder:
+        cover_letter_folder = get_default_cover_letter_output_folder()
+    folder = Path(cover_letter_folder).expanduser()
+    cover_letter_folder_ready = True
 
     ai_title_expansion_ready = openai_ready
     ai_scoring_ready = openai_ready and scoring_profile_ready
@@ -115,7 +111,7 @@ def get_readiness_summary() -> dict[str, Any]:
             {
                 "label": "Cover Letter Folder",
                 "value": _status_label(cover_letter_folder_ready),
-                "detail": cover_letter_folder if cover_letter_folder_ready else "Set output folder in Settings",
+                "detail": str(folder),
                 "ready": cover_letter_folder_ready,
             },
         ],
@@ -146,7 +142,7 @@ def get_readiness_summary() -> dict[str, Any]:
                 "detail": (
                     "Can generate letters into your output folder"
                     if cover_letters_ready
-                    else "Needs OpenAI key and output folder"
+                    else "Needs OpenAI key"
                 ),
                 "ready": cover_letters_ready,
             },

@@ -43,3 +43,27 @@ def test_readiness_summary_reports_missing_setup(temp_db_path, monkeypatch):
     assert "OpenAI-backed features stay off" in summary["note"]
     assert "OpenAI key missing" in summary["setup_snapshot"]
     assert "Next step: add an OpenAI API key" in summary["next_step"]
+
+
+def test_readiness_summary_uses_default_cover_letter_folder_when_not_explicitly_set(
+    temp_db_path, monkeypatch
+):
+    import services.readiness as readiness
+    import services.settings as settings_module
+
+    settings_module.save_settings(
+        {
+            "profile_summary": "Executive technology leader",
+            "cover_letter_output_folder": "",
+        }
+    )
+
+    monkeypatch.setattr(readiness, "has_openai_api_key", lambda: True)
+
+    summary = readiness.get_readiness_summary()
+    tile_map = {tile["label"]: tile for tile in summary["tiles"]}
+    capability_map = {tile["label"]: tile for tile in summary["capabilities"]}
+
+    assert tile_map["Cover Letter Folder"]["value"] == "Ready"
+    assert tile_map["Cover Letter Folder"]["detail"] == settings_module.get_default_cover_letter_output_folder()
+    assert capability_map["Cover Letters"]["value"] == "Ready"

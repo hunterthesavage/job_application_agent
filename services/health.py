@@ -6,7 +6,7 @@ from pathlib import Path
 from config import DATABASE_PATH
 from services.backup import get_latest_backup
 from services.openai_key import load_environment_openai_api_key, load_saved_openai_api_key
-from services.settings import load_settings
+from services.settings import get_default_cover_letter_output_folder, load_settings
 
 
 REQUIRED_TABLES = [
@@ -95,6 +95,8 @@ def run_health_check() -> dict:
 
     settings = load_settings()
     folder_path = str(settings.get("cover_letter_output_folder", "") or "").strip()
+    if not folder_path:
+        folder_path = get_default_cover_letter_output_folder()
     results["cover_letter_folder_path"] = folder_path
     if folder_path:
         folder = Path(folder_path).expanduser()
@@ -102,12 +104,9 @@ def run_health_check() -> dict:
         results["cover_letter_folder_exists"] = folder_ok
         results["checks"]["cover_letter_output_folder"] = {
             "label": "Cover letter output folder",
-            "status": "ok" if folder_ok else "warning",
-            "message": str(folder) if folder_ok else "Configured folder does not exist.",
+            "status": "ok",
+            "message": str(folder) if folder_ok else f"Default output folder will be created on first use: {folder}",
         }
-        if not folder_ok:
-            results["status"] = "warning" if results["status"] != "failed" else results["status"]
-            results["issues"].append("Cover letter output folder does not exist.")
     else:
         results["checks"]["cover_letter_output_folder"] = {
             "label": "Cover letter output folder",

@@ -7,7 +7,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from services.openai_key import get_effective_openai_api_key
-from services.settings import DEFAULT_SETTINGS, load_settings
+from services.settings import DEFAULT_SETTINGS, get_default_cover_letter_output_folder, load_settings
 from services.sqlite_actions import get_job_by_id, record_cover_letter_artifact
 
 
@@ -102,7 +102,7 @@ Requirements:
 def build_output_folder(settings: dict[str, str]) -> Path:
     folder = safe_text(settings.get("cover_letter_output_folder", ""))
     if not folder:
-        folder = DEFAULT_SETTINGS["cover_letter_output_folder"]
+        folder = get_default_cover_letter_output_folder()
 
     path = Path(folder).expanduser()
     path.mkdir(parents=True, exist_ok=True)

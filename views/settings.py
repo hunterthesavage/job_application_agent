@@ -24,7 +24,7 @@ from services.openai_key import (
     save_openai_api_key,
 )
 from services.profile_context_templates import generate_profile_context_from_resume
-from services.settings import DEFAULT_SETTINGS, load_settings, save_settings
+from services.settings import DEFAULT_SETTINGS, get_default_cover_letter_output_folder, load_settings, save_settings
 from services.status import get_system_status
 from ui.navigation import initialize_nav_state, render_button_nav
 
@@ -230,8 +230,8 @@ POSIX path of chosenFolder
     return initial_path
 
 
-def save_cover_letter_output_settings(folder_value: str, pattern_value: str) -> None:
-    save_settings(
+def save_cover_letter_output_settings(folder_value: str, pattern_value: str) -> dict[str, str]:
+    return save_settings(
         {
             "cover_letter_output_folder": str(folder_value).strip(),
             "cover_letter_filename_pattern": str(pattern_value).strip(),
@@ -250,7 +250,9 @@ def handle_cover_letter_folder_change() -> None:
     )
 
     try:
-        save_cover_letter_output_settings(folder_value, pattern_value)
+        saved_settings = save_cover_letter_output_settings(folder_value, pattern_value)
+        st.session_state["settings_cover_letter_output_folder_value"] = saved_settings["cover_letter_output_folder"]
+        st.session_state["settings_cover_letter_filename_pattern_value"] = saved_settings["cover_letter_filename_pattern"]
         st.session_state["cover_letter_output_settings_saved_message"] = "Cover letter output folder saved."
     except Exception as exc:
         st.session_state["cover_letter_output_settings_saved_message"] = f"Failed to save folder: {exc}"
@@ -267,7 +269,9 @@ def handle_cover_letter_pattern_change() -> None:
     )
 
     try:
-        save_cover_letter_output_settings(folder_value, pattern_value)
+        saved_settings = save_cover_letter_output_settings(folder_value, pattern_value)
+        st.session_state["settings_cover_letter_output_folder_value"] = saved_settings["cover_letter_output_folder"]
+        st.session_state["settings_cover_letter_filename_pattern_value"] = saved_settings["cover_letter_filename_pattern"]
         st.session_state["cover_letter_output_settings_saved_message"] = "Cover letter filename pattern saved."
     except Exception as exc:
         st.session_state["cover_letter_output_settings_saved_message"] = f"Failed to save filename pattern: {exc}"
@@ -714,6 +718,7 @@ def render_system_status_tab() -> None:
 def render_configuration_tab(settings: dict[str, str]) -> None:
     st.markdown("### Cover Letter Output")
     st.caption("This only affects generated cover letters. Discovery and AI scoring still work without it.")
+    st.caption(f"If you do nothing, letters will go here by default: {get_default_cover_letter_output_folder()}")
 
     folder_col, browse_col = st.columns([5, 1.2])
 
@@ -734,10 +739,12 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
         st.session_state["settings_cover_letter_output_folder_value"] = selected_folder
 
         try:
-            save_cover_letter_output_settings(
+            saved_settings = save_cover_letter_output_settings(
                 st.session_state["settings_cover_letter_output_folder_value"],
                 st.session_state["settings_cover_letter_filename_pattern_value"],
             )
+            st.session_state["settings_cover_letter_output_folder_value"] = saved_settings["cover_letter_output_folder"]
+            st.session_state["settings_cover_letter_filename_pattern_value"] = saved_settings["cover_letter_filename_pattern"]
             st.session_state["cover_letter_output_settings_saved_message"] = "Cover letter output folder saved."
         except Exception as exc:
             st.session_state["cover_letter_output_settings_saved_message"] = f"Failed to save folder: {exc}"
@@ -760,7 +767,7 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
     ).expanduser()
     st.caption(f"Resolved output path: {resolved_folder}")
     if not resolved_folder.exists():
-        st.info("Set this before generating letters. It is not required for discovery or scoring.")
+        st.info("This folder will be created automatically the first time you generate a cover letter.")
 
     st.text_input(
         "Cover Letter Filename Pattern",
