@@ -13,13 +13,17 @@ def get_default_cover_letter_output_folder() -> str:
     return str(base_dir / APP_NAME / "Cover Letters")
 
 
+def get_default_cover_letter_filename_pattern() -> str:
+    return "CL_{company}.txt"
+
+
 DEFAULT_SETTINGS: dict[str, str] = {
     "resume_text": "",
     "profile_summary": "",
     "strengths_to_highlight": "",
     "cover_letter_voice": "",
     "cover_letter_output_folder": get_default_cover_letter_output_folder(),
-    "cover_letter_filename_pattern": "CL_{company}.txt",
+    "cover_letter_filename_pattern": get_default_cover_letter_filename_pattern(),
     "target_titles": "",
     "preferred_job_levels": "",
     "preferred_locations": "",
@@ -80,6 +84,8 @@ def load_settings() -> dict[str, str]:
 
     if not settings.get("cover_letter_output_folder", "").strip():
         settings["cover_letter_output_folder"] = get_default_cover_letter_output_folder()
+    if not settings.get("cover_letter_filename_pattern", "").strip():
+        settings["cover_letter_filename_pattern"] = get_default_cover_letter_filename_pattern()
 
     return settings
 
@@ -94,6 +100,8 @@ def save_settings(updates: dict[str, str]) -> dict[str, str]:
         cleaned_value = _normalize_value(raw_value)
         if key == "cover_letter_output_folder" and not cleaned_value:
             cleaned_value = get_default_cover_letter_output_folder()
+        if key == "cover_letter_filename_pattern" and not cleaned_value:
+            cleaned_value = get_default_cover_letter_filename_pattern()
         cleaned_updates[key] = cleaned_value
 
     with db_connection() as conn:

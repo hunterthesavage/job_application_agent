@@ -353,6 +353,7 @@ def render_job_card(
 
     display_title = clean_display_title(company, title)
     apply_ready_key = f"apply_ready_{job_id}"
+    notice = st.session_state.pop(f"new_roles_job_notice_{job_id}", None)
 
     if apply_ready_key not in st.session_state:
         st.session_state[apply_ready_key] = False
@@ -420,6 +421,16 @@ def render_job_card(
                     st.write(source_detail)
 
     with right:
+        if isinstance(notice, dict) and str(notice.get("message", "")).strip():
+            level = str(notice.get("level", "success")).strip().lower()
+            message = str(notice.get("message", "")).strip()
+            if level == "error":
+                st.error(message)
+            elif level == "warning":
+                st.warning(message)
+            else:
+                st.success(message)
+
         btn1, btn2, btn3, btn4 = st.columns(4)
 
         api_key = get_effective_openai_api_key()

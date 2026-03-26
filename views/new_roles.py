@@ -44,6 +44,13 @@ def _set_flash(level: str, message: str, surface: str = "inline") -> None:
     st.session_state["new_roles_flash_surface"] = surface
 
 
+def _set_job_notice(job_id: int, level: str, message: str) -> None:
+    st.session_state[f"new_roles_job_notice_{int(job_id)}"] = {
+        "level": str(level or "success"),
+        "message": str(message or "").strip(),
+    }
+
+
 def _render_flash() -> None:
     message = st.session_state.pop("new_roles_flash_message", "")
     level = st.session_state.pop("new_roles_flash_level", "success")
@@ -89,18 +96,15 @@ def _process_pending_action_before_render() -> None:
     try:
         action_type = action.get("type")
         payload = action.get("payload", {})
+        job_id = int(payload.get("job_id", 0) or 0)
 
         if action_type == "generate_cover_letter":
-            result = generate_cover_letter_for_job_id(int(payload["job_id"]))
-            _set_flash(
-                "success",
-                f"Cover letter created and saved to: {result['output_path']}",
-                surface="toast",
-            )
+            result = generate_cover_letter_for_job_id(job_id)
+            _set_job_notice(job_id, "success", f"Cover letter created and saved to: {result['output_path']}")
             st.cache_data.clear()
 
         elif action_type == "mark_applied":
-            mark_job_as_applied(int(payload["job_id"]))
+            mark_job_as_applied(job_id)
             apply_ready_key = payload.get("apply_ready_key", "")
             if apply_ready_key:
                 st.session_state[apply_ready_key] = False
@@ -108,7 +112,7 @@ def _process_pending_action_before_render() -> None:
             st.cache_data.clear()
 
         elif action_type == "remove_job":
-            remove_job(int(payload["job_id"]))
+            remove_job(job_id)
             apply_ready_key = payload.get("apply_ready_key", "")
             if apply_ready_key:
                 st.session_state[apply_ready_key] = False
@@ -116,7 +120,12 @@ def _process_pending_action_before_render() -> None:
             st.cache_data.clear()
 
     except Exception as exc:
-        _set_flash("error", f"Action failed: {exc}")
+        payload = action.get("payload", {})
+        job_id = int(payload.get("job_id", 0) or 0)
+        if job_id and str(action.get("type", "")) == "generate_cover_letter":
+            _set_job_notice(job_id, "error", f"Cover letter failed: {exc}")
+        else:
+            _set_flash("error", f"Action failed: {exc}")
     finally:
         clear_action("new_roles")
         stop_busy()
