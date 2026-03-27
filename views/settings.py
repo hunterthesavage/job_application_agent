@@ -935,8 +935,10 @@ def _render_status_source_layer() -> None:
 
     if latest_run:
         st.markdown("#### Latest Source Layer Run")
-        st.write(f"- Mode: {_humanize(latest_run.get('mode', 'unknown'))}")
-        st.write(f"- Imported records: {int(latest_run.get('imported_records', 0) or 0)}")
+        latest_run_mode = str(latest_run.get("mode", "unknown") or "unknown")
+        st.write(f"- Mode: {_humanize(latest_run_mode)}")
+        if latest_run_mode == "import":
+            st.write(f"- Imported records: {int(latest_run.get('imported_records', 0) or 0)}")
         st.write(f"- Selected endpoints: {int(latest_run.get('selected_endpoints', 0) or 0)}")
         st.write(f"- Discovered URLs: {int(latest_run.get('discovered_urls', 0) or 0)}")
         st.write(f"- Accepted jobs: {int(latest_run.get('accepted_jobs', 0) or 0)}")
