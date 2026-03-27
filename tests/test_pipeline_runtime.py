@@ -99,6 +99,32 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
 
     captured = {}
     monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "legacy")
+    monkeypatch.setattr(
+        runtime,
+        "build_source_layer_status_summary",
+        lambda: {
+            "shadow": {
+                "company_count": 473,
+                "active_endpoint_count": 473,
+                "approved_endpoint_count": 3,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "run_shadow_endpoint_selection",
+        lambda settings=None: {
+            "ats_counts": {"unknown": 313, "workday": 76},
+            "selected_ats_counts": {"workday": 12, "lever": 8},
+            "selected_company_names": ["Rover", "Checkr"],
+            "selected_endpoint_count": 20,
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "record_source_layer_run",
+        lambda **kwargs: captured.setdefault("source_layer_run", kwargs),
+    )
 
     def fake_discover_job_links(*, use_ai_title_expansion=True):
         captured["discover_flag"] = use_ai_title_expansion
@@ -142,12 +168,47 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
     assert captured["use_ai_scoring"] is False
     assert "Discovery output" in result["output"]
     assert "Ingest output" in result["output"]
+    assert "Source Layer Run Snapshot:" in result["output"]
+    assert "- Mode: legacy" in result["output"]
+    assert "- Shadow active endpoints: 473" in result["output"]
+    assert "- Shadow selected endpoints: 20" in result["output"]
+    assert captured["source_layer_run"]["mode"] == "legacy"
+    assert captured["source_layer_run"]["discovered_urls"] == 1
+    assert captured["source_layer_run"]["accepted_jobs"] == 0
+    assert captured["source_layer_run"]["selected_endpoints"] == 0
 
 
 def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeypatch):
     import services.pipeline_runtime as runtime
 
     monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
+    captured = {}
+    monkeypatch.setattr(
+        runtime,
+        "build_source_layer_status_summary",
+        lambda: {
+            "shadow": {
+                "company_count": 473,
+                "active_endpoint_count": 473,
+                "approved_endpoint_count": 3,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "run_shadow_endpoint_selection",
+        lambda settings=None: {
+            "ats_counts": {"unknown": 313, "workday": 76},
+            "selected_ats_counts": {"workday": 12, "lever": 8},
+            "selected_company_names": ["Rover", "Checkr"],
+            "selected_endpoint_count": 20,
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "record_source_layer_run",
+        lambda **kwargs: captured.setdefault("source_layer_run", kwargs),
+    )
     monkeypatch.setattr(
         runtime,
         "discover_job_links",
@@ -157,6 +218,11 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
             "urls": [],
             "providers": {"greenhouse": 0, "lever": 0, "search": 0},
             "drop_summary": {},
+            "shadow_result": {
+                "selected_ats_counts": {"workday": 12, "lever": 8},
+                "selected_company_names": ["Rover", "Checkr"],
+                "selected_endpoint_count": 20,
+            },
         },
     )
 
@@ -164,6 +230,12 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
 
     assert "Source layer mode: next_gen" in result["output"]
     assert "Falling back to legacy discovery for this run." in result["output"]
+    assert "Source Layer Run Snapshot:" in result["output"]
+    assert "- Mode: next_gen" in result["output"]
+    assert captured["source_layer_run"]["mode"] == "next_gen"
+    assert captured["source_layer_run"]["discovered_urls"] == 0
+    assert captured["source_layer_run"]["accepted_jobs"] == 0
+    assert captured["source_layer_run"]["selected_endpoints"] == 20
 
 
 def test_build_jobs_from_urls_skips_ai_when_disabled(monkeypatch):

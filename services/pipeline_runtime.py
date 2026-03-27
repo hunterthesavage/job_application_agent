@@ -30,8 +30,10 @@ from services.location_matching import (
 )
 from services.matching_profiles import expand_title_terms
 from services.settings import load_settings
+from services.source_layer_import import record_source_layer_run
 from services.source_layer import get_source_layer_mode
 from services.source_layer_shadow import run_shadow_endpoint_selection
+from services.source_layer_status_smoke import build_source_layer_status_summary
 from services.source_trust import enrich_job_payload
 from services.job_qualifier import qualify_job
 from src import discover_job_urls as discover_module
@@ -1089,6 +1091,94 @@ def build_search_preview() -> dict[str, Any]:
     }
 
 
+def _format_source_layer_run_snapshot(
+    *,
+    source_layer_mode: str,
+    discovery_result: dict[str, Any],
+    ingest_result: dict[str, Any],
+) -> str:
+    status_summary = build_source_layer_status_summary()
+    shadow_status = status_summary.get("shadow", {}) if isinstance(status_summary, dict) else {}
+    shadow_result = (
+        discovery_result.get("shadow_result", {})
+        if isinstance(discovery_result, dict)
+        else {}
+    )
+    if not isinstance(shadow_result, dict) or not shadow_result:
+        shadow_result = run_shadow_endpoint_selection()
+    ats_counts = shadow_result.get("selected_ats_counts", {}) if isinstance(shadow_result, dict) else {}
+    top_ats = ", ".join(
+        f"{vendor} {count}"
+        for vendor, count in sorted(
+            ((str(vendor), int(count)) for vendor, count in dict(ats_counts).items()),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:5]
+    )
+    selected_companies = ", ".join(
+        str(name)
+        for name in (shadow_result.get("selected_company_names", []) if isinstance(shadow_result, dict) else [])
+    )
+
+    providers = discovery_result.get("providers", {}) if isinstance(discovery_result, dict) else {}
+    provider_mix = (
+        f"Greenhouse {int(providers.get('greenhouse', 0) or 0)}, "
+        f"Lever {int(providers.get('lever', 0) or 0)}, "
+        f"Search {int(providers.get('search', 0) or 0)}"
+    )
+
+    return "\n".join(
+        [
+            "Source Layer Run Snapshot:",
+            f"- Mode: {source_layer_mode}",
+            f"- Discovered URLs: {len(discovery_result.get('urls', []) or [])}",
+            f"- Accepted jobs: {int(ingest_result.get('accepted_jobs', 0) or 0)}",
+            f"- Shadow companies: {int(shadow_status.get('company_count', 0) or 0)}",
+            f"- Shadow active endpoints: {int(shadow_status.get('active_endpoint_count', 0) or 0)}",
+            f"- Shadow approved endpoints: {int(shadow_status.get('approved_endpoint_count', 0) or 0)}",
+            f"- Shadow selected endpoints: {int(shadow_result.get('selected_endpoint_count', 0) or 0)}",
+            f"- Provider mix: {provider_mix}",
+            f"- Top shadow ATS families: {top_ats or 'none yet'}",
+            f"- Top shadow companies: {selected_companies or 'none yet'}",
+        ]
+    )
+
+
+def _record_pipeline_source_layer_run(
+    *,
+    source_layer_mode: str,
+    discovery_result: dict[str, Any],
+    ingest_result: dict[str, Any],
+) -> None:
+    providers = discovery_result.get("providers", {}) if isinstance(discovery_result, dict) else {}
+    shadow_result = (
+        discovery_result.get("shadow_result", {})
+        if isinstance(discovery_result, dict)
+        else {}
+    )
+    notes = (
+        "Pipeline discovery run. "
+        f"Provider mix: greenhouse {int(providers.get('greenhouse', 0) or 0)}, "
+        f"lever {int(providers.get('lever', 0) or 0)}, "
+        f"search {int(providers.get('search', 0) or 0)}."
+    )
+    selected_companies = ", ".join(
+        str(name)
+        for name in (shadow_result.get("selected_company_names", []) if isinstance(shadow_result, dict) else [])
+    )
+    if selected_companies:
+        notes += f" Shadow companies: {selected_companies}."
+    record_source_layer_run(
+        mode=source_layer_mode,
+        imported_records=0,
+        selected_endpoints=int(shadow_result.get("selected_endpoint_count", 0) or 0),
+        discovered_urls=len(discovery_result.get("urls", []) or []),
+        accepted_jobs=int(ingest_result.get("accepted_jobs", 0) or 0),
+        errors=int(ingest_result.get("error_count", 0) or 0),
+        notes=notes,
+    )
+
+
 def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]:
     settings = load_settings()
     source_layer_mode = get_source_layer_mode()
@@ -1101,16 +1191,21 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
     if discovery_result.get("output"):
         output_parts.append(str(discovery_result.get("output", "") or ""))
 
+    shadow_result: dict[str, Any] | None = None
     if source_layer_mode == "shadow":
         shadow_result = run_shadow_endpoint_selection(settings)
         shadow_output = safe_text(shadow_result.get("output", ""))
         if shadow_output:
             output_parts.append(shadow_output)
     elif source_layer_mode == "next_gen":
+        shadow_result = run_shadow_endpoint_selection(settings)
         output_parts.append(
             "Next-gen source layer mode requested, but live next-gen discovery is not enabled yet. "
             "Falling back to legacy discovery for this run."
         )
+        shadow_output = safe_text(shadow_result.get("output", ""))
+        if shadow_output:
+            output_parts.append(shadow_output)
 
     return {
         "status": "completed",
@@ -1130,6 +1225,7 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         "plan": discover_module.build_search_plan(settings),
         "drop_summary": discovery_result.get("drop_summary", {}),
         "source_layer_mode": source_layer_mode,
+        "shadow_result": shadow_result or {},
     }
 
 
@@ -1375,8 +1471,24 @@ def discover_and_ingest(
     combined_output_parts.append("\n".join(discovery_summary_lines).strip())
 
     if not discovered_urls:
+        empty_ingest_result = {
+            "accepted_jobs": 0,
+            "error_count": 0,
+        }
+        _record_pipeline_source_layer_run(
+            source_layer_mode=source_layer_mode,
+            discovery_result=discovery_result,
+            ingest_result=empty_ingest_result,
+        )
         combined_output_parts.append(
             "No URLs were available to ingest. Review your Settings criteria, confirm discovery dependencies are installed, or try pasted URLs."
+        )
+        combined_output_parts.append(
+            _format_source_layer_run_snapshot(
+                source_layer_mode=source_layer_mode,
+                discovery_result=discovery_result,
+                ingest_result=empty_ingest_result,
+            )
         )
         total_seconds = time.perf_counter() - total_started_at
         combined_output_parts.append(f"Total pipeline seconds: {total_seconds:.2f}")
@@ -1415,6 +1527,20 @@ def discover_and_ingest(
 
     if ingest_result.get("output"):
         combined_output_parts.append(ingest_result["output"])
+
+    _record_pipeline_source_layer_run(
+        source_layer_mode=source_layer_mode,
+        discovery_result=discovery_result,
+        ingest_result=ingest_result,
+    )
+
+    combined_output_parts.append(
+        _format_source_layer_run_snapshot(
+            source_layer_mode=source_layer_mode,
+            discovery_result=discovery_result,
+            ingest_result=ingest_result,
+        )
+    )
 
     total_seconds = time.perf_counter() - total_started_at
     combined_output_parts.append(f"Total pipeline seconds: {total_seconds:.2f}")
