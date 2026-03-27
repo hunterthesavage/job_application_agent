@@ -60,7 +60,8 @@ def build_source_layer_status_summary() -> dict:
             "approved_endpoint_count": approved_endpoint_count,
         },
         "next_gen": {
-            "status": "not_enabled",
+            "status": "seed_experiment",
+            "note": "Legacy discovery stays primary, and supported source-layer seed URLs are added when available.",
         },
         "latest_run": latest_run_summary,
     }
@@ -75,6 +76,7 @@ def format_source_layer_status_summary(summary: dict) -> str:
         f"shadow.active_endpoint_count: {summary['shadow']['active_endpoint_count']}",
         f"shadow.approved_endpoint_count: {summary['shadow']['approved_endpoint_count']}",
         f"next_gen.status: {summary['next_gen']['status']}",
+        f"next_gen.note: {summary['next_gen']['note']}",
     ]
 
     latest_run = summary.get("latest_run")

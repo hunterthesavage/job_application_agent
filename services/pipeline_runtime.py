@@ -1258,8 +1258,8 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
     elif source_layer_mode == "next_gen":
         shadow_result = run_shadow_endpoint_selection(settings)
         output_parts.append(
-            "Next-gen source layer mode requested, but live next-gen discovery is not enabled yet. "
-            "Falling back to legacy discovery for this run."
+            "Next-gen source layer mode requested. "
+            "Legacy discovery remains primary for this run, and supported source-layer seed URLs will be added when available."
         )
         shadow_output = safe_text(shadow_result.get("output", ""))
         if shadow_output:

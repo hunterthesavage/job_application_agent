@@ -59,7 +59,8 @@ def test_build_source_layer_status_summary(temp_db_path):
     assert summary["shadow"]["company_count"] == 1
     assert summary["shadow"]["active_endpoint_count"] == 1
     assert summary["shadow"]["approved_endpoint_count"] == 1
-    assert summary["next_gen"]["status"] == "not_enabled"
+    assert summary["next_gen"]["status"] == "seed_experiment"
+    assert "seed URLs" in summary["next_gen"]["note"]
     assert summary["latest_run"]["mode"] == "import"
 
 
@@ -75,7 +76,10 @@ def test_format_source_layer_status_summary():
                 "active_endpoint_count": 2,
                 "approved_endpoint_count": 1,
             },
-            "next_gen": {"status": "not_enabled"},
+            "next_gen": {
+                "status": "seed_experiment",
+                "note": "Legacy discovery stays primary, and supported source-layer seed URLs are added when available.",
+            },
             "latest_run": {
                 "mode": "import",
                 "imported_records": 2,
@@ -87,5 +91,6 @@ def test_format_source_layer_status_summary():
 
     assert "legacy.status: current_source_of_truth" in output
     assert "shadow.endpoint_count: 2" in output
-    assert "next_gen.status: not_enabled" in output
+    assert "next_gen.status: seed_experiment" in output
+    assert "next_gen.note: Legacy discovery stays primary" in output
     assert "latest_run.mode: import" in output

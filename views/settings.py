@@ -806,13 +806,13 @@ def _render_status_source_layer() -> None:
     st.markdown("### Source Layer")
     st.caption(
         "This is an internal read-only view of the current source-layer state. "
-        "Legacy remains the current source of truth, shadow reflects locally populated endpoint inventory, and next_gen stays gated."
+        "Legacy remains the current source of truth, shadow reflects locally populated endpoint inventory, and next_gen currently layers supported seed URLs on top of legacy discovery."
     )
 
     st.markdown("#### Internal Source Layer Mode")
     st.caption(
         "This controls the app's internal source-layer mode for testing. "
-        "Visible discovery behavior still stays on legacy unless the existing fallback-safe mode plumbing says otherwise."
+        "Visible discovery behavior still stays legacy-first unless the current source-layer plumbing adds comparison output or supported next_gen seeds."
     )
 
     if "settings_source_layer_mode_value" not in st.session_state:
@@ -821,7 +821,7 @@ def _render_status_source_layer() -> None:
     mode_help = {
         "legacy": "Current source of truth only.",
         "shadow": "Keep legacy visible, but include shadow comparison diagnostics.",
-        "next_gen": "Request next_gen mode internally; live discovery still falls back to legacy today.",
+        "next_gen": "Keep legacy discovery primary, but add supported source-layer seed URLs when available.",
     }
 
     selected_mode = st.radio(
@@ -918,7 +918,7 @@ def _render_status_source_layer() -> None:
     with action_col_2:
         st.caption(
             "Use this to refresh local shadow source-layer tables from the current legacy export. "
-            "This does not change visible app behavior or enable next_gen discovery."
+            "This does not change visible app behavior; it only refreshes the local inventory used by shadow diagnostics and next_gen seeds."
         )
 
     c1, c2, c3, c4 = st.columns(4)
@@ -932,6 +932,8 @@ def _render_status_source_layer() -> None:
     st.write(f"- Shadow active endpoints: {int(shadow.get('active_endpoint_count', 0) or 0)}")
     st.write(f"- Shadow approved endpoints: {int(shadow.get('approved_endpoint_count', 0) or 0)}")
     st.write(f"- Next-gen status: {_humanize(next_gen.get('status', 'unknown'))}")
+    if str(next_gen.get("note", "") or "").strip():
+        st.write(f"- Next-gen note: {str(next_gen.get('note', '')).strip()}")
 
     if latest_run:
         st.markdown("#### Latest Source Layer Run")

@@ -214,7 +214,7 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
         "discover_job_links",
         lambda **kwargs: {
             "status": "completed",
-            "output": "Discovery output\n\nNext-gen source layer mode requested, but live next-gen discovery is not enabled yet. Falling back to legacy discovery for this run.",
+            "output": "Discovery output\n\nNext-gen source layer mode requested. Legacy discovery remains primary for this run, and supported source-layer seed URLs will be added when available.",
             "urls": [],
             "providers": {"greenhouse": 0, "lever": 0, "search": 0},
             "drop_summary": {},
@@ -230,7 +230,7 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
     result = runtime.discover_and_ingest()
 
     assert "Source layer mode: next_gen" in result["output"]
-    assert "Falling back to legacy discovery for this run." in result["output"]
+    assert "Legacy discovery remains primary for this run" in result["output"]
     assert "Source Layer Run Snapshot:" in result["output"]
     assert "- Mode: next_gen" in result["output"]
     assert "- Next-gen seeded URLs: 2" in result["output"]
