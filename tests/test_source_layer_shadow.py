@@ -191,3 +191,85 @@ def test_run_shadow_endpoint_selection_prefers_supported_seed_vendors_for_next_g
     selected_vendors = [candidate["ats_vendor"] for candidate in result["selected_candidates"]]
     assert selected_vendors[:2] == ["lever", "greenhouse"]
     assert "Next-gen seed-supporting candidates: 2" in result["output"]
+
+
+def test_run_shadow_endpoint_selection_prefers_seedable_taleo_endpoint_shapes(temp_db_path):
+    import services.source_layer_shadow as shadow
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute(
+            """
+            INSERT INTO companies (name, canonical_domain, hq, active)
+            VALUES
+                ('Supported Taleo', 'supportedtaleo.com', 'Dallas', 1),
+                ('Unsupported Taleo', 'unsupportedtaleo.com', 'Dallas', 1)
+            """
+        )
+        companies = conn.execute("SELECT id, name FROM companies ORDER BY id").fetchall()
+        company_ids = {row["name"]: row["id"] for row in companies}
+
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id,
+                endpoint_url,
+                endpoint_type,
+                ats_vendor,
+                extraction_method,
+                discovery_source,
+                confidence_score,
+                health_score,
+                review_status,
+                careers_url_status,
+                is_primary,
+                last_validated_at,
+                active,
+                notes
+            )
+            VALUES (?, 'https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl', 'careers_page', 'taleo / oracle recruiting', 'taleo',
+                    'legacy_import', 0.70, 0.70, 'needs_review', 'candidate', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of IT Dallas roles')
+            """,
+            (company_ids["Supported Taleo"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id,
+                endpoint_url,
+                endpoint_type,
+                ats_vendor,
+                extraction_method,
+                discovery_source,
+                confidence_score,
+                health_score,
+                review_status,
+                careers_url_status,
+                is_primary,
+                last_validated_at,
+                active,
+                notes
+            )
+            VALUES (?, 'https://uhg.taleo.net/careersection/careersection/privacyagreement/statementBeforeAuthentification.jsf', 'careers_page', 'taleo / oracle recruiting', 'taleo',
+                    'legacy_import', 0.99, 0.99, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Very strong but unseedable endpoint')
+            """,
+            (company_ids["Unsupported Taleo"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = shadow.run_shadow_endpoint_selection(
+        {
+            "_source_layer_mode": "next_gen",
+            "target_titles": "Vice President of IT",
+            "preferred_locations": "Dallas",
+            "remote_only": "false",
+        }
+    )
+
+    assert result["selected_candidates"][0]["company_name"] == "Supported Taleo"
+    assert "Next-gen seed-supporting candidates: 1" in result["output"]

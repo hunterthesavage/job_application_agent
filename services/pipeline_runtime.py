@@ -253,7 +253,6 @@ def is_probable_job_url(job_url: str) -> tuple[bool, str]:
         "/our-people",
         "/company/",
         "/companies/",
-        "/careers/",
     ]
     for marker in blocked_substrings:
         if marker in lowered:
@@ -304,6 +303,9 @@ def is_probable_job_url(job_url: str) -> tuple[bool, str]:
         if "/job/" in path:
             return True, "workday_detail"
         return False, "workday_root"
+
+    if "/careers/" in lowered:
+        return False, "blocked_pattern:/careers/"
 
     # For non-ATS URLs from search, reject common corporate/info pages early
     generic_non_job_hosts = [
@@ -1510,6 +1512,25 @@ def _discover_urls_from_next_gen_seeds(
                 failure = f"Next-gen iCIMS seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
+        elif ats_vendor == "taleo / oracle recruiting":
+            if not _supports_taleo_oracle_seed_endpoint(endpoint_url):
+                unsupported_count += 1
+                continue
+            scanned_count += 1
+            log_lines.append(f"Checking next-gen Taleo seed: {company_name} | {endpoint_url}")
+            try:
+                urls = _discover_taleo_jobs(endpoint_url, settings)
+                kept_urls = urls[:NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY]
+                discovered.extend(kept_urls)
+                log_lines.append(
+                    "Next-gen Taleo URLs found: "
+                    f"{len(urls)} | kept: {len(kept_urls)} "
+                    f"(company cap: {NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY})"
+                )
+            except Exception as exc:
+                failure = f"Next-gen Taleo seed failed: {company_name} | {exc}"
+                log_lines.append(failure)
+                failure_lines.append(failure)
         else:
             unsupported_count += 1
 
@@ -1660,6 +1681,106 @@ def _build_successfactors_search_url(endpoint_url: str, settings: dict[str, Any]
     base_url = f"{parsed.scheme or 'https'}://{parsed.netloc}"
     query = urlencode({"q": title, "locationsearch": location_value})
     return f"{base_url}/search/?{query}"
+
+
+def _supports_taleo_oracle_seed_endpoint(endpoint_url: str) -> bool:
+    endpoint = safe_text(endpoint_url)
+    if not endpoint:
+        return False
+
+    try:
+        parsed = urlparse(endpoint)
+    except Exception:
+        return False
+
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+    if "taleo.net" not in host or "/careersection/" not in path:
+        return False
+    return path.endswith("/jobsearch.ftl") or path.endswith("/mysearches.ftl")
+
+
+def _build_taleo_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
+    endpoint = safe_text(endpoint_url)
+    if not _supports_taleo_oracle_seed_endpoint(endpoint):
+        return ""
+
+    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    title = safe_text(target_titles[0] if target_titles else "")
+    if not title:
+        return ""
+
+    parsed = urlparse(endpoint)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query["keyword"] = title
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _matches_taleo_seed_title(title: str, settings: dict[str, Any]) -> bool:
+    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    if not target_titles:
+        return True
+
+    normalized_title = normalize_text(title)
+    if not normalized_title:
+        return False
+
+    for target in target_titles:
+        normalized_target = normalize_text(target)
+        if normalized_target and normalized_target in normalized_title:
+            return True
+    return False
+
+
+def _matches_taleo_seed_location(location_text: str, settings: dict[str, Any]) -> bool:
+    remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
+    normalized_location = normalize_text(location_text)
+
+    if remote_only:
+        return "remote" in normalized_location
+
+    if "remote" in normalized_location:
+        return True
+
+    if not preferred_locations:
+        return True
+
+    for location in preferred_locations:
+        normalized_preferred = normalize_text(location)
+        if normalized_preferred and normalized_preferred in normalized_location:
+            return True
+    return False
+
+
+def _discover_taleo_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
+    search_url = _build_taleo_search_url(endpoint_url, settings)
+    if not search_url:
+        return []
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(search_url, timeout=20, headers=headers)
+    response.raise_for_status()
+
+    pattern = re.compile(
+        r'(\d{5,})!\|!([^!]{3,}?)!\|!\1!\|!\2!\|!\1!\|!\1!\|!\1!\|!\1!\|!\1!\|!([^!]+)!\|!false!\|!!\|!!\|!!\|!!\|!([^!]+)!\|!([^!]+)!\|!(\d+)!\|!Apply!\|!',
+        re.S,
+    )
+
+    discovered: list[str] = []
+    for match in pattern.finditer(response.text):
+        job_id = safe_text(match.group(1))
+        title = html.unescape(safe_text(match.group(2)))
+        location_text = html.unescape(safe_text(match.group(3)))
+
+        if not job_id or not _matches_taleo_seed_title(title, settings):
+            continue
+        if not _matches_taleo_seed_location(location_text, settings):
+            continue
+
+        discovered.append(urljoin(endpoint_url, f"jobdetail.ftl?job={job_id}"))
+
+    return list(dict.fromkeys(discovered))
 
 
 def _extract_icims_search_action(page_text: str) -> str:

@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from collections import Counter
 from typing import Any
+from urllib.parse import urlparse
 
 from services.db import db_connection
 
 SHADOW_SELECTION_CAP = 25
-SUPPORTED_NEXT_GEN_SEED_VENDORS = {"greenhouse", "lever", "workday", "sap successfactors", "icims"}
+SUPPORTED_NEXT_GEN_SEED_VENDORS = {
+    "greenhouse",
+    "lever",
+    "workday",
+    "sap successfactors",
+    "icims",
+    "taleo / oracle recruiting",
+}
 
 
 def _safe_text(value: Any) -> str:
@@ -109,12 +117,45 @@ def _score_shadow_candidate(
     return score
 
 
+def _supports_next_gen_seed_endpoint(ats_vendor: str, endpoint_url: str) -> bool:
+    vendor = _safe_text(ats_vendor).lower() or "unknown"
+    endpoint = _safe_text(endpoint_url)
+    if not endpoint:
+        return False
+
+    try:
+        parsed = urlparse(endpoint)
+    except Exception:
+        return False
+
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+
+    if vendor == "greenhouse":
+        return "job-boards.greenhouse.io" in host or "boards.greenhouse.io" in host
+    if vendor == "lever":
+        return "jobs.lever.co" in host
+    if vendor == "workday":
+        return "myworkdayjobs.com" in host
+    if vendor == "sap successfactors":
+        generic_hosts = ("successfactors.com", "sapsf.com", "ondemand.com")
+        return not any(marker in host for marker in generic_hosts)
+    if vendor == "icims":
+        return True
+    if vendor == "taleo / oracle recruiting":
+        if "taleo.net" not in host or "/careersection/" not in path:
+            return False
+        return path.endswith("/jobsearch.ftl") or path.endswith("/mysearches.ftl")
+    return False
+
+
 def _selection_sort_key(item: tuple[int, str, str, Any], *, source_layer_mode: str) -> tuple[Any, ...]:
     score, company_name, endpoint_url, row = item
     ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
     supported_priority = int(ats_vendor in SUPPORTED_NEXT_GEN_SEED_VENDORS)
+    seedable_priority = int(_supports_next_gen_seed_endpoint(ats_vendor, endpoint_url))
     if source_layer_mode == "next_gen":
-        return (-supported_priority, -score, company_name.lower(), endpoint_url.lower())
+        return (-seedable_priority, -supported_priority, -score, company_name.lower(), endpoint_url.lower())
     return (-score, company_name.lower(), endpoint_url.lower())
 
 
@@ -221,7 +262,10 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
         supported_selected = sum(
             1
             for row in selected_rows
-            if (_safe_text(row["ats_vendor"]).lower() or "unknown") in SUPPORTED_NEXT_GEN_SEED_VENDORS
+            if _supports_next_gen_seed_endpoint(
+                _safe_text(row["ats_vendor"]).lower() or "unknown",
+                _safe_text(row["endpoint_url"]),
+            )
         )
         lines.append(f"- Next-gen seed-supporting candidates: {supported_selected}")
     if selected_companies:

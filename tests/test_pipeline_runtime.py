@@ -64,6 +64,17 @@ def test_normalize_job_posting_url_strips_lever_apply_suffix():
     ) == "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf"
 
 
+def test_is_probable_job_url_allows_workday_detail_with_careers_segment():
+    import services.pipeline_runtime as runtime
+
+    is_job, reason = runtime.is_probable_job_url(
+        "https://regeneron.wd1.myworkdayjobs.com/it-IT/Careers/job/Vice-President--Information-Technology_R42096"
+    )
+
+    assert is_job is True
+    assert reason == "workday_detail"
+
+
 def test_create_job_record_with_retry_does_not_retry_non_transient_error(monkeypatch):
     import services.pipeline_runtime as runtime
 
@@ -595,6 +606,70 @@ def test_discover_job_links_next_gen_supports_icims_seeds(monkeypatch):
     assert "Next-gen iCIMS URLs found: 4 | kept: 2" in result["output"]
 
 
+def test_discover_job_links_next_gen_supports_taleo_oracle_seeds(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
+    monkeypatch.setattr(
+        runtime,
+        "load_settings",
+        lambda: {
+            "target_titles": "Vice President of IT",
+            "preferred_locations": "Dallas",
+            "remote_only": "false",
+        },
+    )
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "discover_urls",
+        lambda settings, use_ai_expansion=True: {
+            "all_urls": ["https://legacy.example/jobs/1"],
+            "greenhouse_urls": [],
+            "lever_urls": [],
+            "search_urls": ["https://legacy.example/jobs/1"],
+            "output": "Discovery output",
+            "drop_summary": {},
+        },
+    )
+    monkeypatch.setattr(runtime.discover_module, "save_output_urls", lambda file_path, urls: None)
+    monkeypatch.setattr(
+        runtime,
+        "run_shadow_endpoint_selection",
+        lambda settings=None: {
+            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 1",
+            "selected_endpoint_count": 1,
+            "selected_company_names": ["Weyerhaeuser"],
+            "selected_ats_counts": {"taleo / oracle recruiting": 1},
+            "selected_candidates": [
+                {
+                    "company_name": "Weyerhaeuser",
+                    "endpoint_url": "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl",
+                    "ats_vendor": "taleo / oracle recruiting",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_discover_taleo_jobs",
+        lambda endpoint_url, settings: [
+            "https://weyerhaeuser.taleo.net/careersection/10000/jobdetail.ftl?job=459712",
+            "https://weyerhaeuser.taleo.net/careersection/10000/jobdetail.ftl?job=459713",
+        ],
+    )
+
+    result = runtime.discover_job_links(use_ai_title_expansion=True)
+
+    assert result["next_gen_seed_urls"] == [
+        "https://weyerhaeuser.taleo.net/careersection/10000/jobdetail.ftl?job=459712",
+        "https://weyerhaeuser.taleo.net/careersection/10000/jobdetail.ftl?job=459713",
+    ]
+    assert result["next_gen_supported_seeds_scanned"] == 1
+    assert result["next_gen_unsupported_seeds_skipped"] == 0
+    assert "Checking next-gen Taleo seed: Weyerhaeuser" in result["output"]
+    assert "Next-gen Taleo URLs found: 2 | kept: 2" in result["output"]
+
+
 def test_filter_next_gen_seed_urls_prefers_relevant_matches():
     import services.pipeline_runtime as runtime
 
@@ -691,6 +766,20 @@ def test_build_successfactors_search_url_rejects_generic_successfactors_host():
     )
 
     assert url == ""
+
+
+def test_build_taleo_search_url_supports_classic_public_search_page():
+    import services.pipeline_runtime as runtime
+
+    url = runtime._build_taleo_search_url(
+        "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl",
+        {"target_titles": "Vice President of IT"},
+    )
+
+    assert (
+        url
+        == "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl?keyword=Vice+President+of+IT"
+    )
 
 
 def test_build_jobs_from_urls_tracks_next_gen_seed_contribution(monkeypatch):
