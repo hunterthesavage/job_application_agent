@@ -46,6 +46,7 @@ AUTO_ACCEPT_SCORE = 45
 MAX_URLS_PER_RUN = 25  # temporary fast-test cap; set to 0 for unlimited
 TRANSIENT_FETCH_RETRY_ATTEMPTS = 2
 TRANSIENT_FETCH_RETRY_DELAY_SECONDS = 0.35
+NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY = 3
 
 
 def safe_text(value) -> str:
@@ -694,6 +695,76 @@ def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[
         return True, f"url title hint token overlap: {', '.join(sorted(overlap)[:3])}"
 
     return False, f"url title prefilter mismatch: {hint}"
+
+
+def _cheap_seed_location_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[bool, str]:
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
+    remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+
+    if not preferred_locations and not remote_only:
+        return True, "no preferred locations configured"
+
+    try:
+        parsed = urlparse(safe_text(job_url))
+        hint_source = " ".join(part for part in [parsed.path, parsed.query] if safe_text(part))
+    except Exception:
+        hint_source = safe_text(job_url)
+
+    normalized_hint = normalize_text(hint_source)
+    if not normalized_hint:
+        return True, "no reliable url location hint"
+
+    if "remote" in normalized_hint:
+        return True, "url location hint matched remote"
+
+    if remote_only:
+        return False, "url location prefilter mismatch: remote_only"
+
+    ignored_tokens = {"metro", "area", "city", "state", "county", "region", "office", "location"}
+    for location in preferred_locations:
+        normalized_location = normalize_text(location)
+        if normalized_location and normalized_location in normalized_hint:
+            return True, f"url location hint matched '{location}'"
+
+        location_tokens = {
+            token
+            for token in tokenize(location)
+            if len(token) >= 4 and token not in ignored_tokens
+        }
+        if location_tokens and location_tokens.intersection(set(tokenize(normalized_hint))):
+            return True, f"url location hint token overlap: {', '.join(sorted(location_tokens)[:2])}"
+
+    return False, f"url location prefilter mismatch: {hint_source}"
+
+
+def _filter_next_gen_seed_urls(
+    urls: list[str],
+    settings: dict[str, Any],
+    *,
+    apply_location_filter: bool,
+    per_company_cap: int = NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY,
+) -> tuple[list[str], int, int]:
+    kept: list[str] = []
+    title_skips = 0
+    location_skips = 0
+
+    for url in urls:
+        title_ok, _ = _cheap_url_title_prefilter(url, settings)
+        if not title_ok:
+            title_skips += 1
+            continue
+
+        if apply_location_filter:
+            location_ok, _ = _cheap_seed_location_prefilter(url, settings)
+            if not location_ok:
+                location_skips += 1
+                continue
+
+        kept.append(url)
+        if per_company_cap > 0 and len(kept) >= per_company_cap:
+            break
+
+    return list(dict.fromkeys(kept)), title_skips, location_skips
 
 
 def _normalize_preparse_skip_reason(gate_reason: str) -> str:
@@ -1377,8 +1448,18 @@ def _discover_urls_from_next_gen_seeds(
             log_lines.append(f"Checking next-gen Workday seed: {company_name} | {endpoint_url}")
             try:
                 urls = _discover_workday_jobs(endpoint_url, settings)
-                discovered.extend(urls)
-                log_lines.append(f"Next-gen Workday URLs found: {len(urls)}")
+                filtered_urls, title_skips, location_skips = _filter_next_gen_seed_urls(
+                    urls,
+                    settings,
+                    apply_location_filter=True,
+                )
+                discovered.extend(filtered_urls)
+                log_lines.append(
+                    "Next-gen Workday URLs found: "
+                    f"{len(urls)} | kept: {len(filtered_urls)} "
+                    f"(title skips: {title_skips}, location skips: {location_skips}, "
+                    f"company cap: {NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY})"
+                )
             except Exception as exc:
                 failure = f"Next-gen Workday seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
@@ -1391,8 +1472,18 @@ def _discover_urls_from_next_gen_seeds(
             log_lines.append(f"Checking next-gen SuccessFactors seed: {company_name} | {endpoint_url}")
             try:
                 urls = _discover_successfactors_jobs(endpoint_url, settings)
-                discovered.extend(urls)
-                log_lines.append(f"Next-gen SuccessFactors URLs found: {len(urls)}")
+                filtered_urls, title_skips, location_skips = _filter_next_gen_seed_urls(
+                    urls,
+                    settings,
+                    apply_location_filter=True,
+                )
+                discovered.extend(filtered_urls)
+                log_lines.append(
+                    "Next-gen SuccessFactors URLs found: "
+                    f"{len(urls)} | kept: {len(filtered_urls)} "
+                    f"(title skips: {title_skips}, location skips: {location_skips}, "
+                    f"company cap: {NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY})"
+                )
             except Exception as exc:
                 failure = f"Next-gen SuccessFactors seed failed: {company_name} | {exc}"
                 log_lines.append(failure)

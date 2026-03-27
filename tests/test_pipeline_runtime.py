@@ -465,7 +465,15 @@ def test_discover_job_links_next_gen_supports_successfactors_seeds(monkeypatch):
     import services.pipeline_runtime as runtime
 
     monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
-    monkeypatch.setattr(runtime, "load_settings", lambda: {"target_titles": "Business Analyst"})
+    monkeypatch.setattr(
+        runtime,
+        "load_settings",
+        lambda: {
+            "target_titles": "Business Analyst",
+            "preferred_locations": "Dallas",
+            "remote_only": "false",
+        },
+    )
     monkeypatch.setattr(
         runtime.discover_module,
         "discover_urls",
@@ -499,18 +507,54 @@ def test_discover_job_links_next_gen_supports_successfactors_seeds(monkeypatch):
     monkeypatch.setattr(
         runtime,
         "_discover_successfactors_jobs",
-        lambda endpoint_url, settings: ["https://careers.paramount.com/job/Remote/Business-Analyst/123/"],
+        lambda endpoint_url, settings: [
+            "https://careers.paramount.com/job/Remote/Business-Analyst/123/",
+            "https://careers.paramount.com/job/Dallas/Business-Analyst/124/",
+            "https://careers.paramount.com/job/Dallas/Business-Analyst/125/",
+            "https://careers.paramount.com/job/Dallas/Business-Analyst/126/",
+            "https://careers.paramount.com/job/Austin/Senior-Sales-Manager/127/",
+        ],
     )
 
     result = runtime.discover_job_links(use_ai_title_expansion=True)
 
     assert result["next_gen_seed_urls"] == [
-        "https://careers.paramount.com/job/Remote/Business-Analyst/123/"
+        "https://careers.paramount.com/job/Remote/Business-Analyst/123/",
+        "https://careers.paramount.com/job/Dallas/Business-Analyst/124/",
+        "https://careers.paramount.com/job/Dallas/Business-Analyst/125/",
     ]
     assert result["next_gen_supported_seeds_scanned"] == 1
     assert result["next_gen_unsupported_seeds_skipped"] == 0
     assert "Checking next-gen SuccessFactors seed: Paramount" in result["output"]
-    assert "Next-gen SuccessFactors URLs found: 1" in result["output"]
+    assert "Next-gen SuccessFactors URLs found: 5 | kept: 3" in result["output"]
+
+
+def test_filter_next_gen_seed_urls_prefers_relevant_matches():
+    import services.pipeline_runtime as runtime
+
+    kept, title_skips, location_skips = runtime._filter_next_gen_seed_urls(
+        [
+            "https://careers.example.com/job/Remote/Vice-President-of-IT/1/",
+            "https://careers.example.com/job/Dallas/Vice-President-of-IT/2/",
+            "https://careers.example.com/job/Houston/Vice-President-of-IT/4/",
+            "https://careers.example.com/job/Dallas/Sr-Sales-Manager/5/",
+            "https://careers.example.com/job/Dallas/Vice-President-of-IT/3/",
+        ],
+        {
+            "target_titles": "Vice President of IT",
+            "preferred_locations": "Dallas",
+            "remote_only": "false",
+        },
+        apply_location_filter=True,
+    )
+
+    assert kept == [
+        "https://careers.example.com/job/Remote/Vice-President-of-IT/1/",
+        "https://careers.example.com/job/Dallas/Vice-President-of-IT/2/",
+        "https://careers.example.com/job/Dallas/Vice-President-of-IT/3/",
+    ]
+    assert title_skips == 1
+    assert location_skips == 1
 
 
 def test_build_workday_detail_url_preserves_board_prefix():
