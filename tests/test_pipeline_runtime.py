@@ -698,6 +698,54 @@ def test_filter_next_gen_seed_urls_prefers_relevant_matches():
     assert location_skips == 1
 
 
+def test_cheap_url_title_prefilter_rejects_wrong_executive_lane_without_hardcoded_title():
+    import services.pipeline_runtime as runtime
+
+    passed, reason = runtime._cheap_url_title_prefilter(
+        "https://careers.example.com/job/Dallas/Vice-President-of-Manufacturing/1/",
+        {"target_titles": "Vice President of IT"},
+    )
+
+    assert passed is False
+    assert "signature mismatch" in reason
+
+
+def test_cheap_url_title_prefilter_allows_adjacent_technology_leadership_lane():
+    import services.pipeline_runtime as runtime
+
+    passed, reason = runtime._cheap_url_title_prefilter(
+        "https://careers.example.com/job/Dallas/Vice-President-of-Engineering/1/",
+        {"target_titles": "Vice President of IT"},
+    )
+
+    assert passed is True
+    assert "token overlap" in reason
+
+
+def test_cheap_url_title_prefilter_rejects_real_mohawk_manufacturing_slug():
+    import services.pipeline_runtime as runtime
+
+    passed, reason = runtime._cheap_url_title_prefilter(
+        "https://careers.mohawkind.com/DalTile/job/Dallas-VP-OF-MANUFACTURING-%28MULTI-SITE%29-Texa-75217/1365283300/",
+        {"target_titles": "Vice President of IT"},
+    )
+
+    assert passed is False
+    assert "signature mismatch" in reason
+
+
+def test_cheap_url_title_prefilter_rejects_real_hfs_manager_slug():
+    import services.pipeline_runtime as runtime
+
+    passed, reason = runtime._cheap_url_title_prefilter(
+        "https://careers.hfsinclair.com/job/Dallas-Natural-Gas-Supply-Manager-TX-75219/1368517600/",
+        {"target_titles": "Vice President of IT"},
+    )
+
+    assert passed is False
+    assert "prefilter mismatch" in reason or "signature mismatch" in reason
+
+
 def test_build_icims_search_url_uses_form_action_and_location_value(monkeypatch):
     import services.pipeline_runtime as runtime
 

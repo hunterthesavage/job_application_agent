@@ -1,4 +1,5 @@
 import html
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -538,6 +539,38 @@ def _render_result(result: dict) -> None:
         st.error("Action failed.")
         if result.get("output"):
             st.text(result["output"])
+
+
+def _render_copy_result_button(output_text: str, *, key: str) -> None:
+    text = str(output_text or "")
+    if not text:
+        return
+
+    status_key = f"pipeline_copy_result_status_{key}"
+    button_col, status_col = st.columns([0.18, 0.82])
+    with button_col:
+        if st.button("Copy", key=f"pipeline_copy_result_button_{key}", use_container_width=True):
+            try:
+                subprocess.run(
+                    ["pbcopy"],
+                    input=text,
+                    text=True,
+                    check=True,
+                )
+                st.session_state[status_key] = ("success", "Copied")
+            except Exception:
+                st.session_state[status_key] = ("error", "Copy failed")
+
+    status = st.session_state.get(status_key)
+    if not status:
+        return
+
+    level, message = status
+    with status_col:
+        if level == "success":
+            st.caption(message)
+        else:
+            st.caption(message)
 
 
 def _job_urls_file_exists() -> bool:
@@ -1641,6 +1674,7 @@ def _render_last_result_card() -> None:
         compact=True,
     )
     with st.expander("Open last result", expanded=False):
+        _render_copy_result_button(str(last_result.get("output", "") or ""), key="last_result")
         _render_result(last_result)
     _close_section_shell()
 

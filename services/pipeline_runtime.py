@@ -5,7 +5,7 @@ import re
 import time
 from collections import Counter
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 from typing import Any
 
 import requests
@@ -171,6 +171,110 @@ def parse_preferred_locations(value: str) -> list[str]:
 
 def tokenize(value: str) -> list[str]:
     return [token for token in normalize_text(value).split() if token]
+
+
+LEADERSHIP_LEVEL_GROUPS: dict[str, set[str]] = {
+    "chief": {"chief", "ceo", "cto", "cio", "cfo", "coo", "cmo", "cro", "president"},
+    "vice_president": {"vice", "president", "vp", "avp", "svp", "evp"},
+    "director": {"director", "head"},
+    "manager": {"manager", "supervisor"},
+    "lead": {"lead", "principal"},
+}
+
+FUNCTION_LANE_GROUPS: dict[str, set[str]] = {
+    "technology": {
+        "technology",
+        "it",
+        "information",
+        "engineering",
+        "software",
+        "systems",
+        "infrastructure",
+        "security",
+        "cybersecurity",
+        "cyber",
+        "architecture",
+        "platform",
+        "application",
+        "applications",
+        "data",
+        "analytics",
+        "digital",
+        "product",
+        "technical",
+    },
+    "finance": {"finance", "financial", "accounting", "treasury", "audit", "controller"},
+    "operations": {
+        "operations",
+        "operational",
+        "manufacturing",
+        "supply",
+        "procurement",
+        "logistics",
+        "construction",
+        "plant",
+        "facilities",
+        "warehouse",
+    },
+    "sales": {"sales", "revenue", "commercial", "growth", "business-development"},
+    "marketing": {"marketing", "brand", "communications", "content"},
+    "people": {"people", "hr", "human", "talent", "recruiting", "acquisition"},
+    "legal": {"legal", "compliance", "privacy", "regulatory", "counsel"},
+}
+
+
+def _detect_leadership_levels(text: str) -> set[str]:
+    normalized = normalize_text(text)
+    tokens = set(tokenize(text))
+    levels: set[str] = set()
+
+    for level, markers in LEADERSHIP_LEVEL_GROUPS.items():
+        if level == "vice_president":
+            if (
+                "vice president" in normalized
+                or any(marker in tokens for marker in {"vp", "avp", "svp", "evp"})
+            ):
+                levels.add(level)
+            continue
+        if level == "chief":
+            if "chief" in tokens or any(marker in tokens for marker in {"ceo", "cto", "cio", "cfo", "coo", "cmo", "cro"}):
+                levels.add(level)
+            continue
+        if any(marker in tokens for marker in markers):
+            levels.add(level)
+
+    return levels
+
+
+def _detect_function_lanes(text: str) -> set[str]:
+    tokens = set(tokenize(text))
+    lanes: set[str] = set()
+    for lane, markers in FUNCTION_LANE_GROUPS.items():
+        if tokens.intersection(markers):
+            lanes.add(lane)
+    return lanes
+
+
+def _hint_matches_target_signature(hint: str, targets: list[str]) -> bool:
+    hint_levels = _detect_leadership_levels(hint)
+    hint_lanes = _detect_function_lanes(hint)
+    if not hint_levels and not hint_lanes:
+        return True
+
+    target_levels: set[str] = set()
+    target_lanes: set[str] = set()
+    for target in targets:
+        target_levels.update(_detect_leadership_levels(target))
+        target_lanes.update(_detect_function_lanes(target))
+
+    if target_levels and hint_levels and not target_levels.intersection(hint_levels):
+        return False
+
+    # Only gate by function lane when both sides express a lane.
+    if target_lanes and hint_lanes and not target_lanes.intersection(hint_lanes):
+        return False
+
+    return True
 
 
 def load_job_urls_from_file(file_path: str | Path) -> list[str]:
@@ -590,7 +694,13 @@ def _extract_url_title_hint(job_url: str) -> str:
     }
 
     def _raw_part_is_opaque(part: str) -> bool:
-        compact = part.replace("-", "").replace("_", "")
+        decoded = unquote(part)
+        normalized = normalize_text(decoded)
+        readable_tokens = [token for token in normalized.split() if token.isalpha()]
+        if len(readable_tokens) >= 3 and any(len(token) >= 4 for token in readable_tokens):
+            return False
+
+        compact = decoded.replace("-", "").replace("_", "").replace("%", "")
         if len(compact) >= 24 and any(ch.isdigit() for ch in compact):
             return True
         hex_chars = set("0123456789abcdef")
@@ -622,7 +732,7 @@ def _extract_url_title_hint(job_url: str) -> str:
 
     kept = []
     for part in candidate_parts:
-        normalized = normalize_text(part)
+        normalized = normalize_text(unquote(part))
         if not normalized:
             continue
         if normalized in ignored:
@@ -695,7 +805,12 @@ def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[
 
     overlap = hint_tokens.intersection(target_token_pool)
     if overlap:
+        if not _hint_matches_target_signature(hint, expanded_titles):
+            return False, f"url title signature mismatch: {hint}"
         return True, f"url title hint token overlap: {', '.join(sorted(overlap)[:3])}"
+
+    if not _hint_matches_target_signature(hint, expanded_titles):
+        return False, f"url title signature mismatch: {hint}"
 
     return False, f"url title prefilter mismatch: {hint}"
 
