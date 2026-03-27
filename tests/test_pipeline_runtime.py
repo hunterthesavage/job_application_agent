@@ -136,8 +136,9 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
             "drop_summary": {},
         }
 
-    def fake_build_jobs(urls, source_name, source_detail, *, use_ai_scoring=True):
+    def fake_build_jobs(urls, source_name, source_detail, *, use_ai_scoring=True, seeded_job_urls=None):
         captured["use_ai_scoring"] = use_ai_scoring
+        captured["seeded_job_urls"] = seeded_job_urls
         return {
             "status": "completed",
             "output": "Ingest output",
@@ -154,6 +155,8 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
             "build_seconds": 0.0,
             "ingest_seconds": 0.0,
             "skip_summary": {},
+            "seeded_accepted_jobs": 0,
+            "seeded_accepted_companies": [],
         }
 
     monkeypatch.setattr(runtime, "discover_job_links", fake_discover_job_links)
@@ -166,12 +169,14 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
 
     assert captured["discover_flag"] is False
     assert captured["use_ai_scoring"] is False
+    assert captured["seeded_job_urls"] == []
     assert "Discovery output" in result["output"]
     assert "Ingest output" in result["output"]
     assert "Source Layer Run Snapshot:" in result["output"]
     assert "- Mode: legacy" in result["output"]
     assert "- Shadow active endpoints: 473" in result["output"]
     assert "- Shadow selected endpoints: 20" in result["output"]
+    assert "- Next-gen seeded accepted jobs: 0" in result["output"]
     assert captured["source_layer_run"]["mode"] == "legacy"
     assert captured["source_layer_run"]["discovered_urls"] == 1
     assert captured["source_layer_run"]["accepted_jobs"] == 0
@@ -233,7 +238,10 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
     assert "Legacy discovery remains primary for this run" in result["output"]
     assert "Source Layer Run Snapshot:" in result["output"]
     assert "- Mode: next_gen" in result["output"]
+    assert "- Next-gen supported seeds scanned: 0" in result["output"]
+    assert "- Next-gen unsupported seeds skipped: 0" in result["output"]
     assert "- Next-gen seeded URLs: 2" in result["output"]
+    assert "- Next-gen seeded accepted jobs: 0" in result["output"]
     assert captured["source_layer_run"]["mode"] == "next_gen"
     assert captured["source_layer_run"]["discovered_urls"] == 0
     assert captured["source_layer_run"]["accepted_jobs"] == 0
@@ -301,9 +309,83 @@ def test_discover_job_links_next_gen_merges_supported_seed_urls(monkeypatch):
         "https://jobs.lever.co/rover/seeded-job",
         "https://job-boards.greenhouse.io/checkr/jobs/seeded-job",
     ]
+    assert result["next_gen_supported_seeds_scanned"] == 2
+    assert result["next_gen_unsupported_seeds_skipped"] == 0
     assert result["urls"][:2] == result["next_gen_seed_urls"]
     assert "Next-gen seed discovery summary:" in result["output"]
     assert "Next-gen seeds added 2 URL(s) ahead of legacy results for this run." in result["output"]
+
+
+def test_build_jobs_from_urls_tracks_next_gen_seed_contribution(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    monkeypatch.setattr(runtime, "load_settings", lambda: {})
+    monkeypatch.setattr(runtime, "is_probable_job_url", lambda url: (True, ""))
+    monkeypatch.setattr(runtime, "_cheap_url_title_prefilter", lambda url, settings: (True, ""))
+    monkeypatch.setattr(
+        runtime,
+        "create_job_record",
+        lambda url: SimpleNamespace(
+            company="SeedCo" if "seeded" in url else "LegacyCo",
+            title="Business Analyst",
+            location="Remote",
+            normalized_title="Business Analyst",
+            role_family="Business",
+            remote_type="Remote",
+            dallas_dfw_match="No",
+            compensation_raw="",
+            validation_status="Valid",
+            validation_confidence="High",
+            compensation_status="",
+            job_posting_url=url,
+        ),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "score_job_match",
+        lambda job, settings: {"should_accept": True, "score": 65, "reason_text": "match"},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "enrich_job_payload",
+        lambda job, source_hint, source_detail_hint: {
+            "company": job.company,
+            "title": job.title,
+            "location": job.location,
+            "job_posting_url": job.job_posting_url,
+            "source_trust": "ATS Confirmed",
+            "ats_type": "Lever",
+            "source_type": "ATS",
+        },
+    )
+    monkeypatch.setattr(runtime, "load_scoring_profile_text", lambda: ("", ""))
+    monkeypatch.setattr(
+        runtime,
+        "ingest_job_records",
+        lambda job_records, source_name, source_detail, run_type="ingest_jobs": {
+            "inserted_count": len(job_records),
+            "updated_count": 0,
+            "skipped_removed_count": 0,
+            "source_yield_top": [],
+            "source_dominance": {},
+        },
+    )
+
+    result = runtime._build_jobs_from_urls(
+        ["https://jobs.lever.co/seeded-job", "https://jobs.lever.co/legacy-job"],
+        source_name="Local Pipeline",
+        source_detail="in_memory_discovery_result",
+        use_ai_scoring=False,
+        seeded_job_urls=["https://jobs.lever.co/seeded-job"],
+    )
+
+    assert result["accepted_jobs"] == 2
+    assert result["seeded_url_count"] == 1
+    assert result["seeded_accepted_jobs"] == 1
+    assert result["legacy_accepted_jobs"] == 1
+    assert result["seeded_accepted_companies"] == ["SeedCo"]
+    assert "Next-gen contribution summary:" in result["output"]
+    assert "- Seeded URLs accepted: 1" in result["output"]
 
 
 def test_build_jobs_from_urls_skips_ai_when_disabled(monkeypatch):

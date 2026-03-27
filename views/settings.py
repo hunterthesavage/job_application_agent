@@ -944,6 +944,20 @@ def _render_status_source_layer() -> None:
         st.write(f"- Selected endpoints: {int(latest_run.get('selected_endpoints', 0) or 0)}")
         st.write(f"- Discovered URLs: {int(latest_run.get('discovered_urls', 0) or 0)}")
         st.write(f"- Accepted jobs: {int(latest_run.get('accepted_jobs', 0) or 0)}")
+        if latest_run_mode == "next_gen":
+            st.write(
+                f"- Next-gen supported seeds scanned: {int(latest_run.get('next_gen_supported_seeds_scanned', 0) or 0)}"
+            )
+            st.write(
+                f"- Next-gen unsupported seeds skipped: {int(latest_run.get('next_gen_unsupported_seeds_skipped', 0) or 0)}"
+            )
+            st.write(f"- Next-gen seeded URLs: {int(latest_run.get('next_gen_seeded_urls', 0) or 0)}")
+            st.write(
+                f"- Next-gen seeded accepted jobs: {int(latest_run.get('next_gen_seeded_accepted_jobs', 0) or 0)}"
+            )
+            seeded_companies = str(latest_run.get("seeded_accepted_companies", "") or "").strip()
+            if seeded_companies:
+                st.write(f"- Seeded accepted companies: {seeded_companies}")
         st.write(f"- Errors: {int(latest_run.get('errors', 0) or 0)}")
         if str(latest_run.get("notes", "") or "").strip():
             st.write(f"- Notes: {latest_run.get('notes', '')}")

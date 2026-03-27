@@ -799,8 +799,14 @@ def _build_jobs_from_urls(
     source_detail: str,
     *,
     use_ai_scoring: bool = True,
+    seeded_job_urls: list[str] | None = None,
 ) -> dict[str, Any]:
     settings = load_settings()
+    seeded_job_url_set = {
+        safe_text(url).strip().lower()
+        for url in (seeded_job_urls or [])
+        if safe_text(url)
+    }
 
     accepted_jobs = []
     accepted_jobs_by_key: dict[str, dict[str, Any]] = {}
@@ -961,6 +967,20 @@ def _build_jobs_from_urls(
 
     ai_scoring_seconds = time.perf_counter() - ai_scoring_started_at
 
+    seeded_accepted_payloads = [
+        payload
+        for payload in accepted_jobs
+        if safe_text(payload.get("job_posting_url", "")).strip().lower() in seeded_job_url_set
+    ]
+    seeded_accepted_companies = list(
+        dict.fromkeys(
+            safe_text(payload.get("company", "")) or "(unknown company)"
+            for payload in seeded_accepted_payloads
+        )
+    )[:5]
+    seeded_accepted_jobs = len(seeded_accepted_payloads)
+    legacy_accepted_jobs = max(len(accepted_jobs) - seeded_accepted_jobs, 0)
+
     ingest_started_at = time.perf_counter()
     summary = ingest_job_records(
         job_records=accepted_jobs,
@@ -987,6 +1007,16 @@ def _build_jobs_from_urls(
     output_lines.append(f"Build/validate seconds: {build_seconds:.2f}")
     output_lines.append(f"AI scoring seconds: {ai_scoring_seconds:.2f}")
     output_lines.append(f"Ingest seconds: {ingest_seconds:.2f}")
+
+    if seeded_job_url_set:
+        output_lines.append("")
+        output_lines.append("Next-gen contribution summary:")
+        output_lines.append(f"- Seeded URLs discovered: {len(seeded_job_url_set)}")
+        output_lines.append(f"- Seeded URLs accepted: {seeded_accepted_jobs}")
+        output_lines.append(f"- Legacy URLs accepted: {legacy_accepted_jobs}")
+        output_lines.append(
+            f"- Seeded accepted companies: {', '.join(seeded_accepted_companies) if seeded_accepted_companies else 'none'}"
+        )
 
     _append_run_quality_summary_lines(
         output_lines=output_lines,
@@ -1029,6 +1059,10 @@ def _build_jobs_from_urls(
         "build_seconds": build_seconds,
         "ingest_seconds": ingest_seconds,
         "skip_summary": dict(skip_counts),
+        "seeded_url_count": len(seeded_job_url_set),
+        "seeded_accepted_jobs": seeded_accepted_jobs,
+        "legacy_accepted_jobs": legacy_accepted_jobs,
+        "seeded_accepted_companies": seeded_accepted_companies,
     }
 
 
@@ -1137,7 +1171,10 @@ def _format_source_layer_run_snapshot(
             f"- Shadow active endpoints: {int(shadow_status.get('active_endpoint_count', 0) or 0)}",
             f"- Shadow approved endpoints: {int(shadow_status.get('approved_endpoint_count', 0) or 0)}",
             f"- Shadow selected endpoints: {int(shadow_result.get('selected_endpoint_count', 0) or 0)}",
+            f"- Next-gen supported seeds scanned: {int(discovery_result.get('next_gen_supported_seeds_scanned', 0) or 0)}",
+            f"- Next-gen unsupported seeds skipped: {int(discovery_result.get('next_gen_unsupported_seeds_skipped', 0) or 0)}",
             f"- Next-gen seeded URLs: {len(discovery_result.get('next_gen_seed_urls', []) or [])}",
+            f"- Next-gen seeded accepted jobs: {int(ingest_result.get('seeded_accepted_jobs', 0) or 0)}",
             f"- Provider mix: {provider_mix}",
             f"- Top shadow ATS families: {top_ats or 'none yet'}",
             f"- Top shadow companies: {selected_companies or 'none yet'}",
@@ -1169,9 +1206,25 @@ def _record_pipeline_source_layer_run(
     )
     if selected_companies:
         notes += f" Shadow companies: {selected_companies}."
+    supported_seeds_scanned = int(discovery_result.get("next_gen_supported_seeds_scanned", 0) or 0)
+    unsupported_seeds_skipped = int(discovery_result.get("next_gen_unsupported_seeds_skipped", 0) or 0)
+    if supported_seeds_scanned or unsupported_seeds_skipped:
+        notes += (
+            f" Next-gen supported seeds scanned: {supported_seeds_scanned}."
+            f" Next-gen unsupported seeds skipped: {unsupported_seeds_skipped}."
+        )
     seeded_urls = len(discovery_result.get("next_gen_seed_urls", []) or [])
     if seeded_urls:
         notes += f" Next-gen seeded URLs: {seeded_urls}."
+    seeded_accepted_jobs = int(ingest_result.get("seeded_accepted_jobs", 0) or 0)
+    if seeded_accepted_jobs:
+        notes += f" Next-gen seeded accepted jobs: {seeded_accepted_jobs}."
+    seeded_accepted_companies = ", ".join(
+        str(name)
+        for name in (ingest_result.get("seeded_accepted_companies", []) or [])
+    )
+    if seeded_accepted_companies:
+        notes += f" Seeded accepted companies: {seeded_accepted_companies}."
     record_source_layer_run(
         mode=source_layer_mode,
         imported_records=0,
@@ -1187,10 +1240,10 @@ def _discover_urls_from_next_gen_seeds(
     *,
     settings: dict[str, Any],
     shadow_result: dict[str, Any],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], int, int]:
     selected_candidates = shadow_result.get("selected_candidates", []) if isinstance(shadow_result, dict) else []
     if not isinstance(selected_candidates, list):
-        return [], ["- Next-gen seed discovery: no selected candidates available."]
+        return [], ["- Next-gen seed discovery: no selected candidates available."], 0, 0
 
     discovered: list[str] = []
     log_lines: list[str] = []
@@ -1237,7 +1290,7 @@ def _discover_urls_from_next_gen_seeds(
     else:
         log_lines.append("- Next-gen seed discovery: no supported seed endpoints were available.")
 
-    return discovered, log_lines
+    return discovered, log_lines, scanned_count, unsupported_count
 
 
 def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]:
@@ -1264,12 +1317,14 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         shadow_output = safe_text(shadow_result.get("output", ""))
         if shadow_output:
             output_parts.append(shadow_output)
-        seeded_urls, seed_log_lines = _discover_urls_from_next_gen_seeds(
+        seeded_urls, seed_log_lines, supported_scanned, unsupported_skipped = _discover_urls_from_next_gen_seeds(
             settings=settings,
             shadow_result=shadow_result,
         )
         if seed_log_lines:
             output_parts.append("\n".join(seed_log_lines).strip())
+        discovery_result["next_gen_supported_seeds_scanned"] = supported_scanned
+        discovery_result["next_gen_unsupported_seeds_skipped"] = unsupported_skipped
         if seeded_urls:
             existing_urls = discovery_result.get("all_urls", []) or []
             merged_urls = list(dict.fromkeys(seeded_urls + existing_urls))
@@ -1304,6 +1359,8 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         "source_layer_mode": source_layer_mode,
         "shadow_result": shadow_result or {},
         "next_gen_seed_urls": discovery_result.get("next_gen_seed_urls", []),
+        "next_gen_supported_seeds_scanned": int(discovery_result.get("next_gen_supported_seeds_scanned", 0) or 0),
+        "next_gen_unsupported_seeds_skipped": int(discovery_result.get("next_gen_unsupported_seeds_skipped", 0) or 0),
     }
 
 
@@ -1601,6 +1658,7 @@ def discover_and_ingest(
         source_name="Local Pipeline",
         source_detail="in_memory_discovery_result",
         use_ai_scoring=use_ai_scoring,
+        seeded_job_urls=discovery_result.get("next_gen_seed_urls", []),
     )
 
     if ingest_result.get("output"):

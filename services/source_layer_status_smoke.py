@@ -1,6 +1,22 @@
 from __future__ import annotations
 
+import re
+
 from services.db import db_connection
+
+
+def _extract_note_int(notes: str, label: str) -> int:
+    match = re.search(rf"{re.escape(label)}:\s*(\d+)", str(notes or ""))
+    if not match:
+        return 0
+    return int(match.group(1))
+
+
+def _extract_note_text(notes: str, label: str) -> str:
+    match = re.search(rf"{re.escape(label)}:\s*(.*?)(?:\.|$)", str(notes or ""))
+    if not match:
+        return ""
+    return str(match.group(1) or "").strip()
 
 
 def build_source_layer_status_summary() -> dict:
@@ -36,6 +52,7 @@ def build_source_layer_status_summary() -> dict:
 
     latest_run_summary = None
     if latest_run is not None:
+        latest_run_notes = str(latest_run["notes"] or "")
         latest_run_summary = {
             "mode": str(latest_run["mode"] or ""),
             "import_file_path": str(latest_run["import_file_path"] or ""),
@@ -44,7 +61,20 @@ def build_source_layer_status_summary() -> dict:
             "discovered_urls": int(latest_run["discovered_urls"] or 0),
             "accepted_jobs": int(latest_run["accepted_jobs"] or 0),
             "errors": int(latest_run["errors"] or 0),
-            "notes": str(latest_run["notes"] or ""),
+            "notes": latest_run_notes,
+            "next_gen_supported_seeds_scanned": _extract_note_int(
+                latest_run_notes, "Next-gen supported seeds scanned"
+            ),
+            "next_gen_unsupported_seeds_skipped": _extract_note_int(
+                latest_run_notes, "Next-gen unsupported seeds skipped"
+            ),
+            "next_gen_seeded_urls": _extract_note_int(latest_run_notes, "Next-gen seeded URLs"),
+            "next_gen_seeded_accepted_jobs": _extract_note_int(
+                latest_run_notes, "Next-gen seeded accepted jobs"
+            ),
+            "seeded_accepted_companies": _extract_note_text(
+                latest_run_notes, "Seeded accepted companies"
+            ),
             "started_at": str(latest_run["started_at"] or ""),
             "finished_at": str(latest_run["finished_at"] or ""),
         }
@@ -86,6 +116,11 @@ def format_source_layer_status_summary(summary: dict) -> str:
                 f"latest_run.mode: {latest_run['mode']}",
                 f"latest_run.imported_records: {latest_run['imported_records']}",
                 f"latest_run.errors: {latest_run['errors']}",
+                f"latest_run.next_gen_supported_seeds_scanned: {latest_run['next_gen_supported_seeds_scanned']}",
+                f"latest_run.next_gen_unsupported_seeds_skipped: {latest_run['next_gen_unsupported_seeds_skipped']}",
+                f"latest_run.next_gen_seeded_urls: {latest_run['next_gen_seeded_urls']}",
+                f"latest_run.next_gen_seeded_accepted_jobs: {latest_run['next_gen_seeded_accepted_jobs']}",
+                f"latest_run.seeded_accepted_companies: {latest_run['seeded_accepted_companies']}",
                 f"latest_run.notes: {latest_run['notes']}",
             ]
         )
