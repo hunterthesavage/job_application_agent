@@ -36,6 +36,94 @@ def test_discover_job_links_passes_ai_title_expansion_flag(monkeypatch):
     assert result["url_count"] == 1
 
 
+def test_create_job_record_with_retry_retries_timeout_once(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    calls = {"count": 0}
+
+    def fake_create_job_record(job_url):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise runtime.requests.exceptions.ReadTimeout("timed out")
+        return SimpleNamespace(job_posting_url=job_url)
+
+    monkeypatch.setattr(runtime, "create_job_record", fake_create_job_record)
+    monkeypatch.setattr(runtime.time, "sleep", lambda seconds: None)
+
+    job = runtime._create_job_record_with_retry("https://jobs.lever.co/example/1")
+
+    assert calls["count"] == 2
+    assert job.job_posting_url == "https://jobs.lever.co/example/1"
+
+
+def test_normalize_job_posting_url_strips_lever_apply_suffix():
+    import services.pipeline_runtime as runtime
+
+    assert runtime._normalize_job_posting_url(
+        "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf/apply"
+    ) == "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf"
+
+
+def test_create_job_record_with_retry_does_not_retry_non_transient_error(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    calls = {"count": 0}
+
+    def fake_create_job_record(job_url):
+        calls["count"] += 1
+        raise ValueError("bad parse")
+
+    monkeypatch.setattr(runtime, "create_job_record", fake_create_job_record)
+    monkeypatch.setattr(runtime.time, "sleep", lambda seconds: None)
+
+    try:
+        runtime._create_job_record_with_retry("https://example.com/jobs/1")
+    except ValueError as exc:
+        assert str(exc) == "bad parse"
+    else:
+        raise AssertionError("Expected ValueError to be raised")
+
+    assert calls["count"] == 1
+
+
+def test_build_jobs_from_urls_treats_ats_404_as_skip(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    response = runtime.requests.Response()
+    response.status_code = 404
+    http_error = runtime.requests.exceptions.HTTPError("404 not found")
+    http_error.response = response
+
+    monkeypatch.setattr(runtime, "load_settings", lambda: {})
+    monkeypatch.setattr(runtime, "is_probable_job_url", lambda job_url: (True, "lever_detail"))
+    monkeypatch.setattr(runtime, "_cheap_url_title_prefilter", lambda job_url, settings: (True, "ok"))
+    monkeypatch.setattr(runtime, "create_job_record", lambda job_url: (_ for _ in ()).throw(http_error))
+    monkeypatch.setattr(runtime.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        runtime,
+        "ingest_job_records",
+        lambda **kwargs: {
+            "inserted_count": 0,
+            "updated_count": 0,
+            "skipped_removed_count": 0,
+            "net_new_count": 0,
+            "rediscovered_count": 0,
+            "duplicate_in_run_count": 0,
+        },
+    )
+
+    result = runtime._build_jobs_from_urls(
+        ["https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf"],
+        source_name="Local Pipeline",
+        source_detail="test",
+        use_ai_scoring=False,
+    )
+
+    assert result["error_count"] == 0
+    assert result["skipped_count"] == 1
+    assert "Skipped unavailable ATS posting" in result["output"]
+
+
 def test_discover_job_links_includes_shadow_summary_when_enabled(monkeypatch):
     import services.pipeline_runtime as runtime
 

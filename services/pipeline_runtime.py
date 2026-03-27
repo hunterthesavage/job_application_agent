@@ -4,7 +4,7 @@ import re
 import time
 from collections import Counter
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from typing import Any
 
 import requests
@@ -44,6 +44,8 @@ from src.validate_job_url import create_job_record
 
 AUTO_ACCEPT_SCORE = 45
 MAX_URLS_PER_RUN = 25  # temporary fast-test cap; set to 0 for unlimited
+TRANSIENT_FETCH_RETRY_ATTEMPTS = 2
+TRANSIENT_FETCH_RETRY_DELAY_SECONDS = 0.35
 
 
 def safe_text(value) -> str:
@@ -53,6 +55,76 @@ def safe_text(value) -> str:
     if text.lower() == "nan":
         return ""
     return text
+
+
+def _is_transient_fetch_error(exc: Exception) -> bool:
+    return isinstance(
+        exc,
+        (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ),
+    )
+
+
+def _is_stale_ats_posting_error(exc: Exception, job_url: str) -> bool:
+    if not isinstance(exc, requests.exceptions.HTTPError):
+        return False
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if status_code != 404:
+        return False
+
+    try:
+        host = (urlparse(safe_text(job_url)).netloc or "").lower()
+    except Exception:
+        return False
+
+    ats_hosts = (
+        "jobs.lever.co",
+        "job-boards.greenhouse.io",
+        "boards.greenhouse.io",
+        "myworkdayjobs.com",
+        "jobs.smartrecruiters.com",
+        "jobs.ashbyhq.com",
+    )
+    return any(ats_host in host for ats_host in ats_hosts)
+
+
+def _normalize_job_posting_url(job_url: str) -> str:
+    value = safe_text(job_url)
+    if not value:
+        return ""
+
+    try:
+        parsed = urlparse(value)
+    except Exception:
+        return value
+
+    host = (parsed.netloc or "").lower()
+    path_parts = [part for part in parsed.path.split("/") if part]
+
+    if "jobs.lever.co" in host and path_parts and path_parts[-1].lower() == "apply":
+        normalized_path = "/" + "/".join(path_parts[:-1])
+        return urlunparse(parsed._replace(path=normalized_path, params="", query="", fragment=""))
+
+    return value
+
+
+def _create_job_record_with_retry(job_url: str):
+    normalized_job_url = _normalize_job_posting_url(job_url)
+    last_exc: Exception | None = None
+    for attempt in range(1, TRANSIENT_FETCH_RETRY_ATTEMPTS + 1):
+        try:
+            return create_job_record(normalized_job_url)
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= TRANSIENT_FETCH_RETRY_ATTEMPTS or not _is_transient_fetch_error(exc):
+                raise
+            time.sleep(TRANSIENT_FETCH_RETRY_DELAY_SECONDS)
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Job record creation failed without an exception.")
 
 
 def normalize_text(value: str) -> str:
@@ -855,7 +927,7 @@ def _build_jobs_from_urls(
                 continue
 
             current_stage = "page_parse"
-            job = create_job_record(job_url)
+            job = _create_job_record_with_retry(job_url)
             setattr(job, "source", source_name)
 
             current_stage = "match_score"
@@ -923,6 +995,11 @@ def _build_jobs_from_urls(
                 f"{safe_text(payload.get('source_trust', 'Unknown'))}"
             )
         except Exception as exc:
+            if current_stage == "page_parse" and _is_stale_ats_posting_error(exc, job_url):
+                output_lines.append(f"Skipped unavailable ATS posting: {job_url} | HTTP 404")
+                skipped_count += 1
+                _record_skip(skip_counts, skip_examples, "stale_ats_posting", detail=job_url)
+                continue
             error_line = f"Error: {exc}"
             output_lines.append(error_line)
             error_count += 1
@@ -1078,7 +1155,7 @@ def _refresh_payload_with_live_page_data(payload: dict[str, Any]) -> tuple[dict[
     if not job_url:
         return payload, False
 
-    refreshed_job = create_job_record(job_url)
+    refreshed_job = _create_job_record_with_retry(job_url)
 
     refreshed_payload = dict(payload)
     refreshed_payload["company"] = safe_text(getattr(refreshed_job, "company", payload.get("company", "")))
