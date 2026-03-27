@@ -143,3 +143,5 @@ def test_build_source_layer_status_summary_extracts_next_gen_contribution(temp_d
     assert summary["latest_run"]["next_gen_seeded_urls"] == 5
     assert summary["latest_run"]["next_gen_seeded_accepted_jobs"] == 4
     assert summary["latest_run"]["seeded_accepted_companies"] == "Avantor, Franklin Resources"
+    assert summary["latest_run"]["next_gen_seed_failures"] == ""
+    assert summary["latest_run"]["first_pipeline_error"] == ""

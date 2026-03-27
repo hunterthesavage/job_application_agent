@@ -958,6 +958,12 @@ def _render_status_source_layer() -> None:
             seeded_companies = str(latest_run.get("seeded_accepted_companies", "") or "").strip()
             if seeded_companies:
                 st.write(f"- Seeded accepted companies: {seeded_companies}")
+            seed_failures = str(latest_run.get("next_gen_seed_failures", "") or "").strip()
+            if seed_failures:
+                st.write(f"- Next-gen seed failures: {seed_failures}")
+        first_pipeline_error = str(latest_run.get("first_pipeline_error", "") or "").strip()
+        if first_pipeline_error:
+            st.write(f"- First pipeline error: {first_pipeline_error}")
         st.write(f"- Errors: {int(latest_run.get('errors', 0) or 0)}")
         if str(latest_run.get("notes", "") or "").strip():
             st.write(f"- Notes: {latest_run.get('notes', '')}")

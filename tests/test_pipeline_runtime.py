@@ -373,6 +373,20 @@ def test_discover_job_links_next_gen_supports_workday_seeds(monkeypatch):
     assert "Next-gen Workday URLs found: 1" in result["output"]
 
 
+def test_build_workday_detail_url_preserves_board_prefix():
+    import services.pipeline_runtime as runtime
+
+    url = runtime._build_workday_detail_url(
+        "https://allstate.wd5.myworkdayjobs.com/allstate_careers",
+        "/job/USA---WI-Remote/Project---Program-Management-Lead-Consultant_R26558-1",
+    )
+
+    assert (
+        url
+        == "https://allstate.wd5.myworkdayjobs.com/allstate_careers/job/USA---WI-Remote/Project---Program-Management-Lead-Consultant_R26558-1"
+    )
+
+
 def test_build_jobs_from_urls_tracks_next_gen_seed_contribution(monkeypatch):
     import services.pipeline_runtime as runtime
 

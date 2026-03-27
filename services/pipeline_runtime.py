@@ -816,6 +816,7 @@ def _build_jobs_from_urls(
     skipped_title_prefilter_count = 0
     skipped_duplicate_batch_count = 0
     error_count = 0
+    first_error_message = ""
     output_lines: list[str] = []
 
     skip_counts: Counter = Counter()
@@ -922,8 +923,11 @@ def _build_jobs_from_urls(
                 f"{safe_text(payload.get('source_trust', 'Unknown'))}"
             )
         except Exception as exc:
-            output_lines.append(f"Error: {exc}")
+            error_line = f"Error: {exc}"
+            output_lines.append(error_line)
             error_count += 1
+            if not first_error_message:
+                first_error_message = error_line
             if current_stage == "page_parse":
                 _record_skip(skip_counts, skip_examples, "parse_failed", detail=job_url)
             else:
@@ -1058,6 +1062,7 @@ def _build_jobs_from_urls(
         "skipped_title_prefilter_count": skipped_title_prefilter_count,
         "skipped_duplicate_batch_count": skipped_duplicate_batch_count,
         "error_count": error_count,
+        "first_error_message": first_error_message,
         "build_seconds": build_seconds,
         "ingest_seconds": ingest_seconds,
         "skip_summary": dict(skip_counts),
@@ -1227,6 +1232,12 @@ def _record_pipeline_source_layer_run(
     )
     if seeded_accepted_companies:
         notes += f" Seeded accepted companies: {seeded_accepted_companies}."
+    seed_failures = discovery_result.get("next_gen_seed_failures", []) or []
+    if isinstance(seed_failures, list) and seed_failures:
+        notes += f" Next-gen seed failures: {' | '.join(str(item) for item in seed_failures[:3])}."
+    first_error_message = safe_text(ingest_result.get("first_error_message", ""))
+    if first_error_message:
+        notes += f" First pipeline error: {first_error_message}."
     record_source_layer_run(
         mode=source_layer_mode,
         imported_records=0,
@@ -1242,15 +1253,16 @@ def _discover_urls_from_next_gen_seeds(
     *,
     settings: dict[str, Any],
     shadow_result: dict[str, Any],
-) -> tuple[list[str], list[str], int, int]:
+) -> tuple[list[str], list[str], int, int, list[str]]:
     selected_candidates = shadow_result.get("selected_candidates", []) if isinstance(shadow_result, dict) else []
     if not isinstance(selected_candidates, list):
-        return [], ["- Next-gen seed discovery: no selected candidates available."], 0, 0
+        return [], ["- Next-gen seed discovery: no selected candidates available."], 0, 0, []
 
     discovered: list[str] = []
     log_lines: list[str] = []
     scanned_count = 0
     unsupported_count = 0
+    failure_lines: list[str] = []
 
     for candidate in selected_candidates:
         if not isinstance(candidate, dict):
@@ -1269,7 +1281,9 @@ def _discover_urls_from_next_gen_seeds(
                 discovered.extend(urls)
                 log_lines.append(f"Next-gen Greenhouse URLs found: {len(urls)}")
             except Exception as exc:
-                log_lines.append(f"Next-gen Greenhouse seed failed: {company_name} | {exc}")
+                failure = f"Next-gen Greenhouse seed failed: {company_name} | {exc}"
+                log_lines.append(failure)
+                failure_lines.append(failure)
         elif ats_vendor == "lever":
             scanned_count += 1
             log_lines.append(f"Checking next-gen Lever seed: {company_name} | {endpoint_url}")
@@ -1278,7 +1292,9 @@ def _discover_urls_from_next_gen_seeds(
                 discovered.extend(urls)
                 log_lines.append(f"Next-gen Lever URLs found: {len(urls)}")
             except Exception as exc:
-                log_lines.append(f"Next-gen Lever seed failed: {company_name} | {exc}")
+                failure = f"Next-gen Lever seed failed: {company_name} | {exc}"
+                log_lines.append(failure)
+                failure_lines.append(failure)
         elif ats_vendor == "workday":
             scanned_count += 1
             log_lines.append(f"Checking next-gen Workday seed: {company_name} | {endpoint_url}")
@@ -1287,7 +1303,9 @@ def _discover_urls_from_next_gen_seeds(
                 discovered.extend(urls)
                 log_lines.append(f"Next-gen Workday URLs found: {len(urls)}")
             except Exception as exc:
-                log_lines.append(f"Next-gen Workday seed failed: {company_name} | {exc}")
+                failure = f"Next-gen Workday seed failed: {company_name} | {exc}"
+                log_lines.append(failure)
+                failure_lines.append(failure)
         else:
             unsupported_count += 1
 
@@ -1301,7 +1319,7 @@ def _discover_urls_from_next_gen_seeds(
     else:
         log_lines.append("- Next-gen seed discovery: no supported seed endpoints were available.")
 
-    return discovered, log_lines, scanned_count, unsupported_count
+    return discovered, log_lines, scanned_count, unsupported_count, failure_lines
 
 
 def _extract_workday_metadata(page_text: str) -> tuple[str, str]:
@@ -1310,6 +1328,39 @@ def _extract_workday_metadata(page_text: str) -> tuple[str, str]:
     tenant = safe_text(tenant_match.group(1) if tenant_match else "")
     site_id = safe_text(site_match.group(1) if site_match else "")
     return tenant, site_id
+
+
+def _workday_board_prefix(endpoint_url: str) -> str:
+    parsed = urlparse(safe_text(endpoint_url))
+    path = safe_text(parsed.path)
+    if not path or path == "/":
+        return ""
+
+    cleaned = path.rstrip("/")
+    for suffix in ("/login", "/search-results"):
+        if cleaned.lower().endswith(suffix):
+            cleaned = cleaned[: -len(suffix)]
+            break
+
+    cleaned = cleaned.rstrip("/")
+    if not cleaned:
+        return ""
+    return cleaned if cleaned.startswith("/") else f"/{cleaned}"
+
+
+def _build_workday_detail_url(endpoint_url: str, external_path: str) -> str:
+    parsed = urlparse(safe_text(endpoint_url))
+    base_url = f"{parsed.scheme or 'https'}://{parsed.netloc}"
+    path = safe_text(external_path)
+    if not path:
+        return ""
+    if path.startswith("http://") or path.startswith("https://"):
+        return path
+    normalized_external = path if path.startswith("/") else f"/{path}"
+    board_prefix = _workday_board_prefix(endpoint_url)
+    if board_prefix:
+        return f"{base_url}{board_prefix}{normalized_external}"
+    return f"{base_url}{normalized_external}"
 
 
 def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
@@ -1365,7 +1416,9 @@ def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[
             if not any(normalize_text(token) in normalized_location for token in location_tokens):
                 continue
 
-        discovered.append(f"{base_url}{external_path}")
+        detail_url = _build_workday_detail_url(endpoint_url, external_path)
+        if detail_url:
+            discovered.append(detail_url)
 
     return list(dict.fromkeys(discovered))
 
@@ -1395,7 +1448,7 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         shadow_output = safe_text(shadow_result.get("output", ""))
         if shadow_output:
             output_parts.append(shadow_output)
-        seeded_urls, seed_log_lines, supported_scanned, unsupported_skipped = _discover_urls_from_next_gen_seeds(
+        seeded_urls, seed_log_lines, supported_scanned, unsupported_skipped, seed_failures = _discover_urls_from_next_gen_seeds(
             settings=settings,
             shadow_result=shadow_result,
         )
@@ -1403,6 +1456,7 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
             output_parts.append("\n".join(seed_log_lines).strip())
         discovery_result["next_gen_supported_seeds_scanned"] = supported_scanned
         discovery_result["next_gen_unsupported_seeds_skipped"] = unsupported_skipped
+        discovery_result["next_gen_seed_failures"] = seed_failures
         if seeded_urls:
             existing_urls = discovery_result.get("all_urls", []) or []
             merged_urls = list(dict.fromkeys(seeded_urls + existing_urls))

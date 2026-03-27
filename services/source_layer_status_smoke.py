@@ -75,6 +75,12 @@ def build_source_layer_status_summary() -> dict:
             "seeded_accepted_companies": _extract_note_text(
                 latest_run_notes, "Seeded accepted companies"
             ),
+            "next_gen_seed_failures": _extract_note_text(
+                latest_run_notes, "Next-gen seed failures"
+            ),
+            "first_pipeline_error": _extract_note_text(
+                latest_run_notes, "First pipeline error"
+            ),
             "started_at": str(latest_run["started_at"] or ""),
             "finished_at": str(latest_run["finished_at"] or ""),
         }
