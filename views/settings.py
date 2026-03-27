@@ -24,6 +24,11 @@ from services.openai_key import (
     save_openai_api_key,
 )
 from services.profile_context_templates import generate_profile_context_from_resume
+from services.source_layer import (
+    SOURCE_LAYER_MODE_ENV_VAR,
+    get_source_layer_mode,
+    set_source_layer_mode,
+)
 from services.source_layer_shadow_populate import populate_shadow_from_legacy_export
 from services.settings import DEFAULT_SETTINGS, get_default_cover_letter_output_folder, load_settings, save_settings
 from services.source_layer_status_smoke import build_source_layer_status_summary
@@ -788,6 +793,9 @@ def _render_status_source_layer() -> None:
     shadow = summary.get("shadow", {}) or {}
     next_gen = summary.get("next_gen", {}) or {}
     latest_run = summary.get("latest_run")
+    effective_mode = get_source_layer_mode()
+    saved_mode = str(load_settings().get("source_layer_mode", "legacy") or "legacy").strip().lower()
+    env_override_mode = str(os.getenv(SOURCE_LAYER_MODE_ENV_VAR, "") or "").strip().lower()
 
     def _humanize(value: str) -> str:
         text = str(value or "").strip()
@@ -800,6 +808,69 @@ def _render_status_source_layer() -> None:
         "This is an internal read-only view of the current source-layer state. "
         "Legacy remains the current source of truth, shadow reflects locally populated endpoint inventory, and next_gen stays gated."
     )
+
+    st.markdown("#### Internal Source Layer Mode")
+    st.caption(
+        "This controls the app's internal source-layer mode for testing. "
+        "Visible discovery behavior still stays on legacy unless the existing fallback-safe mode plumbing says otherwise."
+    )
+
+    if "settings_source_layer_mode_value" not in st.session_state:
+        st.session_state["settings_source_layer_mode_value"] = saved_mode
+
+    mode_help = {
+        "legacy": "Current source of truth only.",
+        "shadow": "Keep legacy visible, but include shadow comparison diagnostics.",
+        "next_gen": "Request next_gen mode internally; live discovery still falls back to legacy today.",
+    }
+
+    selected_mode = st.radio(
+        "Source Layer Mode",
+        options=["legacy", "shadow", "next_gen"],
+        format_func=lambda value: f"{_humanize(value)}",
+        key="settings_source_layer_mode_value",
+        horizontal=True,
+        help="Internal-only testing control for source-layer mode.",
+    )
+
+    mode_dirty = selected_mode != saved_mode
+    mode_col_1, mode_col_2 = st.columns([1.2, 3.2])
+    with mode_col_1:
+        if st.button(
+            "Save Mode",
+            type="primary",
+            use_container_width=True,
+            disabled=not mode_dirty,
+            key="settings_save_source_layer_mode",
+            help=(
+                "Save this internal source-layer mode."
+                if mode_dirty
+                else "Change the selected mode before saving."
+            ),
+        ):
+            new_mode = set_source_layer_mode(selected_mode)
+            st.session_state["settings_source_layer_notice"] = {
+                "kind": "success",
+                "message": f"Saved source-layer mode: {_humanize(new_mode)}.",
+                "details": (
+                    f"Effective mode is currently {_humanize(env_override_mode)} via {SOURCE_LAYER_MODE_ENV_VAR}."
+                    if env_override_mode
+                    else f"Effective mode is now {_humanize(new_mode)}."
+                ),
+            }
+            st.rerun()
+    with mode_col_2:
+        st.caption(
+            f"Selected mode meaning: {mode_help.get(selected_mode, '')}"
+        )
+
+    st.write(f"- Saved mode: {_humanize(saved_mode)}")
+    st.write(f"- Effective mode: {_humanize(effective_mode)}")
+    if env_override_mode:
+        st.warning(
+            f"{SOURCE_LAYER_MODE_ENV_VAR} is set to {_humanize(env_override_mode)}. "
+            "That environment override takes precedence over the saved mode until the app is restarted without it."
+        )
 
     notice = st.session_state.pop("settings_source_layer_notice", None)
     if isinstance(notice, dict):
