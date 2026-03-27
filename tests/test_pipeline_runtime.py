@@ -461,6 +461,58 @@ def test_discover_job_links_next_gen_supports_workday_seeds(monkeypatch):
     assert "Next-gen Workday URLs found: 1" in result["output"]
 
 
+def test_discover_job_links_next_gen_supports_successfactors_seeds(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
+    monkeypatch.setattr(runtime, "load_settings", lambda: {"target_titles": "Business Analyst"})
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "discover_urls",
+        lambda settings, use_ai_expansion=True: {
+            "all_urls": ["https://legacy.example/jobs/1"],
+            "greenhouse_urls": [],
+            "lever_urls": [],
+            "search_urls": ["https://legacy.example/jobs/1"],
+            "output": "Discovery output",
+            "drop_summary": {},
+        },
+    )
+    monkeypatch.setattr(runtime.discover_module, "save_output_urls", lambda file_path, urls: None)
+    monkeypatch.setattr(
+        runtime,
+        "run_shadow_endpoint_selection",
+        lambda settings=None: {
+            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 1",
+            "selected_endpoint_count": 1,
+            "selected_company_names": ["Paramount"],
+            "selected_ats_counts": {"sap successfactors": 1},
+            "selected_candidates": [
+                {
+                    "company_name": "Paramount",
+                    "endpoint_url": "https://careers.paramount.com/viewalljobs/",
+                    "ats_vendor": "sap successfactors",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_discover_successfactors_jobs",
+        lambda endpoint_url, settings: ["https://careers.paramount.com/job/Remote/Business-Analyst/123/"],
+    )
+
+    result = runtime.discover_job_links(use_ai_title_expansion=True)
+
+    assert result["next_gen_seed_urls"] == [
+        "https://careers.paramount.com/job/Remote/Business-Analyst/123/"
+    ]
+    assert result["next_gen_supported_seeds_scanned"] == 1
+    assert result["next_gen_unsupported_seeds_skipped"] == 0
+    assert "Checking next-gen SuccessFactors seed: Paramount" in result["output"]
+    assert "Next-gen SuccessFactors URLs found: 1" in result["output"]
+
+
 def test_build_workday_detail_url_preserves_board_prefix():
     import services.pipeline_runtime as runtime
 
@@ -473,6 +525,28 @@ def test_build_workday_detail_url_preserves_board_prefix():
         url
         == "https://allstate.wd5.myworkdayjobs.com/allstate_careers/job/USA---WI-Remote/Project---Program-Management-Lead-Consultant_R26558-1"
     )
+
+
+def test_build_successfactors_search_url_uses_branded_search_path():
+    import services.pipeline_runtime as runtime
+
+    url = runtime._build_successfactors_search_url(
+        "https://careers.paramount.com/viewalljobs/",
+        {"target_titles": "Business Analyst, Data Analyst", "preferred_locations": "Seattle"},
+    )
+
+    assert url == "https://careers.paramount.com/search/?q=Business+Analyst&locationsearch=Seattle"
+
+
+def test_build_successfactors_search_url_rejects_generic_successfactors_host():
+    import services.pipeline_runtime as runtime
+
+    url = runtime._build_successfactors_search_url(
+        "https://career4.successfactors.com/career",
+        {"target_titles": "Business Analyst"},
+    )
+
+    assert url == ""
 
 
 def test_build_jobs_from_urls_tracks_next_gen_seed_contribution(monkeypatch):

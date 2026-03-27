@@ -6,7 +6,7 @@ from typing import Any
 from services.db import db_connection
 
 SHADOW_SELECTION_CAP = 25
-SUPPORTED_NEXT_GEN_SEED_VENDORS = {"greenhouse", "lever", "workday"}
+SUPPORTED_NEXT_GEN_SEED_VENDORS = {"greenhouse", "lever", "workday", "sap successfactors"}
 
 
 def _safe_text(value: Any) -> str:

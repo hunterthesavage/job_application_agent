@@ -4,7 +4,7 @@ import re
 import time
 from collections import Counter
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 from typing import Any
 
 import requests
@@ -1383,6 +1383,20 @@ def _discover_urls_from_next_gen_seeds(
                 failure = f"Next-gen Workday seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
+        elif ats_vendor == "sap successfactors":
+            if not _supports_successfactors_seed_endpoint(endpoint_url):
+                unsupported_count += 1
+                continue
+            scanned_count += 1
+            log_lines.append(f"Checking next-gen SuccessFactors seed: {company_name} | {endpoint_url}")
+            try:
+                urls = _discover_successfactors_jobs(endpoint_url, settings)
+                discovered.extend(urls)
+                log_lines.append(f"Next-gen SuccessFactors URLs found: {len(urls)}")
+            except Exception as exc:
+                failure = f"Next-gen SuccessFactors seed failed: {company_name} | {exc}"
+                log_lines.append(failure)
+                failure_lines.append(failure)
         else:
             unsupported_count += 1
 
@@ -1497,6 +1511,55 @@ def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[
         if detail_url:
             discovered.append(detail_url)
 
+    return list(dict.fromkeys(discovered))
+
+
+def _supports_successfactors_seed_endpoint(endpoint_url: str) -> bool:
+    endpoint = safe_text(endpoint_url)
+    if not endpoint:
+        return False
+
+    try:
+        parsed = urlparse(endpoint)
+    except Exception:
+        return False
+
+    host = (parsed.netloc or "").lower()
+    generic_hosts = ("successfactors.com", "sapsf.com", "ondemand.com")
+    return not any(marker in host for marker in generic_hosts)
+
+
+def _build_successfactors_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
+    endpoint = safe_text(endpoint_url)
+    if not _supports_successfactors_seed_endpoint(endpoint):
+        return ""
+
+    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    title = safe_text(target_titles[0] if target_titles else "")
+    if not title:
+        return ""
+
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
+    remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    location_value = "Remote" if remote_only else safe_text(preferred_locations[0] if preferred_locations else "")
+
+    parsed = urlparse(endpoint)
+    base_url = f"{parsed.scheme or 'https'}://{parsed.netloc}"
+    query = urlencode({"q": title, "locationsearch": location_value})
+    return f"{base_url}/search/?{query}"
+
+
+def _discover_successfactors_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
+    search_url = _build_successfactors_search_url(endpoint_url, settings)
+    if not search_url:
+        return []
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(search_url, timeout=20, headers=headers)
+    response.raise_for_status()
+
+    links = re.findall(r'<a[^>]+class="[^"]*jobTitle-link[^"]*"[^>]+href="([^"]+)"', response.text, re.I)
+    discovered = [urljoin(search_url, href) for href in links if "/job/" in href]
     return list(dict.fromkeys(discovered))
 
 
