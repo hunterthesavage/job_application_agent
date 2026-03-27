@@ -1137,6 +1137,7 @@ def _format_source_layer_run_snapshot(
             f"- Shadow active endpoints: {int(shadow_status.get('active_endpoint_count', 0) or 0)}",
             f"- Shadow approved endpoints: {int(shadow_status.get('approved_endpoint_count', 0) or 0)}",
             f"- Shadow selected endpoints: {int(shadow_result.get('selected_endpoint_count', 0) or 0)}",
+            f"- Next-gen seeded URLs: {len(discovery_result.get('next_gen_seed_urls', []) or [])}",
             f"- Provider mix: {provider_mix}",
             f"- Top shadow ATS families: {top_ats or 'none yet'}",
             f"- Top shadow companies: {selected_companies or 'none yet'}",
@@ -1168,6 +1169,9 @@ def _record_pipeline_source_layer_run(
     )
     if selected_companies:
         notes += f" Shadow companies: {selected_companies}."
+    seeded_urls = len(discovery_result.get("next_gen_seed_urls", []) or [])
+    if seeded_urls:
+        notes += f" Next-gen seeded URLs: {seeded_urls}."
     record_source_layer_run(
         mode=source_layer_mode,
         imported_records=0,
@@ -1179,13 +1183,67 @@ def _record_pipeline_source_layer_run(
     )
 
 
+def _discover_urls_from_next_gen_seeds(
+    *,
+    settings: dict[str, Any],
+    shadow_result: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    selected_candidates = shadow_result.get("selected_candidates", []) if isinstance(shadow_result, dict) else []
+    if not isinstance(selected_candidates, list):
+        return [], ["- Next-gen seed discovery: no selected candidates available."]
+
+    discovered: list[str] = []
+    log_lines: list[str] = []
+    scanned_count = 0
+    unsupported_count = 0
+
+    for candidate in selected_candidates:
+        if not isinstance(candidate, dict):
+            continue
+        endpoint_url = safe_text(candidate.get("endpoint_url", ""))
+        ats_vendor = safe_text(candidate.get("ats_vendor", "")).lower()
+        company_name = safe_text(candidate.get("company_name", "")) or "(unknown company)"
+        if not endpoint_url:
+            continue
+
+        if ats_vendor == "greenhouse":
+            scanned_count += 1
+            log_lines.append(f"Checking next-gen Greenhouse seed: {company_name} | {endpoint_url}")
+            try:
+                urls = discover_module.discover_greenhouse_jobs(endpoint_url, settings)
+                discovered.extend(urls)
+                log_lines.append(f"Next-gen Greenhouse URLs found: {len(urls)}")
+            except Exception as exc:
+                log_lines.append(f"Next-gen Greenhouse seed failed: {company_name} | {exc}")
+        elif ats_vendor == "lever":
+            scanned_count += 1
+            log_lines.append(f"Checking next-gen Lever seed: {company_name} | {endpoint_url}")
+            try:
+                urls = discover_module.discover_lever_jobs(endpoint_url, settings)
+                discovered.extend(urls)
+                log_lines.append(f"Next-gen Lever URLs found: {len(urls)}")
+            except Exception as exc:
+                log_lines.append(f"Next-gen Lever seed failed: {company_name} | {exc}")
+        else:
+            unsupported_count += 1
+
+    discovered = list(dict.fromkeys(discovered))
+    if scanned_count or unsupported_count:
+        log_lines.insert(
+            0,
+            "Next-gen seed discovery summary:"
+            f" scanned {scanned_count} supported seed(s), skipped {unsupported_count} unsupported seed(s).",
+        )
+    else:
+        log_lines.append("- Next-gen seed discovery: no supported seed endpoints were available.")
+
+    return discovered, log_lines
+
+
 def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]:
     settings = load_settings()
     source_layer_mode = get_source_layer_mode()
     discovery_result = discover_module.discover_urls(settings, use_ai_expansion=use_ai_title_expansion)
-
-    discovered_urls = discovery_result.get("all_urls", [])
-    discover_module.save_output_urls(JOB_URLS_FILE, discovered_urls)
 
     output_parts: list[str] = []
     if discovery_result.get("output"):
@@ -1206,6 +1264,25 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         shadow_output = safe_text(shadow_result.get("output", ""))
         if shadow_output:
             output_parts.append(shadow_output)
+        seeded_urls, seed_log_lines = _discover_urls_from_next_gen_seeds(
+            settings=settings,
+            shadow_result=shadow_result,
+        )
+        if seed_log_lines:
+            output_parts.append("\n".join(seed_log_lines).strip())
+        if seeded_urls:
+            existing_urls = discovery_result.get("all_urls", []) or []
+            merged_urls = list(dict.fromkeys(seeded_urls + existing_urls))
+            discovery_result["all_urls"] = merged_urls
+            discovery_result["next_gen_seed_urls"] = seeded_urls
+            output_parts.append(
+                f"Next-gen seeds added {len(seeded_urls)} URL(s) ahead of legacy results for this run."
+            )
+        else:
+            discovery_result["next_gen_seed_urls"] = []
+
+    discovered_urls = discovery_result.get("all_urls", [])
+    discover_module.save_output_urls(JOB_URLS_FILE, discovered_urls)
 
     return {
         "status": "completed",
@@ -1226,6 +1303,7 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         "drop_summary": discovery_result.get("drop_summary", {}),
         "source_layer_mode": source_layer_mode,
         "shadow_result": shadow_result or {},
+        "next_gen_seed_urls": discovery_result.get("next_gen_seed_urls", []),
     }
 
 

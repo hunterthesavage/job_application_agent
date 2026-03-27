@@ -223,6 +223,7 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
                 "selected_company_names": ["Rover", "Checkr"],
                 "selected_endpoint_count": 20,
             },
+            "next_gen_seed_urls": ["https://jobs.lever.co/rover/1", "https://jobs.lever.co/rover/2"],
         },
     )
 
@@ -232,10 +233,77 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
     assert "Falling back to legacy discovery for this run." in result["output"]
     assert "Source Layer Run Snapshot:" in result["output"]
     assert "- Mode: next_gen" in result["output"]
+    assert "- Next-gen seeded URLs: 2" in result["output"]
     assert captured["source_layer_run"]["mode"] == "next_gen"
     assert captured["source_layer_run"]["discovered_urls"] == 0
     assert captured["source_layer_run"]["accepted_jobs"] == 0
     assert captured["source_layer_run"]["selected_endpoints"] == 20
+    assert "Next-gen seeded URLs: 2." in captured["source_layer_run"]["notes"]
+
+
+def test_discover_job_links_next_gen_merges_supported_seed_urls(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
+    monkeypatch.setattr(runtime, "load_settings", lambda: {"target_titles": "Business Analyst"})
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "discover_urls",
+        lambda settings, use_ai_expansion=True: {
+            "all_urls": ["https://legacy.example/jobs/1"],
+            "greenhouse_urls": [],
+            "lever_urls": [],
+            "search_urls": ["https://legacy.example/jobs/1"],
+            "output": "Discovery output",
+            "drop_summary": {},
+        },
+    )
+    monkeypatch.setattr(runtime.discover_module, "save_output_urls", lambda file_path, urls: None)
+    monkeypatch.setattr(runtime.discover_module, "build_google_discovery_queries", lambda settings, use_ai_expansion=False: [])
+    monkeypatch.setattr(runtime.discover_module, "build_search_plan", lambda settings: ["Base titles: Business Analyst"])
+    monkeypatch.setattr(
+        runtime,
+        "run_shadow_endpoint_selection",
+        lambda settings=None: {
+            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 2",
+            "selected_endpoint_count": 2,
+            "selected_company_names": ["Rover", "Checkr"],
+            "selected_ats_counts": {"lever": 1, "greenhouse": 1},
+            "selected_candidates": [
+                {
+                    "company_name": "Rover",
+                    "endpoint_url": "https://jobs.lever.co/rover",
+                    "ats_vendor": "lever",
+                },
+                {
+                    "company_name": "Checkr",
+                    "endpoint_url": "https://job-boards.greenhouse.io/checkr",
+                    "ats_vendor": "greenhouse",
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "discover_lever_jobs",
+        lambda endpoint_url, settings: ["https://jobs.lever.co/rover/seeded-job"],
+    )
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "discover_greenhouse_jobs",
+        lambda endpoint_url, settings: ["https://job-boards.greenhouse.io/checkr/jobs/seeded-job"],
+    )
+
+    result = runtime.discover_job_links(use_ai_title_expansion=True)
+
+    assert result["source_layer_mode"] == "next_gen"
+    assert result["next_gen_seed_urls"] == [
+        "https://jobs.lever.co/rover/seeded-job",
+        "https://job-boards.greenhouse.io/checkr/jobs/seeded-job",
+    ]
+    assert result["urls"][:2] == result["next_gen_seed_urls"]
+    assert "Next-gen seed discovery summary:" in result["output"]
+    assert "Next-gen seeds added 2 URL(s) ahead of legacy results for this run." in result["output"]
 
 
 def test_build_jobs_from_urls_skips_ai_when_disabled(monkeypatch):

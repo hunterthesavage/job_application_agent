@@ -177,6 +177,16 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
             for row in selected_rows
         )
     )[:5]
+    selected_candidates = [
+        {
+            "company_name": _safe_text(row["company_name"]) or "(unknown company)",
+            "endpoint_url": _safe_text(row["endpoint_url"]),
+            "ats_vendor": _safe_text(row["ats_vendor"]).lower() or "unknown",
+            "review_status": _safe_text(row["review_status"]).lower(),
+            "careers_url_status": _safe_text(row["careers_url_status"]).lower(),
+        }
+        for row in selected_rows
+    ]
     selected_ats_counter: Counter[str] = Counter(
         _safe_text(row["ats_vendor"]).lower() or "unknown" for row in selected_rows
     )
@@ -214,6 +224,7 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
         "primary_endpoint_count": primary_count,
         "selected_endpoint_count": len(selected_rows),
         "selected_company_names": selected_companies,
+        "selected_candidates": selected_candidates,
         "ats_counts": dict(ats_counter),
         "selected_ats_counts": dict(selected_ats_counter),
         "output": "\n".join(lines),
