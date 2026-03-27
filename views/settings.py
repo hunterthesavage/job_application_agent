@@ -24,6 +24,7 @@ from services.openai_key import (
     save_openai_api_key,
 )
 from services.profile_context_templates import generate_profile_context_from_resume
+from services.source_layer_shadow_populate import populate_shadow_from_legacy_export
 from services.settings import DEFAULT_SETTINGS, get_default_cover_letter_output_folder, load_settings, save_settings
 from services.source_layer_status_smoke import build_source_layer_status_summary
 from services.status import get_system_status
@@ -799,6 +800,55 @@ def _render_status_source_layer() -> None:
         "This is an internal read-only view of the current source-layer state. "
         "Legacy remains the current source of truth, shadow reflects locally populated endpoint inventory, and next_gen stays gated."
     )
+
+    notice = st.session_state.pop("settings_source_layer_notice", None)
+    if isinstance(notice, dict):
+        kind = str(notice.get("kind", "info") or "info").strip().lower()
+        message = str(notice.get("message", "") or "").strip()
+        details = str(notice.get("details", "") or "").strip()
+        if message:
+            if kind == "success":
+                st.success(message)
+            elif kind == "error":
+                st.error(message)
+            else:
+                st.info(message)
+            if details:
+                st.caption(details)
+
+    action_col_1, action_col_2 = st.columns([1.2, 3.2])
+    with action_col_1:
+        if st.button(
+            "Populate Shadow From Legacy",
+            type="secondary",
+            use_container_width=True,
+            help="Internal-only action. Loads the current legacy export into local shadow source-layer tables without changing live discovery.",
+            key="settings_source_layer_populate_shadow",
+        ):
+            try:
+                with st.spinner("Populating shadow from legacy export..."):
+                    result = populate_shadow_from_legacy_export()
+                import_summary = result.get("legacy_import", {}) or {}
+                st.session_state["settings_source_layer_notice"] = {
+                    "kind": "success",
+                    "message": "Shadow populated from legacy export.",
+                    "details": (
+                        f"Imported {int(import_summary.get('endpoint_inserted', 0) or 0)} new endpoint(s), "
+                        f"updated {int(import_summary.get('endpoint_updated', 0) or 0)} existing endpoint(s)."
+                    ),
+                }
+            except Exception as exc:
+                st.session_state["settings_source_layer_notice"] = {
+                    "kind": "error",
+                    "message": "Shadow population failed.",
+                    "details": str(exc),
+                }
+            st.rerun()
+    with action_col_2:
+        st.caption(
+            "Use this to refresh local shadow source-layer tables from the current legacy export. "
+            "This does not change visible app behavior or enable next_gen discovery."
+        )
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Legacy Status", _humanize(legacy.get("status", "unknown")))
