@@ -25,6 +25,7 @@ from services.openai_key import (
 )
 from services.profile_context_templates import generate_profile_context_from_resume
 from services.settings import DEFAULT_SETTINGS, get_default_cover_letter_output_folder, load_settings, save_settings
+from services.source_layer_status_smoke import build_source_layer_status_summary
 from services.status import get_system_status
 from ui.navigation import initialize_nav_state, render_button_nav
 
@@ -38,6 +39,7 @@ SETTINGS_NAV_OPTIONS = [
 
 STATUS_NAV_OPTIONS = [
     "Overview",
+    "Source Layer",
     "Backlog",
 ]
 
@@ -779,6 +781,51 @@ def _render_status_backlog() -> None:
                 st.write(f"- {item}")
 
 
+def _render_status_source_layer() -> None:
+    summary = build_source_layer_status_summary()
+    legacy = summary.get("legacy", {}) or {}
+    shadow = summary.get("shadow", {}) or {}
+    next_gen = summary.get("next_gen", {}) or {}
+    latest_run = summary.get("latest_run")
+
+    def _humanize(value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return "Unknown"
+        return text.replace("_", " ").title()
+
+    st.markdown("### Source Layer")
+    st.caption(
+        "This is an internal read-only view of the current source-layer state. "
+        "Legacy remains the current source of truth, shadow reflects locally populated endpoint inventory, and next_gen stays gated."
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Legacy Status", _humanize(legacy.get("status", "unknown")))
+    c2.metric("Shadow Companies", int(shadow.get("company_count", 0) or 0))
+    c3.metric("Shadow Endpoints", int(shadow.get("endpoint_count", 0) or 0))
+    c4.metric("Approved", int(shadow.get("approved_endpoint_count", 0) or 0))
+
+    st.markdown("#### Current Mode Snapshot")
+    st.write(f"- Legacy status: {_humanize(legacy.get('status', 'unknown'))}")
+    st.write(f"- Shadow active endpoints: {int(shadow.get('active_endpoint_count', 0) or 0)}")
+    st.write(f"- Shadow approved endpoints: {int(shadow.get('approved_endpoint_count', 0) or 0)}")
+    st.write(f"- Next-gen status: {_humanize(next_gen.get('status', 'unknown'))}")
+
+    if latest_run:
+        st.markdown("#### Latest Source Layer Run")
+        st.write(f"- Mode: {_humanize(latest_run.get('mode', 'unknown'))}")
+        st.write(f"- Imported records: {int(latest_run.get('imported_records', 0) or 0)}")
+        st.write(f"- Selected endpoints: {int(latest_run.get('selected_endpoints', 0) or 0)}")
+        st.write(f"- Discovered URLs: {int(latest_run.get('discovered_urls', 0) or 0)}")
+        st.write(f"- Accepted jobs: {int(latest_run.get('accepted_jobs', 0) or 0)}")
+        st.write(f"- Errors: {int(latest_run.get('errors', 0) or 0)}")
+        if str(latest_run.get("notes", "") or "").strip():
+            st.write(f"- Notes: {latest_run.get('notes', '')}")
+    else:
+        st.info("No source-layer runs have been recorded yet.")
+
+
 def render_system_status_tab() -> None:
     _inject_settings_css()
     initialize_nav_state("settings_status_subnav_selection", "Overview")
@@ -798,6 +845,8 @@ def render_system_status_tab() -> None:
 
     if selected_status_section == "Backlog":
         _render_status_backlog()
+    elif selected_status_section == "Source Layer":
+        _render_status_source_layer()
     else:
         _render_status_overview()
 
