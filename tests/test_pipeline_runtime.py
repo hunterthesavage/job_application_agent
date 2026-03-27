@@ -529,6 +529,72 @@ def test_discover_job_links_next_gen_supports_successfactors_seeds(monkeypatch):
     assert "Next-gen SuccessFactors URLs found: 5 | kept: 3" in result["output"]
 
 
+def test_discover_job_links_next_gen_supports_icims_seeds(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
+    monkeypatch.setattr(
+        runtime,
+        "load_settings",
+        lambda: {
+            "target_titles": "Business Analyst",
+            "preferred_locations": "Dallas",
+            "remote_only": "false",
+        },
+    )
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "discover_urls",
+        lambda settings, use_ai_expansion=True: {
+            "all_urls": ["https://legacy.example/jobs/1"],
+            "greenhouse_urls": [],
+            "lever_urls": [],
+            "search_urls": ["https://legacy.example/jobs/1"],
+            "output": "Discovery output",
+            "drop_summary": {},
+        },
+    )
+    monkeypatch.setattr(runtime.discover_module, "save_output_urls", lambda file_path, urls: None)
+    monkeypatch.setattr(
+        runtime,
+        "run_shadow_endpoint_selection",
+        lambda settings=None: {
+            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 1",
+            "selected_endpoint_count": 1,
+            "selected_company_names": ["Schwab"],
+            "selected_ats_counts": {"icims": 1},
+            "selected_candidates": [
+                {
+                    "company_name": "Schwab",
+                    "endpoint_url": "https://career-schwab.icims.com/jobs",
+                    "ats_vendor": "icims",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_discover_icims_jobs",
+        lambda endpoint_url, settings: [
+            "https://career-schwab.icims.com/jobs/120193/business-analyst-platform/job",
+            "https://career-schwab.icims.com/jobs/120301/senior-it-project-manager/job",
+            "https://career-schwab.icims.com/jobs/120302/business-analyst-dallas/job",
+            "https://career-schwab.icims.com/jobs/120303/business-analyst-remote/job",
+        ],
+    )
+
+    result = runtime.discover_job_links(use_ai_title_expansion=True)
+
+    assert result["next_gen_seed_urls"] == [
+        "https://career-schwab.icims.com/jobs/120302/business-analyst-dallas/job",
+        "https://career-schwab.icims.com/jobs/120303/business-analyst-remote/job",
+    ]
+    assert result["next_gen_supported_seeds_scanned"] == 1
+    assert result["next_gen_unsupported_seeds_skipped"] == 0
+    assert "Checking next-gen iCIMS seed: Schwab" in result["output"]
+    assert "Next-gen iCIMS URLs found: 4 | kept: 2" in result["output"]
+
+
 def test_filter_next_gen_seed_urls_prefers_relevant_matches():
     import services.pipeline_runtime as runtime
 
@@ -555,6 +621,40 @@ def test_filter_next_gen_seed_urls_prefers_relevant_matches():
     ]
     assert title_skips == 1
     assert location_skips == 1
+
+
+def test_build_icims_search_url_uses_form_action_and_location_value(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    html = """
+    <form action="https://career-schwab.icims.com/jobs/search?in_iframe=1&amp;hashed=-626009902">
+      <select name="searchLocation">
+        <option value="">(All)</option>
+        <option value="-12787-Dallas">TX,Dallas</option>
+      </select>
+    </form>
+    """
+
+    class Response:
+        def __init__(self, text):
+            self.text = text
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(runtime.requests, "get", lambda *args, **kwargs: Response(html))
+
+    url = runtime._build_icims_search_url(
+        "https://career-schwab.icims.com/jobs",
+        {
+            "target_titles": "Vice President of IT",
+            "preferred_locations": "Dallas",
+            "remote_only": "false",
+        },
+    )
+
+    assert "career-schwab.icims.com/jobs/search" in url
+    assert "searchKeyword=Vice+President+of+IT" in url
+    assert "searchLocation=-12787-Dallas" in url
 
 
 def test_build_workday_detail_url_preserves_board_prefix():

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import html
 import re
 import time
 from collections import Counter
 from pathlib import Path
-from urllib.parse import urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from typing import Any
 
 import requests
@@ -1488,6 +1489,27 @@ def _discover_urls_from_next_gen_seeds(
                 failure = f"Next-gen SuccessFactors seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
+        elif ats_vendor == "icims":
+            scanned_count += 1
+            log_lines.append(f"Checking next-gen iCIMS seed: {company_name} | {endpoint_url}")
+            try:
+                urls = _discover_icims_jobs(endpoint_url, settings)
+                filtered_urls, title_skips, location_skips = _filter_next_gen_seed_urls(
+                    urls,
+                    settings,
+                    apply_location_filter=True,
+                )
+                discovered.extend(filtered_urls)
+                log_lines.append(
+                    "Next-gen iCIMS URLs found: "
+                    f"{len(urls)} | kept: {len(filtered_urls)} "
+                    f"(title skips: {title_skips}, location skips: {location_skips}, "
+                    f"company cap: {NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY})"
+                )
+            except Exception as exc:
+                failure = f"Next-gen iCIMS seed failed: {company_name} | {exc}"
+                log_lines.append(failure)
+                failure_lines.append(failure)
         else:
             unsupported_count += 1
 
@@ -1638,6 +1660,93 @@ def _build_successfactors_search_url(endpoint_url: str, settings: dict[str, Any]
     base_url = f"{parsed.scheme or 'https'}://{parsed.netloc}"
     query = urlencode({"q": title, "locationsearch": location_value})
     return f"{base_url}/search/?{query}"
+
+
+def _extract_icims_search_action(page_text: str) -> str:
+    match = re.search(r'action="([^"]+/jobs/search[^"]*)"', page_text, re.I)
+    if not match:
+        return ""
+    return html.unescape(safe_text(match.group(1)))
+
+
+def _match_icims_location_value(page_text: str, settings: dict[str, Any]) -> str:
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
+    remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    desired_locations = ["Remote"] if remote_only else preferred_locations
+    if not desired_locations:
+        return ""
+
+    option_matches = re.findall(
+        r'<option\s+value="([^"]*)"\s*[^>]*>(.*?)</option>',
+        page_text,
+        re.I | re.S,
+    )
+    if not option_matches:
+        return ""
+
+    for desired in desired_locations:
+        normalized_desired = normalize_text(desired)
+        if not normalized_desired:
+            continue
+        for value, label in option_matches:
+            normalized_label = normalize_text(html.unescape(label))
+            if normalized_desired in normalized_label:
+                return safe_text(value)
+    return ""
+
+
+def _build_icims_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
+    endpoint = safe_text(endpoint_url)
+    if not endpoint:
+        return ""
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    candidate_pages = [endpoint]
+    jobs_root = urljoin(endpoint, "/jobs")
+    if jobs_root not in candidate_pages:
+        candidate_pages.append(jobs_root)
+
+    action_url = ""
+    page_text = ""
+    for page_url in candidate_pages:
+        response = requests.get(page_url, timeout=20, headers=headers)
+        response.raise_for_status()
+        page_text = response.text
+        action_url = _extract_icims_search_action(page_text)
+        if action_url:
+            break
+
+    if not action_url:
+        return ""
+
+    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    title = safe_text(target_titles[0] if target_titles else "")
+    if not title:
+        return ""
+
+    parsed = urlparse(action_url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query["searchKeyword"] = title
+    query["searchRelation"] = "keyword_all"
+    location_value = _match_icims_location_value(page_text, settings)
+    if location_value:
+        query["searchLocation"] = location_value
+
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _discover_icims_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
+    search_url = _build_icims_search_url(endpoint_url, settings)
+    if not search_url:
+        return []
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(search_url, timeout=20, headers=headers)
+    response.raise_for_status()
+
+    hits = re.findall(r'href="([^"]+/jobs/\d+/[^"]*/job[^"]*)"', response.text, re.I)
+    discovered = [urljoin(search_url, html.unescape(href)) for href in hits]
+    return list(dict.fromkeys(discovered))
 
 
 def _discover_successfactors_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
