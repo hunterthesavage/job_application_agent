@@ -7,6 +7,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 from typing import Any
 
+import requests
+
 from config import JOB_URLS_FILE, MANUAL_URLS_FILE
 from services.ai_job_scoring import (
     apply_score_to_job_payload,
@@ -1277,6 +1279,15 @@ def _discover_urls_from_next_gen_seeds(
                 log_lines.append(f"Next-gen Lever URLs found: {len(urls)}")
             except Exception as exc:
                 log_lines.append(f"Next-gen Lever seed failed: {company_name} | {exc}")
+        elif ats_vendor == "workday":
+            scanned_count += 1
+            log_lines.append(f"Checking next-gen Workday seed: {company_name} | {endpoint_url}")
+            try:
+                urls = _discover_workday_jobs(endpoint_url, settings)
+                discovered.extend(urls)
+                log_lines.append(f"Next-gen Workday URLs found: {len(urls)}")
+            except Exception as exc:
+                log_lines.append(f"Next-gen Workday seed failed: {company_name} | {exc}")
         else:
             unsupported_count += 1
 
@@ -1293,9 +1304,76 @@ def _discover_urls_from_next_gen_seeds(
     return discovered, log_lines, scanned_count, unsupported_count
 
 
+def _extract_workday_metadata(page_text: str) -> tuple[str, str]:
+    tenant_match = re.search(r'tenant:\s*"([^"]+)"', page_text)
+    site_match = re.search(r'siteId:\s*"([^"]+)"', page_text)
+    tenant = safe_text(tenant_match.group(1) if tenant_match else "")
+    site_id = safe_text(site_match.group(1) if site_match else "")
+    return tenant, site_id
+
+
+def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
+    endpoint = safe_text(endpoint_url)
+    if not endpoint:
+        return []
+
+    parsed = urlparse(endpoint)
+    base_url = f"{parsed.scheme or 'https'}://{parsed.netloc}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    page_response = requests.get(endpoint, timeout=20, headers=headers)
+    page_response.raise_for_status()
+    tenant, site_id = _extract_workday_metadata(page_response.text)
+    if not tenant or not site_id:
+        return []
+
+    jobs_url = f"{base_url}/wday/cxs/{tenant}/{site_id}/jobs"
+    payload = {"limit": 10, "offset": 0}
+    jobs_response = requests.post(jobs_url, json=payload, timeout=20, headers=headers)
+    jobs_response.raise_for_status()
+
+    body = jobs_response.json()
+    postings = body.get("jobPostings", []) if isinstance(body, dict) else []
+    if not isinstance(postings, list):
+        return []
+
+    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
+    remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    location_tokens = {token.lower() for token in preferred_locations if token}
+    title_tokens = {token.lower() for token in target_titles if token}
+
+    discovered: list[str] = []
+    for posting in postings:
+        if not isinstance(posting, dict):
+            continue
+        external_path = safe_text(posting.get("externalPath", ""))
+        if not external_path:
+            continue
+
+        title = safe_text(posting.get("title", ""))
+        location_text = safe_text(posting.get("locationsText", ""))
+
+        normalized_title = normalize_text(title)
+        normalized_location = normalize_text(location_text)
+
+        if title_tokens and not any(normalize_text(token) in normalized_title for token in title_tokens):
+            continue
+        if remote_only and "remote" not in normalized_location:
+            continue
+        if location_tokens and "remote" not in normalized_location:
+            if not any(normalize_text(token) in normalized_location for token in location_tokens):
+                continue
+
+        discovered.append(f"{base_url}{external_path}")
+
+    return list(dict.fromkeys(discovered))
+
+
 def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]:
     settings = load_settings()
     source_layer_mode = get_source_layer_mode()
+    source_layer_settings = {**settings, "_source_layer_mode": source_layer_mode}
     discovery_result = discover_module.discover_urls(settings, use_ai_expansion=use_ai_title_expansion)
 
     output_parts: list[str] = []
@@ -1304,12 +1382,12 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
 
     shadow_result: dict[str, Any] | None = None
     if source_layer_mode == "shadow":
-        shadow_result = run_shadow_endpoint_selection(settings)
+        shadow_result = run_shadow_endpoint_selection(source_layer_settings)
         shadow_output = safe_text(shadow_result.get("output", ""))
         if shadow_output:
             output_parts.append(shadow_output)
     elif source_layer_mode == "next_gen":
-        shadow_result = run_shadow_endpoint_selection(settings)
+        shadow_result = run_shadow_endpoint_selection(source_layer_settings)
         output_parts.append(
             "Next-gen source layer mode requested. "
             "Legacy discovery remains primary for this run, and supported source-layer seed URLs will be added when available."

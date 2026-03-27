@@ -6,6 +6,7 @@ from typing import Any
 from services.db import db_connection
 
 SHADOW_SELECTION_CAP = 25
+SUPPORTED_NEXT_GEN_SEED_VENDORS = {"greenhouse", "lever", "workday"}
 
 
 def _safe_text(value: Any) -> str:
@@ -56,6 +57,7 @@ def _score_shadow_candidate(
     title_tokens: list[str],
     location_tokens: list[str],
     remote_only: bool,
+    source_layer_mode: str,
 ) -> int:
     score = 0
 
@@ -107,8 +109,18 @@ def _score_shadow_candidate(
     return score
 
 
+def _selection_sort_key(item: tuple[int, str, str, Any], *, source_layer_mode: str) -> tuple[Any, ...]:
+    score, company_name, endpoint_url, row = item
+    ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
+    supported_priority = int(ats_vendor in SUPPORTED_NEXT_GEN_SEED_VENDORS)
+    if source_layer_mode == "next_gen":
+        return (-supported_priority, -score, company_name.lower(), endpoint_url.lower())
+    return (-score, company_name.lower(), endpoint_url.lower())
+
+
 def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dict[str, Any]:
     settings = settings or {}
+    source_layer_mode = _safe_text(settings.get("_source_layer_mode", "legacy")).lower() or "legacy"
 
     title_tokens = _tokenize(_parse_csv_like(settings.get("target_titles", "")))
     location_tokens = _tokenize(_parse_location_like(settings.get("preferred_locations", "")))
@@ -160,6 +172,7 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
                     title_tokens=title_tokens,
                     location_tokens=location_tokens,
                     remote_only=remote_only,
+                    source_layer_mode=source_layer_mode,
                 ),
                 _safe_text(row["company_name"]) or "(unknown company)",
                 _safe_text(row["endpoint_url"]),
@@ -167,7 +180,7 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
             )
             for row in rows
         ),
-        key=lambda item: (-item[0], item[1].lower(), item[2].lower()),
+        key=lambda item: _selection_sort_key(item, source_layer_mode=source_layer_mode),
     )
 
     selected_rows = [item[3] for item in scored_rows[:SHADOW_SELECTION_CAP]]
@@ -204,6 +217,13 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
         f"- Primary endpoints: {primary_count}",
         f"- Selected shadow candidates: {len(selected_rows)}",
     ]
+    if source_layer_mode == "next_gen":
+        supported_selected = sum(
+            1
+            for row in selected_rows
+            if (_safe_text(row["ats_vendor"]).lower() or "unknown") in SUPPORTED_NEXT_GEN_SEED_VENDORS
+        )
+        lines.append(f"- Next-gen seed-supporting candidates: {supported_selected}")
     if selected_companies:
         lines.append(f"- Selected companies: {', '.join(selected_companies)}")
     else:

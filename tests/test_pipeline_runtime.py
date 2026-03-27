@@ -301,6 +301,11 @@ def test_discover_job_links_next_gen_merges_supported_seed_urls(monkeypatch):
         "discover_greenhouse_jobs",
         lambda endpoint_url, settings: ["https://job-boards.greenhouse.io/checkr/jobs/seeded-job"],
     )
+    monkeypatch.setattr(
+        runtime,
+        "_discover_workday_jobs",
+        lambda endpoint_url, settings: ["https://company.wd5.myworkdayjobs.com/job/seeded-workday"],
+    )
 
     result = runtime.discover_job_links(use_ai_title_expansion=True)
 
@@ -314,6 +319,58 @@ def test_discover_job_links_next_gen_merges_supported_seed_urls(monkeypatch):
     assert result["urls"][:2] == result["next_gen_seed_urls"]
     assert "Next-gen seed discovery summary:" in result["output"]
     assert "Next-gen seeds added 2 URL(s) ahead of legacy results for this run." in result["output"]
+
+
+def test_discover_job_links_next_gen_supports_workday_seeds(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
+    monkeypatch.setattr(runtime, "load_settings", lambda: {"target_titles": "Business Analyst"})
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "discover_urls",
+        lambda settings, use_ai_expansion=True: {
+            "all_urls": ["https://legacy.example/jobs/1"],
+            "greenhouse_urls": [],
+            "lever_urls": [],
+            "search_urls": ["https://legacy.example/jobs/1"],
+            "output": "Discovery output",
+            "drop_summary": {},
+        },
+    )
+    monkeypatch.setattr(runtime.discover_module, "save_output_urls", lambda file_path, urls: None)
+    monkeypatch.setattr(
+        runtime,
+        "run_shadow_endpoint_selection",
+        lambda settings=None: {
+            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 1",
+            "selected_endpoint_count": 1,
+            "selected_company_names": ["Centene"],
+            "selected_ats_counts": {"workday": 1},
+            "selected_candidates": [
+                {
+                    "company_name": "Centene",
+                    "endpoint_url": "https://centene.wd5.myworkdayjobs.com/Centene_External",
+                    "ats_vendor": "workday",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_discover_workday_jobs",
+        lambda endpoint_url, settings: ["https://centene.wd5.myworkdayjobs.com/job/Remote-OK/Business-Analyst_123"],
+    )
+
+    result = runtime.discover_job_links(use_ai_title_expansion=True)
+
+    assert result["next_gen_seed_urls"] == [
+        "https://centene.wd5.myworkdayjobs.com/job/Remote-OK/Business-Analyst_123"
+    ]
+    assert result["next_gen_supported_seeds_scanned"] == 1
+    assert result["next_gen_unsupported_seeds_skipped"] == 0
+    assert "Checking next-gen Workday seed: Centene" in result["output"]
+    assert "Next-gen Workday URLs found: 1" in result["output"]
 
 
 def test_build_jobs_from_urls_tracks_next_gen_seed_contribution(monkeypatch):

@@ -84,3 +84,110 @@ def test_run_shadow_endpoint_selection_returns_selected_candidates(temp_db_path)
     assert "Rover" in result["selected_company_names"]
     assert "Selected shadow candidates: 2" in result["output"]
 
+
+def test_run_shadow_endpoint_selection_prefers_supported_seed_vendors_for_next_gen(temp_db_path):
+    import services.source_layer_shadow as shadow
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute(
+            """
+            INSERT INTO companies (name, canonical_domain, hq, active)
+            VALUES
+                ('Supported Lever', 'supportedlever.com', 'Seattle', 1),
+                ('Supported Greenhouse', 'supportedgreenhouse.com', 'Remote', 1),
+                ('Unsupported Taleo', 'unsupportedtaleo.com', 'Seattle', 1)
+            """
+        )
+        companies = conn.execute("SELECT id, name FROM companies ORDER BY id").fetchall()
+        company_ids = {row["name"]: row["id"] for row in companies}
+
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id,
+                endpoint_url,
+                endpoint_type,
+                ats_vendor,
+                extraction_method,
+                discovery_source,
+                confidence_score,
+                health_score,
+                review_status,
+                careers_url_status,
+                is_primary,
+                last_validated_at,
+                active,
+                notes
+            )
+            VALUES (?, 'https://jobs.lever.co/supportedlever', 'careers_page', 'lever', 'lever',
+                    'legacy_import', 0.7, 0.7, 'needs_review', 'candidate', 1, '2026-03-26T10:00:00Z', 1,
+                    'Business analyst Seattle roles')
+            """,
+            (company_ids["Supported Lever"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id,
+                endpoint_url,
+                endpoint_type,
+                ats_vendor,
+                extraction_method,
+                discovery_source,
+                confidence_score,
+                health_score,
+                review_status,
+                careers_url_status,
+                is_primary,
+                last_validated_at,
+                active,
+                notes
+            )
+            VALUES (?, 'https://job-boards.greenhouse.io/supportedgreenhouse', 'careers_page', 'greenhouse', 'greenhouse',
+                    'legacy_import', 0.65, 0.65, 'needs_review', 'candidate', 1, '2026-03-26T10:00:00Z', 1,
+                    'Remote business analyst roles')
+            """,
+            (company_ids["Supported Greenhouse"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id,
+                endpoint_url,
+                endpoint_type,
+                ats_vendor,
+                extraction_method,
+                discovery_source,
+                confidence_score,
+                health_score,
+                review_status,
+                careers_url_status,
+                is_primary,
+                last_validated_at,
+                active,
+                notes
+            )
+            VALUES (?, 'https://careers.example.com/unsupportedtaleo', 'careers_page', 'taleo / oracle recruiting', 'taleo',
+                    'legacy_import', 0.99, 0.99, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Very strong business analyst Seattle endpoint')
+            """,
+            (company_ids["Unsupported Taleo"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = shadow.run_shadow_endpoint_selection(
+        {
+            "_source_layer_mode": "next_gen",
+            "target_titles": "Business Analyst",
+            "preferred_locations": "Seattle",
+            "remote_only": "false",
+        }
+    )
+
+    selected_vendors = [candidate["ats_vendor"] for candidate in result["selected_candidates"]]
+    assert selected_vendors[:2] == ["lever", "greenhouse"]
+    assert "Next-gen seed-supporting candidates: 2" in result["output"]
