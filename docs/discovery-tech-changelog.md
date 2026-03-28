@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-27
 
+### Removed duplicate next-gen seed roots from shadow selection
+- Summary: next-gen shadow selection now avoids selecting the same endpoint URL more than once, even when multiple companies map to that shared ATS root.
+- Why: duplicate selected roots were wasting limited seed slots, especially in Workday-heavy sparse senior-tech runs.
+- Validation: `.venv/bin/python -m pytest -q tests/test_source_layer_shadow.py`; targeted `VP of IT` next-gen seed discovery improved from `2` seeded URLs to `5`.
+- Files: `services/source_layer_shadow.py`, `tests/test_source_layer_shadow.py`
+
 ### Added local discovery debug harness and next-gen seed diagnostics
 - Summary: added a repeatable local discovery debug runner, comparison suite tooling, rejected-search-result diagnostics, normalized seed-query generation, diversified next-gen ATS family selection, fallback deduping, and seed-shape ranking improvements across Workday, iCIMS, SuccessFactors, and Taleo.
 - Why: sparse senior-tech searches like `VP of IT` were still returning zero discovered URLs, and the discovery loop was too manual and too opaque to debug efficiently.

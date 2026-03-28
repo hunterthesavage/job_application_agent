@@ -544,3 +544,79 @@ def test_run_shadow_endpoint_selection_prefers_higher_quality_seed_shapes(temp_d
     selected_companies = [candidate["company_name"] for candidate in result["selected_candidates"]]
     assert selected_companies.index("Strong Workday") < selected_companies.index("Weak Workday")
     assert selected_companies.index("Strong iCIMS") < selected_companies.index("Weak iCIMS")
+
+
+def test_run_shadow_endpoint_selection_avoids_duplicate_seed_endpoint_urls(temp_db_path):
+    import services.source_layer_shadow as shadow
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute(
+            """
+            INSERT INTO companies (name, canonical_domain, hq, active)
+            VALUES
+                ('Company A', 'companya.com', 'Remote', 1),
+                ('Company B', 'companyb.com', 'Remote', 1),
+                ('Company C', 'companyc.com', 'Remote', 1)
+            """
+        )
+        companies = conn.execute("SELECT id, name FROM companies ORDER BY id").fetchall()
+        company_ids = {row["name"]: row["id"] for row in companies}
+
+        shared_endpoint = "https://sharedtenant.wd5.myworkdayjobs.com/Careers"
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, ?, 'careers_page', 'workday', 'workday',
+                    'legacy_import', 0.95, 0.95, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of Information Technology remote roles')
+            """,
+            (company_ids["Company A"], shared_endpoint),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, ?, 'careers_page', 'workday', 'workday',
+                    'legacy_import', 0.95, 0.95, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of Information Technology remote roles')
+            """,
+            (company_ids["Company B"], shared_endpoint),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://unique.wd5.myworkdayjobs.com/Careers', 'careers_page', 'workday', 'workday',
+                    'legacy_import', 0.90, 0.90, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of Information Technology remote roles')
+            """,
+            (company_ids["Company C"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = shadow.run_shadow_endpoint_selection(
+        {
+            "_source_layer_mode": "next_gen",
+            "_shadow_selection_cap": "3",
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "false",
+        }
+    )
+
+    endpoints = [candidate["endpoint_url"] for candidate in result["selected_candidates"]]
+    assert endpoints.count(shared_endpoint) == 1

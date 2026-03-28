@@ -340,6 +340,7 @@ def _select_diversified_next_gen_rows(
 
     quotas = _senior_technology_vendor_quotas(selection_cap)
     selected_indices: set[int] = set()
+    selected_endpoint_urls: set[str] = set()
     selected_rows: list[Any] = []
 
     for vendor, limit in quotas:
@@ -349,12 +350,15 @@ def _select_diversified_next_gen_rows(
         for idx, (_, _, endpoint_url, row) in enumerate(scored_rows):
             if idx in selected_indices:
                 continue
+            if endpoint_url in selected_endpoint_urls:
+                continue
             ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
             if ats_vendor != vendor:
                 continue
             if not _supports_next_gen_seed_endpoint(ats_vendor, endpoint_url):
                 continue
             selected_indices.add(idx)
+            selected_endpoint_urls.add(endpoint_url)
             selected_rows.append(row)
             taken += 1
             if taken >= limit or len(selected_rows) >= selection_cap:
@@ -366,17 +370,23 @@ def _select_diversified_next_gen_rows(
     for idx, (_, _, endpoint_url, row) in enumerate(scored_rows):
         if idx in selected_indices:
             continue
+        if endpoint_url in selected_endpoint_urls:
+            continue
         ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
         if not _supports_next_gen_seed_endpoint(ats_vendor, endpoint_url):
             continue
         selected_indices.add(idx)
+        selected_endpoint_urls.add(endpoint_url)
         selected_rows.append(row)
         if len(selected_rows) >= selection_cap:
             return selected_rows
 
-    for idx, (_, _, _, row) in enumerate(scored_rows):
+    for idx, (_, _, endpoint_url, row) in enumerate(scored_rows):
         if idx in selected_indices:
             continue
+        if endpoint_url in selected_endpoint_urls:
+            continue
+        selected_endpoint_urls.add(endpoint_url)
         selected_rows.append(row)
         if len(selected_rows) >= selection_cap:
             break
