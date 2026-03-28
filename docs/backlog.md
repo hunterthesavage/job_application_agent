@@ -33,7 +33,10 @@ The single run-level AI toggle is simpler, but the page may still need clearer w
 The Duration timer is not always reflecting real elapsed time. This should be tightened so Pipeline results and status views feel trustworthy.
 
 ### Add a Fortune 500 career-site registry and filter
-Integrate a curated Fortune 500 URL list for company career sites, use it as a higher-signal discovery source similar to ATS seed sources, and add a filter so users can choose to surface only jobs from those Fortune 500 URLs.
+Integrate a curated Fortune 500 URL list for company career sites, use it as a higher-signal discovery source similar to ATS seed sources, let it act as a ranking signal for trusted enterprise employers, and add user-facing controls such as `Prefer Fortune 500` and `Only show Fortune 500 jobs`.
+
+### Expand discovery beyond the Fortune 500 seed set
+Build broader employer and ATS endpoint coverage beyond the Fortune 500 list so discovery does not overfit to only large public companies. Treat the Fortune 500 registry as one high-signal seed lane, not the whole source universe.
 
 ### Add direct API integrations for more discovery sources
 Evaluate direct API integrations that can pull additional job URLs into the pipeline so the app can score more high-quality roles without depending only on search and current ATS-source coverage.

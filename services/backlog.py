@@ -50,7 +50,12 @@ BACKLOG_ITEMS: list[dict[str, str]] = [
     {
         "priority": "Medium",
         "title": "Add a Fortune 500 career-site registry and filter",
-        "detail": "Integrate a curated Fortune 500 URL list for company career sites, use it as a higher-signal discovery source similar to ATS seed sources, and add a filter so users can choose to surface only jobs from those Fortune 500 URLs.",
+        "detail": "Integrate a curated Fortune 500 URL list for company career sites, use it as a higher-signal discovery source similar to ATS seed sources, let it act as a ranking signal for trusted enterprise employers, and add user-facing controls such as Prefer Fortune 500 and Only show Fortune 500 jobs.",
+    },
+    {
+        "priority": "Medium",
+        "title": "Expand discovery beyond the Fortune 500 seed set",
+        "detail": "Build broader employer and ATS endpoint coverage beyond the Fortune 500 list so discovery does not overfit to only large public companies. Treat the Fortune 500 registry as one high-signal seed lane, not the whole source universe.",
     },
     {
         "priority": "Medium",
