@@ -1200,7 +1200,7 @@ def test_discover_workday_jobs_pages_through_results_without_internal_filtering(
     urls = runtime._discover_workday_jobs(
         "https://centene.wd5.myworkdayjobs.com/Centene_External",
         {
-            "target_titles": "VP of IT",
+            "target_titles": "",
             "preferred_locations": "Remote",
             "remote_only": "false",
         },
@@ -1216,6 +1216,210 @@ def test_discover_workday_jobs_pages_through_results_without_internal_filtering(
         {"limit": runtime.WORKDAY_SEED_PAGE_SIZE, "offset": 0},
         {"limit": runtime.WORKDAY_SEED_PAGE_SIZE, "offset": runtime.WORKDAY_SEED_PAGE_SIZE},
         {"limit": runtime.WORKDAY_SEED_PAGE_SIZE, "offset": runtime.WORKDAY_SEED_PAGE_SIZE * 2},
+    ]
+
+
+def test_discover_workday_jobs_uses_search_safe_title_before_broad_fallback(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    class Response:
+        def __init__(self, text="", json_data=None):
+            self.text = text
+            self._json_data = json_data
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._json_data
+
+    page_html = """
+    <script>
+      tenant: "centene",
+      siteId: "Centene_External",
+      locale: "",
+      requestLocale: "en-US",
+    </script>
+    """
+
+    seen_payloads = []
+
+    def fake_get(url, *args, **kwargs):
+        assert url == "https://centene.wd5.myworkdayjobs.com/Centene_External"
+        return Response(text=page_html)
+
+    def fake_post(url, json=None, *args, **kwargs):
+        assert url == "https://centene.wd5.myworkdayjobs.com/wday/cxs/centene/Centene_External/jobs"
+        payload = dict(json or {})
+        seen_payloads.append(payload)
+        if payload.get("searchText") == "vice president of information technology":
+            return Response(json_data={"total": 0, "jobPostings": []})
+        return Response(
+            json_data={
+                "total": 1,
+                "jobPostings": [{"externalPath": "/job/Remote-MO/VP-of-IT_2001"}],
+            }
+        )
+
+    monkeypatch.setattr(runtime.requests, "get", fake_get)
+    monkeypatch.setattr(runtime.requests, "post", fake_post)
+
+    urls = runtime._discover_workday_jobs(
+        "https://centene.wd5.myworkdayjobs.com/Centene_External",
+        {
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "false",
+        },
+    )
+
+    assert urls == [
+        "https://centene.wd5.myworkdayjobs.com/Centene_External/job/Remote-MO/VP-of-IT_2001",
+    ]
+    assert seen_payloads == [
+        {
+                "limit": runtime.WORKDAY_SEED_PAGE_SIZE,
+                "offset": 0,
+                "searchText": "vice president of information technology",
+            },
+        {
+            "limit": runtime.WORKDAY_SEED_PAGE_SIZE,
+            "offset": 0,
+        },
+    ]
+
+
+def test_discover_workday_jobs_stops_after_search_results(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    class Response:
+        def __init__(self, text="", json_data=None):
+            self.text = text
+            self._json_data = json_data
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._json_data
+
+    page_html = """
+    <script>
+      tenant: "centene",
+      siteId: "Centene_External",
+      locale: "",
+      requestLocale: "en-US",
+    </script>
+    """
+
+    seen_payloads = []
+
+    def fake_get(url, *args, **kwargs):
+        return Response(text=page_html)
+
+    def fake_post(url, json=None, *args, **kwargs):
+        payload = dict(json or {})
+        seen_payloads.append(payload)
+        return Response(
+            json_data={
+                "total": 1,
+                "jobPostings": [{"externalPath": "/job/Remote-MO/VP-of-IT_2001"}],
+            }
+        )
+
+    monkeypatch.setattr(runtime.requests, "get", fake_get)
+    monkeypatch.setattr(runtime.requests, "post", fake_post)
+
+    urls = runtime._discover_workday_jobs(
+        "https://centene.wd5.myworkdayjobs.com/Centene_External",
+        {
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "false",
+        },
+    )
+
+    assert urls == [
+        "https://centene.wd5.myworkdayjobs.com/Centene_External/job/Remote-MO/VP-of-IT_2001",
+    ]
+    assert seen_payloads == [
+        {
+            "limit": runtime.WORKDAY_SEED_PAGE_SIZE,
+            "offset": 0,
+            "searchText": "vice president of information technology",
+        }
+    ]
+
+
+def test_discover_workday_jobs_prefilters_using_structured_posting_title_and_location(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    class Response:
+        def __init__(self, text="", json_data=None):
+            self.text = text
+            self._json_data = json_data
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._json_data
+
+    page_html = """
+    <script>
+      tenant: "centene",
+      siteId: "Centene_External",
+      locale: "",
+      requestLocale: "en-US",
+    </script>
+    """
+
+    def fake_get(url, *args, **kwargs):
+        return Response(text=page_html)
+
+    def fake_post(url, json=None, *args, **kwargs):
+        return Response(
+            json_data={
+                "total": 4,
+                "jobPostings": [
+                    {
+                        "title": "Vice President, Information Technology",
+                        "locationsText": "United States Remote",
+                        "externalPath": "/job/Remote-USA/VP-Information-Technology_2001",
+                    },
+                    {
+                        "title": "Intern, Biostatistics",
+                        "locationsText": "Remote, USA",
+                        "externalPath": "/job/Remote-USA/Intern-Biostatistics_1001",
+                    },
+                    {
+                        "title": "Vice President, Sales",
+                        "locationsText": "United States Remote",
+                        "externalPath": "/job/Remote-USA/VP-Sales_1002",
+                    },
+                    {
+                        "title": "Vice President, Information Technology",
+                        "locationsText": "Boston, MA",
+                        "externalPath": "/job/Boston-MA/VP-Information-Technology_1003",
+                    },
+                ],
+            }
+        )
+
+    monkeypatch.setattr(runtime.requests, "get", fake_get)
+    monkeypatch.setattr(runtime.requests, "post", fake_post)
+
+    urls = runtime._discover_workday_jobs(
+        "https://centene.wd5.myworkdayjobs.com/Centene_External",
+        {
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "true",
+        },
+    )
+
+    assert urls == [
+        "https://centene.wd5.myworkdayjobs.com/Centene_External/job/Remote-USA/VP-Information-Technology_2001",
     ]
 
 

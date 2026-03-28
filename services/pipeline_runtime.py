@@ -862,18 +862,12 @@ def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[
     return False, f"url title prefilter mismatch: {hint}"
 
 
-def _cheap_seed_location_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[bool, str]:
+def _cheap_seed_location_prefilter_from_hint(hint_source: str, settings: dict[str, Any]) -> tuple[bool, str]:
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
 
     if not preferred_locations and not remote_only:
         return True, "no preferred locations configured"
-
-    try:
-        parsed = urlparse(safe_text(job_url))
-        hint_source = " ".join(part for part in [parsed.path, parsed.query] if safe_text(part))
-    except Exception:
-        hint_source = safe_text(job_url)
 
     normalized_hint = normalize_text(hint_source)
     if not normalized_hint:
@@ -902,12 +896,20 @@ def _cheap_seed_location_prefilter(job_url: str, settings: dict[str, Any]) -> tu
     return False, f"url location prefilter mismatch: {hint_source}"
 
 
-def _cheap_seed_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[bool, str]:
+def _cheap_seed_location_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[bool, str]:
+    try:
+        parsed = urlparse(safe_text(job_url))
+        hint_source = " ".join(part for part in [parsed.path, parsed.query] if safe_text(part))
+    except Exception:
+        hint_source = safe_text(job_url)
+    return _cheap_seed_location_prefilter_from_hint(hint_source, settings)
+
+
+def _cheap_seed_title_prefilter_from_hint(hint: str, settings: dict[str, Any]) -> tuple[bool, str]:
     target_titles = _seed_search_title_variants(settings, max_variants=6)
     if not target_titles:
         return True, "no target titles configured"
 
-    hint = _extract_url_title_hint(job_url)
     if not hint:
         return True, "no reliable url title hint"
 
@@ -955,6 +957,11 @@ def _cheap_seed_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple
             return True, f"seed leadership/function lane matched: {hint}"
 
     return False, f"seed title prefilter mismatch: {hint}"
+
+
+def _cheap_seed_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[bool, str]:
+    hint = _extract_url_title_hint(job_url)
+    return _cheap_seed_title_prefilter_from_hint(hint, settings)
 
 
 def _filter_next_gen_seed_urls(
@@ -1806,6 +1813,27 @@ def _build_workday_detail_url(endpoint_url: str, external_path: str) -> str:
     return f"{base_url}{normalized_external}"
 
 
+def _workday_seed_payloads(settings: dict[str, Any]) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    seed_title = _seed_search_title(settings)
+    if seed_title:
+        payloads.append(
+            {
+                "limit": WORKDAY_SEED_PAGE_SIZE,
+                "offset": 0,
+                "searchText": seed_title,
+            }
+        )
+
+    payloads.append(
+        {
+            "limit": WORKDAY_SEED_PAGE_SIZE,
+            "offset": 0,
+        }
+    )
+    return payloads
+
+
 def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
     endpoint = safe_text(endpoint_url)
     if not endpoint:
@@ -1823,39 +1851,61 @@ def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[
 
     jobs_url = f"{base_url}/wday/cxs/{tenant}/{site_id}/jobs"
     discovered: list[str] = []
-    total = 0
-    for page_index in range(WORKDAY_SEED_MAX_PAGES):
-        payload = {
-            "limit": WORKDAY_SEED_PAGE_SIZE,
-            "offset": page_index * WORKDAY_SEED_PAGE_SIZE,
-        }
-        jobs_response = requests.post(jobs_url, json=payload, timeout=20, headers=headers)
-        jobs_response.raise_for_status()
+    seen_payload_keys: set[tuple[tuple[str, str], ...]] = set()
+    payloads = _workday_seed_payloads(settings)
+    for base_payload in payloads:
+        payload_key = tuple(sorted((str(key), safe_text(value)) for key, value in base_payload.items()))
+        if payload_key in seen_payload_keys:
+            continue
+        seen_payload_keys.add(payload_key)
 
-        body = jobs_response.json()
-        if not isinstance(body, dict):
-            break
+        query_urls_before = len(discovered)
+        total = 0
+        for page_index in range(WORKDAY_SEED_MAX_PAGES):
+            payload = dict(base_payload)
+            payload["offset"] = page_index * WORKDAY_SEED_PAGE_SIZE
+            payload["limit"] = WORKDAY_SEED_PAGE_SIZE
 
-        postings = body.get("jobPostings", [])
-        if not isinstance(postings, list) or not postings:
-            break
+            jobs_response = requests.post(jobs_url, json=payload, timeout=20, headers=headers)
+            jobs_response.raise_for_status()
 
-        total = int(body.get("total", 0) or 0)
+            body = jobs_response.json()
+            if not isinstance(body, dict):
+                break
 
-        for posting in postings:
-            if not isinstance(posting, dict):
-                continue
-            external_path = safe_text(posting.get("externalPath", ""))
-            if not external_path:
-                continue
+            postings = body.get("jobPostings", [])
+            if not isinstance(postings, list) or not postings:
+                break
 
-            detail_url = _build_workday_detail_url(endpoint_url, external_path)
-            if detail_url:
-                discovered.append(detail_url)
+            total = int(body.get("total", 0) or 0)
 
-        if total and payload["offset"] + len(postings) >= total:
-            break
-        if not total and len(postings) < WORKDAY_SEED_PAGE_SIZE:
+            for posting in postings:
+                if not isinstance(posting, dict):
+                    continue
+                posting_title = safe_text(posting.get("title", ""))
+                title_ok, _ = _cheap_seed_title_prefilter_from_hint(posting_title, settings)
+                if not title_ok:
+                    continue
+
+                posting_location = safe_text(posting.get("locationsText", ""))
+                location_ok, _ = _cheap_seed_location_prefilter_from_hint(posting_location, settings)
+                if not location_ok:
+                    continue
+
+                external_path = safe_text(posting.get("externalPath", ""))
+                if not external_path:
+                    continue
+
+                detail_url = _build_workday_detail_url(endpoint_url, external_path)
+                if detail_url:
+                    discovered.append(detail_url)
+
+            if total and payload["offset"] + len(postings) >= total:
+                break
+            if not total and len(postings) < WORKDAY_SEED_PAGE_SIZE:
+                break
+
+        if len(discovered) > query_urls_before:
             break
 
     return list(dict.fromkeys(discovered))

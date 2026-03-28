@@ -20,6 +20,14 @@ Entry format:
 
 ---
 
+## 2026-03-28
+
+### Made Workday seeds search title-aware before broad fallback
+- Summary: Workday next-gen seed discovery now queries the Workday jobs API with the normalized seed title first, then falls back to the broad job catalog only when the title search returns nothing.
+- Why: Workday extraction itself is healthy, but browsing the full catalog first pulls a lot of irrelevant detail URLs; using the search-safe title early improves relevance and reduces wasted paging for sparse senior-tech searches.
+- Validation: `python3 -m py_compile services/pipeline_runtime.py tests/test_pipeline_runtime.py`; `.venv/bin/python -m pytest -q tests/test_pipeline_runtime.py`
+- Files: `services/pipeline_runtime.py`, `tests/test_pipeline_runtime.py`
+
 ## 2026-03-27
 
 ### Removed duplicate next-gen seed roots from shadow selection
