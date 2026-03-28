@@ -17,6 +17,7 @@ env/
 *.log
 job_agent_stdout.log
 job_agent_stderr.log
+logs/
 
 # Local runtime / app state
 data/job_agent.db
