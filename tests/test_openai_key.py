@@ -18,6 +18,21 @@ def test_save_and_load_openai_api_key(tmp_path, monkeypatch):
     assert stat.S_IMODE(key_file.stat().st_mode) == 0o600
 
 
+def test_save_and_load_openai_api_key_strips_wrapping_quotes(tmp_path, monkeypatch):
+    import config
+    import services.openai_key as key_module
+
+    key_file = tmp_path / "openai_api_key.txt"
+
+    monkeypatch.setattr(config, "OPENAI_API_KEY_FILE", key_file, raising=False)
+    monkeypatch.setattr(key_module, "OPENAI_API_KEY_FILE", key_file, raising=False)
+
+    key_module.save_openai_api_key("“sk-test-1234567890”")
+    loaded = key_module.load_saved_openai_api_key()
+
+    assert loaded == "sk-test-1234567890"
+
+
 def test_mask_openai_api_key():
     import services.openai_key as key_module
 
@@ -54,3 +69,11 @@ def test_get_openai_api_key_details_prefers_saved_key_over_environment(monkeypat
     assert details["active_source"] == "saved"
     assert details["active_key_present"] is True
     assert details["can_delete_saved_key"] is True
+
+
+def test_load_environment_openai_api_key_strips_wrapping_quotes(monkeypatch):
+    import services.openai_key as key_module
+
+    monkeypatch.setenv("OPENAI_API_KEY", "'sk-env-1234567890'")
+
+    assert key_module.load_environment_openai_api_key() == "sk-env-1234567890"

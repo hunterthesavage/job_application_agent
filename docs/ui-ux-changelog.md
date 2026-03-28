@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-27
 
+### Run-input save button no longer gets stuck disabled
+- Summary: Removed the disabled-state trap from the Pipeline run-input form so `Save Run Inputs` remains clickable after edits inside the Streamlit form.
+- Why: Fresh UI testing showed that changing fields like `Target Titles` did not enable the save button because Streamlit forms do not rerender the button's disabled state while typing.
+- Validation: Ran `.venv/bin/python -m py_compile views/pipeline.py services/openai_key.py`.
+- Files: `views/pipeline.py`
+
 ### Tightened Pipeline run inputs and last-run duration display
 - Summary: added Pipeline search-strategy controls, AI title-suggestion selection after saving run inputs, reliable local copy behavior for saved results, and a last-run Duration display that prefers the exact stored pipeline seconds over coarse timestamp diffs.
 - Why: Pipeline experiments needed faster run-input iteration and trustworthy result feedback, especially when sub-minute runs were showing `00:00:00` despite non-zero pipeline time.

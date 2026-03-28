@@ -6,8 +6,18 @@ from pathlib import Path
 from config import OPENAI_API_KEY_FILE
 
 
+_KEY_WRAPPER_CHARS = "\"'“”‘’`"
+
+
+def _normalize_openai_api_key(value: str) -> str:
+    key = str(value or "").strip()
+    while len(key) >= 2 and key[0] in _KEY_WRAPPER_CHARS and key[-1] in _KEY_WRAPPER_CHARS:
+        key = key[1:-1].strip()
+    return key
+
+
 def save_openai_api_key(api_key: str) -> Path:
-    key = str(api_key or "").strip()
+    key = _normalize_openai_api_key(api_key)
     if not key:
         raise ValueError("API key cannot be empty.")
 
@@ -25,11 +35,11 @@ def load_saved_openai_api_key() -> str:
     if not OPENAI_API_KEY_FILE.exists():
         return ""
 
-    return OPENAI_API_KEY_FILE.read_text(encoding="utf-8").strip()
+    return _normalize_openai_api_key(OPENAI_API_KEY_FILE.read_text(encoding="utf-8"))
 
 
 def load_environment_openai_api_key() -> str:
-    return str(os.getenv("OPENAI_API_KEY", "")).strip()
+    return _normalize_openai_api_key(os.getenv("OPENAI_API_KEY", ""))
 
 
 def get_effective_openai_api_key() -> str:
