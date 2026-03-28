@@ -1,6 +1,14 @@
 # Job Application Agent
 
-Local-first Streamlit app for discovering, validating, reviewing, and managing executive-level job opportunities.
+![Job Application Agent hero](docs/assets/readme-hero.svg)
+
+**An AI-guided job search workspace that helps you find higher-trust job postings, evaluate fit against your real background, and move faster from search to application.**
+
+## Why it is different
+
+- **AI-guided search and fit analysis**: use AI to refine title targeting, score jobs against your background, understand why a role fits, and generate tailored cover letters.
+- **Higher-trust job discovery**: surface direct employer and ATS-linked postings when possible, not just aggregator pass-throughs.
+- **Faster search-to-application workflow**: move from job discovery to fit review to application support in one place instead of bouncing across tools.
 
 ## Status
 
@@ -16,6 +24,10 @@ Current release: **1.0.0**
 
 ## What it does
 
+- AI-guided title refinement and search expansion
+- AI-assisted fit scoring against your resume and profile context
+- Tailored cover-letter generation for selected roles
+- Discovery pipeline that prioritizes higher-trust employer and ATS-linked job postings
 - Setup Wizard for first-time onboarding
 - Pipeline view for run inputs and job discovery actions
 - New Roles review workflow with sorting and filtering

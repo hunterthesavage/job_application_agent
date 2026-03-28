@@ -1,0 +1,78 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Job Application Agent README Hero</title>
+  <desc id="desc">A visual banner describing the product as an AI-guided job search workspace with higher-trust job discovery, fit analysis, and faster search-to-application workflow.</desc>
+  <defs>
+    <linearGradient id="bg" x1="84" y1="52" x2="1088" y2="590" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#07111F"/>
+      <stop offset="0.52" stop-color="#0D1930"/>
+      <stop offset="1" stop-color="#091523"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(230 154) rotate(28) scale(320 220)">
+      <stop stop-color="#1D4ED8" stop-opacity="0.40"/>
+      <stop offset="1" stop-color="#1D4ED8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(958 506) rotate(16) scale(360 220)">
+      <stop stop-color="#14B8A6" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#14B8A6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#60A5FA" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#2DD4BF" stop-opacity="0.16"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1200" height="630" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="34" flood-color="#020617" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" rx="34" fill="url(#bg)"/>
+  <rect width="1200" height="630" rx="34" fill="url(#glowA)"/>
+  <rect width="1200" height="630" rx="34" fill="url(#glowB)"/>
+  <rect x="24" y="24" width="1152" height="582" rx="26" stroke="rgba(148,163,184,0.18)" stroke-width="1.2"/>
+
+  <g filter="url(#shadow)">
+    <rect x="68" y="66" width="1064" height="498" rx="28" fill="rgba(9,14,25,0.72)"/>
+    <rect x="68.5" y="66.5" width="1063" height="497" rx="27.5" stroke="url(#cardStroke)"/>
+  </g>
+
+  <text x="108" y="126" fill="#93C5FD" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="3.6">JOB APPLICATION AGENT</text>
+  <text x="108" y="204" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700">
+    An AI-guided job search workspace
+  </text>
+  <text x="108" y="256" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700">
+    that helps you find higher-trust job postings,
+  </text>
+  <text x="108" y="308" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700">
+    evaluate fit against your real background,
+  </text>
+  <text x="108" y="360" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700">
+    and move faster from search to application.
+  </text>
+
+  <text x="108" y="418" fill="#94A3B8" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="500">
+    Higher-trust discovery • AI-guided fit analysis • Faster search-to-application workflow
+  </text>
+
+  <g>
+    <rect x="108" y="462" width="276" height="72" rx="18" fill="rgba(15,23,42,0.86)"/>
+    <rect x="108.5" y="462.5" width="275" height="71" rx="17.5" stroke="rgba(96,165,250,0.38)"/>
+    <text x="132" y="490" fill="#7DD3FC" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="1.6">HIGHER-TRUST DISCOVERY</text>
+    <text x="132" y="518" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">Direct employer and ATS-linked</text>
+    <text x="132" y="540" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">postings when possible</text>
+  </g>
+
+  <g>
+    <rect x="404" y="462" width="308" height="72" rx="18" fill="rgba(15,23,42,0.86)"/>
+    <rect x="404.5" y="462.5" width="307" height="71" rx="17.5" stroke="rgba(45,212,191,0.34)"/>
+    <text x="428" y="490" fill="#5EEAD4" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="1.6">AI-GUIDED FIT ANALYSIS</text>
+    <text x="428" y="518" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">Refine searches, score fit, and</text>
+    <text x="428" y="540" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">understand why a role matches</text>
+  </g>
+
+  <g>
+    <rect x="732" y="462" width="316" height="72" rx="18" fill="rgba(15,23,42,0.86)"/>
+    <rect x="732.5" y="462.5" width="315" height="71" rx="17.5" stroke="rgba(251,191,36,0.28)"/>
+    <text x="756" y="490" fill="#FCD34D" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="1.6">FASTER TO APPLICATION</text>
+    <text x="756" y="518" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">Go from discovery to cover letter</text>
+    <text x="756" y="540" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">without juggling separate tools</text>
+  </g>
+</svg>
