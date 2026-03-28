@@ -30,6 +30,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "include_keywords": "",
     "exclude_keywords": "",
     "remote_only": "false",
+    "search_strategy": "balanced",
     "minimum_compensation": "",
     "default_min_fit_score": "Any",
     "default_jobs_per_page": "10",

@@ -273,3 +273,274 @@ def test_run_shadow_endpoint_selection_prefers_seedable_taleo_endpoint_shapes(te
 
     assert result["selected_candidates"][0]["company_name"] == "Supported Taleo"
     assert "Next-gen seed-supporting candidates: 1" in result["output"]
+
+
+def test_run_shadow_endpoint_selection_biases_workday_and_icims_for_senior_tech_search(temp_db_path):
+    import services.source_layer_shadow as shadow
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute(
+            """
+            INSERT INTO companies (name, canonical_domain, hq, active)
+            VALUES
+                ('High Score SuccessFactors', 'sfexample.com', 'Remote', 1),
+                ('Workday Example', 'wdexample.com', 'Remote', 1),
+                ('iCIMS Example', 'icimsexample.com', 'Remote', 1)
+            """
+        )
+        companies = conn.execute("SELECT id, name FROM companies ORDER BY id").fetchall()
+        company_ids = {row["name"]: row["id"] for row in companies}
+
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://careers.example-successfactors.com/search/', 'careers_page', 'sap successfactors', 'successfactors',
+                    'legacy_import', 0.99, 0.99, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of Information Technology remote roles')
+            """,
+            (company_ids["High Score SuccessFactors"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://workday-example.wd5.myworkdayjobs.com/Careers', 'careers_page', 'workday', 'workday',
+                    'legacy_import', 0.60, 0.60, 'needs_review', 'candidate', 1, '2026-03-26T10:00:00Z', 1,
+                    'Technology leadership roles')
+            """,
+            (company_ids["Workday Example"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://careers-icims-example.icims.com/jobs', 'careers_page', 'icims', 'icims',
+                    'legacy_import', 0.60, 0.60, 'needs_review', 'candidate', 1, '2026-03-26T10:00:00Z', 1,
+                    'Infrastructure and platform roles')
+            """,
+            (company_ids["iCIMS Example"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = shadow.run_shadow_endpoint_selection(
+        {
+            "_source_layer_mode": "next_gen",
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "true",
+        }
+    )
+
+    selected_companies = [candidate["company_name"] for candidate in result["selected_candidates"][:3]]
+    assert selected_companies[:2] == ["Workday Example", "iCIMS Example"]
+    assert "Next-gen ranking bias: senior technology leadership" in result["output"]
+
+
+def test_run_shadow_endpoint_selection_diversifies_senior_tech_mix_across_ats_families(temp_db_path):
+    import services.source_layer_shadow as shadow
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        company_rows = [
+            ("Workday 1", "workday1.com", "Remote"),
+            ("Workday 2", "workday2.com", "Remote"),
+            ("Workday 3", "workday3.com", "Remote"),
+            ("Workday 4", "workday4.com", "Remote"),
+            ("Workday 5", "workday5.com", "Remote"),
+            ("Workday 6", "workday6.com", "Remote"),
+            ("iCIMS 1", "icims1.com", "Remote"),
+            ("SuccessFactors 1", "successfactors1.com", "Remote"),
+            ("Taleo 1", "taleo1.com", "Remote"),
+        ]
+        conn.executemany(
+            """
+            INSERT INTO companies (name, canonical_domain, hq, active)
+            VALUES (?, ?, ?, 1)
+            """,
+            company_rows,
+        )
+        companies = conn.execute("SELECT id, name FROM companies ORDER BY id").fetchall()
+        company_ids = {row["name"]: row["id"] for row in companies}
+
+        for index in range(1, 7):
+            conn.execute(
+                """
+                INSERT INTO hiring_endpoints (
+                    company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                    discovery_source, confidence_score, health_score, review_status,
+                    careers_url_status, is_primary, last_validated_at, active, notes
+                )
+                VALUES (?, ?, 'careers_page', 'workday', 'workday',
+                        'legacy_import', 0.95, 0.95, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                        'Vice President of Information Technology remote roles')
+                """,
+                (
+                    company_ids[f"Workday {index}"],
+                    f"https://workday-{index}.wd5.myworkdayjobs.com/Careers",
+                ),
+            )
+
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://careers-icims-example.icims.com/jobs', 'careers_page', 'icims', 'icims',
+                    'legacy_import', 0.70, 0.70, 'needs_review', 'candidate', 1, '2026-03-26T10:00:00Z', 1,
+                    'Infrastructure and platform leadership roles')
+            """,
+            (company_ids["iCIMS 1"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://careers-successfactors-example.jobs.example/search/', 'careers_page', 'sap successfactors', 'successfactors',
+                    'legacy_import', 0.70, 0.70, 'needs_review', 'candidate', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of Information Technology remote roles')
+            """,
+            (company_ids["SuccessFactors 1"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://taleo-example.taleo.net/careersection/10000/jobsearch.ftl', 'careers_page', 'taleo / oracle recruiting', 'taleo',
+                    'legacy_import', 0.70, 0.70, 'needs_review', 'candidate', 1, '2026-03-26T10:00:00Z', 1,
+                    'Technology vice president roles')
+            """,
+            (company_ids["Taleo 1"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = shadow.run_shadow_endpoint_selection(
+        {
+            "_source_layer_mode": "next_gen",
+            "_shadow_selection_cap": "6",
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "true",
+        }
+    )
+
+    selected_vendors = [candidate["ats_vendor"] for candidate in result["selected_candidates"]]
+    assert "workday" in selected_vendors
+    assert "icims" in selected_vendors
+    assert "sap successfactors" in selected_vendors
+    assert "taleo / oracle recruiting" in selected_vendors
+    assert "Next-gen ATS mix profile: diversified senior tech" in result["output"]
+
+
+def test_run_shadow_endpoint_selection_prefers_higher_quality_seed_shapes(temp_db_path):
+    import services.source_layer_shadow as shadow
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute(
+            """
+            INSERT INTO companies (name, canonical_domain, hq, active)
+            VALUES
+                ('Strong Workday', 'strongwd.com', 'Remote', 1),
+                ('Weak Workday', 'weakwd.com', 'Remote', 1),
+                ('Strong iCIMS', 'strongicims.com', 'Remote', 1),
+                ('Weak iCIMS', 'weakicims.com', 'Remote', 1)
+            """
+        )
+        companies = conn.execute("SELECT id, name FROM companies ORDER BY id").fetchall()
+        company_ids = {row["name"]: row["id"] for row in companies}
+
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://strongwd.wd5.myworkdayjobs.com/Careers', 'careers_page', 'workday', 'workday',
+                    'legacy_import', 0.80, 0.80, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of Information Technology remote roles')
+            """,
+            (company_ids["Strong Workday"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://weakwd.wd1.myworkdayjobs.com/en-US/External/login', 'careers_page', 'workday', 'workday',
+                    'legacy_import', 0.99, 0.99, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of Information Technology remote roles')
+            """,
+            (company_ids["Weak Workday"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://strong-icims.icims.com/jobs', 'careers_page', 'icims', 'icims',
+                    'legacy_import', 0.80, 0.80, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Technology leadership roles')
+            """,
+            (company_ids["Strong iCIMS"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id, endpoint_url, endpoint_type, ats_vendor, extraction_method,
+                discovery_source, confidence_score, health_score, review_status,
+                careers_url_status, is_primary, last_validated_at, active, notes
+            )
+            VALUES (?, 'https://weak-icims.icims.com/job-scams', 'careers_page', 'icims', 'icims',
+                    'legacy_import', 0.99, 0.99, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Technology leadership roles')
+            """,
+            (company_ids["Weak iCIMS"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = shadow.run_shadow_endpoint_selection(
+        {
+            "_source_layer_mode": "next_gen",
+            "_shadow_selection_cap": "4",
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "true",
+        }
+    )
+
+    selected_companies = [candidate["company_name"] for candidate in result["selected_candidates"]]
+    assert selected_companies.index("Strong Workday") < selected_companies.index("Weak Workday")
+    assert selected_companies.index("Strong iCIMS") < selected_companies.index("Weak iCIMS")

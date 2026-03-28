@@ -64,6 +64,30 @@ def test_normalize_job_posting_url_strips_lever_apply_suffix():
     ) == "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf"
 
 
+def test_normalize_job_posting_url_strips_ashby_application_suffix():
+    import services.pipeline_runtime as runtime
+
+    assert runtime._normalize_job_posting_url(
+        "https://jobs.ashbyhq.com/mariner-careers/2a0b64d2-8483-461a-b08c-aad3b9ab6ddb/application"
+    ) == "https://jobs.ashbyhq.com/mariner-careers/2a0b64d2-8483-461a-b08c-aad3b9ab6ddb"
+
+
+def test_normalize_job_posting_urls_dedupes_wrapper_and_detail_variants():
+    import services.pipeline_runtime as runtime
+
+    assert runtime._normalize_job_posting_urls(
+        [
+            "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf/apply",
+            "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf",
+            "https://jobs.ashbyhq.com/mariner-careers/2a0b64d2-8483-461a-b08c-aad3b9ab6ddb/application",
+            "https://jobs.ashbyhq.com/mariner-careers/2a0b64d2-8483-461a-b08c-aad3b9ab6ddb",
+        ]
+    ) == [
+        "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf",
+        "https://jobs.ashbyhq.com/mariner-careers/2a0b64d2-8483-461a-b08c-aad3b9ab6ddb",
+    ]
+
+
 def test_is_probable_job_url_allows_workday_detail_with_careers_segment():
     import services.pipeline_runtime as runtime
 
@@ -133,6 +157,66 @@ def test_build_jobs_from_urls_treats_ats_404_as_skip(monkeypatch):
     assert result["error_count"] == 0
     assert result["skipped_count"] == 1
     assert "Skipped unavailable ATS posting" in result["output"]
+
+
+def test_build_jobs_from_urls_canonicalizes_wrapper_urls_before_validation(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    seen = {"gate": [], "created": []}
+
+    monkeypatch.setattr(runtime, "load_settings", lambda: {})
+
+    def fake_is_probable_job_url(job_url):
+        seen["gate"].append(job_url)
+        return True, "lever_detail"
+
+    def fake_create_job_record(job_url):
+        seen["created"].append(job_url)
+        return SimpleNamespace(
+            title="Vice President of Engineering",
+            company="Example",
+            location="Dallas, TX",
+            description="",
+            job_posting_url=job_url,
+        )
+
+    monkeypatch.setattr(runtime, "is_probable_job_url", fake_is_probable_job_url)
+    monkeypatch.setattr(runtime, "_cheap_url_title_prefilter", lambda job_url, settings: (True, "ok"))
+    monkeypatch.setattr(runtime, "create_job_record", fake_create_job_record)
+    monkeypatch.setattr(runtime, "score_job_match", lambda job, settings: {"should_accept": True, "score": 80, "reason_text": "ok"})
+    monkeypatch.setattr(runtime, "enrich_job_payload", lambda job, source_hint, source_detail_hint: {
+        "company": job.company,
+        "title": job.title,
+        "location": job.location,
+        "job_posting_url": job.job_posting_url,
+        "source_trust": "ATS Confirmed",
+    })
+    monkeypatch.setattr(
+        runtime,
+        "ingest_job_records",
+        lambda **kwargs: {
+            "inserted_count": 1,
+            "updated_count": 0,
+            "skipped_removed_count": 0,
+            "net_new_count": 1,
+            "rediscovered_count": 0,
+            "duplicate_in_run_count": 0,
+        },
+    )
+
+    result = runtime._build_jobs_from_urls(
+        [
+            "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf/apply",
+            "https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf",
+        ],
+        source_name="Local Pipeline",
+        source_detail="test",
+        use_ai_scoring=False,
+    )
+
+    assert seen["gate"] == ["https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf"]
+    assert seen["created"] == ["https://jobs.lever.co/aledade/4275e2d5-b433-4447-bfee-2b409deec4bf"]
+    assert result["seen_urls"] == 1
 
 
 def test_discover_job_links_includes_shadow_summary_when_enabled(monkeypatch):
@@ -224,6 +308,11 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
         "record_source_layer_run",
         lambda **kwargs: captured.setdefault("source_layer_run", kwargs),
     )
+    monkeypatch.setattr(
+        runtime,
+        "update_ingestion_run_details",
+        lambda run_id, extra_details: captured.setdefault("updated_run_details", []).append((run_id, extra_details)),
+    )
 
     def fake_discover_job_links(*, use_ai_title_expansion=True):
         captured["discover_flag"] = use_ai_title_expansion
@@ -242,6 +331,7 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
             "status": "completed",
             "output": "Ingest output",
             "summary": {
+                "run_id": 42,
                 "inserted_count": 0,
                 "updated_count": 0,
                 "skipped_removed_count": 0,
@@ -269,6 +359,8 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
     assert captured["discover_flag"] is False
     assert captured["use_ai_scoring"] is False
     assert captured["seeded_job_urls"] == []
+    assert captured["updated_run_details"][0][0] == 42
+    assert "pipeline_total_seconds" in captured["updated_run_details"][0][1]
     assert "Discovery output" in result["output"]
     assert "Ingest output" in result["output"]
     assert "Source Layer Run Snapshot:" in result["output"]
@@ -670,6 +762,81 @@ def test_discover_job_links_next_gen_supports_taleo_oracle_seeds(monkeypatch):
     assert "Next-gen Taleo URLs found: 2 | kept: 2" in result["output"]
 
 
+def test_discover_job_links_next_gen_fallback_scans_second_shadow_batch(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
+    monkeypatch.setattr(
+        runtime,
+        "load_settings",
+        lambda: {
+            "target_titles": "VP of IT",
+            "remote_only": "true",
+        },
+    )
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "discover_urls",
+        lambda settings, use_ai_expansion=True: {
+            "all_urls": [],
+            "greenhouse_urls": [],
+            "lever_urls": [],
+            "search_urls": [],
+            "output": "Discovery output",
+            "drop_summary": {},
+        },
+    )
+    monkeypatch.setattr(runtime.discover_module, "save_output_urls", lambda file_path, urls: None)
+    monkeypatch.setattr(runtime.discover_module, "build_google_discovery_queries", lambda settings, use_ai_expansion=False: [])
+    monkeypatch.setattr(runtime.discover_module, "build_search_plan", lambda settings: ["Base titles: VP of IT"])
+
+    calls = {"shadow_offsets": [], "shadow_excludes": [], "seed_batches": []}
+
+    def fake_run_shadow(settings=None):
+        settings = settings or {}
+        offset = int(settings.get("_shadow_selection_offset", 0) or 0)
+        calls["shadow_offsets"].append(offset)
+        calls["shadow_excludes"].append(str(settings.get("_shadow_exclude_endpoint_urls", "") or ""))
+        if offset == 0:
+            if calls["shadow_excludes"][-1]:
+                return {
+                    "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 25",
+                    "active_endpoint_count": 50,
+                    "selected_endpoint_count": 25,
+                    "selected_candidates": [
+                        {"company_name": "Second Batch", "endpoint_url": "https://second.example", "ats_vendor": "icims"}
+                    ],
+                }
+            return {
+                "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 25",
+                "active_endpoint_count": 50,
+                "selected_endpoint_count": 25,
+                "selected_candidates": [
+                    {"company_name": "First Batch", "endpoint_url": "https://first.example", "ats_vendor": "icims"}
+                ],
+            }
+        raise AssertionError("Fallback should exclude first-batch endpoints instead of paging by offset")
+
+    def fake_discover_from_seeds(*, settings, shadow_result):
+        company_name = shadow_result["selected_candidates"][0]["company_name"]
+        calls["seed_batches"].append(company_name)
+        if company_name == "First Batch":
+            return [], ["First batch log"], 25, 0, []
+        return ["https://jobs.example/seeded-second-batch"], ["Second batch log"], 25, 0, []
+
+    monkeypatch.setattr(runtime, "run_shadow_endpoint_selection", fake_run_shadow)
+    monkeypatch.setattr(runtime, "_discover_urls_from_next_gen_seeds", fake_discover_from_seeds)
+
+    result = runtime.discover_job_links(use_ai_title_expansion=False)
+
+    assert calls["shadow_offsets"] == [0, 0]
+    assert calls["shadow_excludes"] == ["", "https://first.example"]
+    assert calls["seed_batches"] == ["First Batch", "Second Batch"]
+    assert result["next_gen_seed_urls"] == ["https://jobs.example/seeded-second-batch"]
+    assert result["next_gen_supported_seeds_scanned"] == 50
+    assert "Next-gen seed fallback triggered." in result["output"]
+
+
 def test_filter_next_gen_seed_urls_prefers_relevant_matches():
     import services.pipeline_runtime as runtime
 
@@ -746,6 +913,30 @@ def test_cheap_url_title_prefilter_rejects_real_hfs_manager_slug():
     assert "prefilter mismatch" in reason or "signature mismatch" in reason
 
 
+def test_cheap_seed_title_prefilter_allows_adjacent_technology_vp_slug():
+    import services.pipeline_runtime as runtime
+
+    passed, reason = runtime._cheap_seed_title_prefilter(
+        "https://example.com/job/remote/Vice-President-IT-Infrastructure/123/",
+        {"target_titles": "VP of IT"},
+    )
+
+    assert passed is True
+    assert "seed title" in reason or "lane matched" in reason
+
+
+def test_cheap_seed_title_prefilter_rejects_operations_vp_slug():
+    import services.pipeline_runtime as runtime
+
+    passed, reason = runtime._cheap_seed_title_prefilter(
+        "https://example.com/job/remote/VP-OF-MANUFACTURING/123/",
+        {"target_titles": "VP of IT"},
+    )
+
+    assert passed is False
+    assert "seed title" in reason or "signature mismatch" in reason
+
+
 def test_build_icims_search_url_uses_form_action_and_location_value(monkeypatch):
     import services.pipeline_runtime as runtime
 
@@ -776,7 +967,7 @@ def test_build_icims_search_url_uses_form_action_and_location_value(monkeypatch)
     )
 
     assert "career-schwab.icims.com/jobs/search" in url
-    assert "searchKeyword=Vice+President+of+IT" in url
+    assert "searchKeyword=Vice+President+of+information+technology" in url
     assert "searchLocation=-12787-Dallas" in url
 
 
@@ -805,6 +996,20 @@ def test_build_successfactors_search_url_uses_branded_search_path():
     assert url == "https://careers.paramount.com/search/?q=Business+Analyst&locationsearch=Seattle"
 
 
+def test_build_successfactors_search_url_uses_search_safe_title_variant():
+    import services.pipeline_runtime as runtime
+
+    url = runtime._build_successfactors_search_url(
+        "https://careers.paramount.com/viewalljobs/",
+        {"target_titles": "VP of IT", "preferred_locations": "Remote", "remote_only": "true"},
+    )
+
+    assert (
+        url
+        == "https://careers.paramount.com/search/?q=vice+president+of+information+technology"
+    )
+
+
 def test_build_successfactors_search_url_rejects_generic_successfactors_host():
     import services.pipeline_runtime as runtime
 
@@ -826,8 +1031,55 @@ def test_build_taleo_search_url_supports_classic_public_search_page():
 
     assert (
         url
-        == "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl?keyword=Vice+President+of+IT"
+        == "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl?keyword=Vice+President+of+information+technology"
     )
+
+
+def test_build_taleo_search_url_uses_search_safe_title_variant():
+    import services.pipeline_runtime as runtime
+
+    url = runtime._build_taleo_search_url(
+        "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl",
+        {"target_titles": "VP of IT"},
+    )
+
+    assert (
+        url
+        == "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl?keyword=vice+president+of+information+technology"
+    )
+
+
+def test_build_icims_search_url_uses_search_safe_title_variant(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    html = """
+    <form action="https://career-schwab.icims.com/jobs/search?in_iframe=1&amp;hashed=-626009902">
+      <select name="searchLocation">
+        <option value="">(All)</option>
+        <option value="-12787-Remote">Remote</option>
+      </select>
+    </form>
+    """
+
+    class Response:
+        def __init__(self, text):
+            self.text = text
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(runtime.requests, "get", lambda *args, **kwargs: Response(html))
+
+    url = runtime._build_icims_search_url(
+        "https://career-schwab.icims.com/jobs",
+        {
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "true",
+        },
+    )
+
+    assert "searchKeyword=vice+president+of+information+technology" in url
+    assert "searchLocation=" not in url
 
 
 def test_build_jobs_from_urls_tracks_next_gen_seed_contribution(monkeypatch):

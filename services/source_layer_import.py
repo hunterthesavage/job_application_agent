@@ -268,6 +268,48 @@ def _record_source_layer_run(
     )
 
 
+def record_source_layer_run(
+    *,
+    mode: str,
+    import_file_path: str = "",
+    imported_records: int = 0,
+    selected_endpoints: int = 0,
+    discovered_urls: int = 0,
+    accepted_jobs: int = 0,
+    errors: int = 0,
+    notes: str = "",
+) -> None:
+    initialize_database()
+    with db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO source_layer_runs (
+                started_at,
+                finished_at,
+                mode,
+                import_file_path,
+                imported_records,
+                selected_endpoints,
+                discovered_urls,
+                accepted_jobs,
+                errors,
+                notes
+            )
+            VALUES (CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                mode,
+                import_file_path,
+                int(imported_records or 0),
+                int(selected_endpoints or 0),
+                int(discovered_urls or 0),
+                int(accepted_jobs or 0),
+                int(errors or 0),
+                str(notes or ""),
+            ),
+        )
+
+
 def _validate_record_shape(record: dict[str, Any]) -> list[str]:
     missing_fields = [field for field in REQUIRED_RECORD_FIELDS if not _clean_text(record.get(field))]
     if missing_fields:

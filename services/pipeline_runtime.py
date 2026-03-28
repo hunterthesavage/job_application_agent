@@ -20,7 +20,7 @@ from services.ai_job_scrub import (
     apply_scrub_to_job_payload,
     scrub_accepted_job,
 )
-from services.ingestion import ingest_job_records
+from services.ingestion import ingest_job_records, update_ingestion_run_details
 from services.job_store import (
     count_jobs_for_rescoring,
     list_jobs_for_rescoring,
@@ -32,6 +32,7 @@ from services.location_matching import (
     parse_location,
 )
 from services.matching_profiles import expand_title_terms
+from services.search_plan import build_search_title_variants
 from services.settings import load_settings
 from services.source_layer_import import record_source_layer_run
 from services.source_layer import get_source_layer_mode
@@ -39,6 +40,7 @@ from services.source_layer_shadow import run_shadow_endpoint_selection
 from services.source_layer_status_smoke import build_source_layer_status_summary
 from services.source_trust import enrich_job_payload
 from services.job_qualifier import qualify_job
+from services.source_layer_shadow import SHADOW_SELECTION_CAP
 from src import discover_job_urls as discover_module
 from src.validate_job_url import create_job_record
 
@@ -57,6 +59,18 @@ def safe_text(value) -> str:
     if text.lower() == "nan":
         return ""
     return text
+
+
+def _seed_search_title_variants(settings: dict[str, Any], max_variants: int = 6) -> list[str]:
+    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    if not target_titles:
+        return []
+    return build_search_title_variants(target_titles, max_variants=max_variants)
+
+
+def _seed_search_title(settings: dict[str, Any]) -> str:
+    variants = _seed_search_title_variants(settings, max_variants=6)
+    return safe_text(variants[0] if variants else "")
 
 
 def _is_transient_fetch_error(exc: Exception) -> bool:
@@ -105,12 +119,43 @@ def _normalize_job_posting_url(job_url: str) -> str:
 
     host = (parsed.netloc or "").lower()
     path_parts = [part for part in parsed.path.split("/") if part]
+    normalized_path = parsed.path or "/"
 
     if "jobs.lever.co" in host and path_parts and path_parts[-1].lower() == "apply":
         normalized_path = "/" + "/".join(path_parts[:-1])
         return urlunparse(parsed._replace(path=normalized_path, params="", query="", fragment=""))
 
+    if "jobs.ashbyhq.com" in host and path_parts and path_parts[-1].lower() == "application":
+        normalized_path = "/" + "/".join(path_parts[:-1])
+        return urlunparse(parsed._replace(path=normalized_path, params="", query="", fragment=""))
+
+    ats_hosts = (
+        "jobs.lever.co",
+        "job-boards.greenhouse.io",
+        "boards.greenhouse.io",
+        "jobs.ashbyhq.com",
+        "jobs.smartrecruiters.com",
+        "myworkdayjobs.com",
+    )
+    if any(ats_host in host for ats_host in ats_hosts):
+        normalized_path = normalized_path.rstrip("/") or "/"
+        return urlunparse(parsed._replace(path=normalized_path, params="", query="", fragment=""))
+
     return value
+
+
+def _normalize_job_posting_urls(urls: list[str]) -> list[str]:
+    normalized_urls: list[str] = []
+    seen: set[str] = set()
+    for url in urls:
+        normalized = _normalize_job_posting_url(url)
+        if not normalized:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_urls.append(normalized)
+    return normalized_urls
 
 
 def _create_job_record_with_retry(job_url: str):
@@ -855,6 +900,61 @@ def _cheap_seed_location_prefilter(job_url: str, settings: dict[str, Any]) -> tu
     return False, f"url location prefilter mismatch: {hint_source}"
 
 
+def _cheap_seed_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[bool, str]:
+    target_titles = _seed_search_title_variants(settings, max_variants=6)
+    if not target_titles:
+        return True, "no target titles configured"
+
+    hint = _extract_url_title_hint(job_url)
+    if not hint:
+        return True, "no reliable url title hint"
+
+    normalized_hint = normalize_text(hint)
+    hint_tokens = {
+        token
+        for token in tokenize(hint)
+        if len(token) >= 3
+    }
+    if not hint_tokens:
+        return True, "url title hint too sparse for seed filtering"
+
+    if not _hint_matches_target_signature(hint, target_titles):
+        return False, f"seed title signature mismatch: {hint}"
+
+    best_overlap = 0.0
+    best_target = ""
+    best_phrase = 0.0
+
+    for target in target_titles:
+        overlap = token_overlap_score(target, hint)
+        phrase = phrase_match_bonus(target, hint)
+        if phrase > best_phrase or (phrase == best_phrase and overlap > best_overlap):
+            best_overlap = overlap
+            best_phrase = phrase
+            best_target = target
+
+    if best_phrase >= 1.0:
+        return True, f"seed title phrase matched '{best_target}'"
+
+    if best_overlap >= 0.34:
+        return True, f"seed title overlap matched '{best_target}' ({best_overlap:.2f})"
+
+    target_lanes: set[str] = set()
+    target_levels: set[str] = set()
+    for target in target_titles:
+        target_lanes.update(_detect_function_lanes(target))
+        target_levels.update(_detect_leadership_levels(target))
+
+    hint_lanes = _detect_function_lanes(hint)
+    hint_levels = _detect_leadership_levels(hint)
+
+    if target_levels and hint_levels and target_levels.intersection(hint_levels):
+        if target_lanes and hint_lanes and target_lanes.intersection(hint_lanes):
+            return True, f"seed leadership/function lane matched: {hint}"
+
+    return False, f"seed title prefilter mismatch: {hint}"
+
+
 def _filter_next_gen_seed_urls(
     urls: list[str],
     settings: dict[str, Any],
@@ -867,7 +967,7 @@ def _filter_next_gen_seed_urls(
     location_skips = 0
 
     for url in urls:
-        title_ok, _ = _cheap_url_title_prefilter(url, settings)
+        title_ok, _ = _cheap_seed_title_prefilter(url, settings)
         if not title_ok:
             title_skips += 1
             continue
@@ -1065,10 +1165,11 @@ def _build_jobs_from_urls(
     seeded_job_urls: list[str] | None = None,
 ) -> dict[str, Any]:
     settings = load_settings()
+    normalized_urls = _normalize_job_posting_urls(urls)
     seeded_job_url_set = {
-        safe_text(url).strip().lower()
+        safe_text(_normalize_job_posting_url(url)).strip().lower()
         for url in (seeded_job_urls or [])
-        if safe_text(url)
+        if safe_text(_normalize_job_posting_url(url))
     }
 
     accepted_jobs = []
@@ -1085,7 +1186,7 @@ def _build_jobs_from_urls(
 
     build_started_at = time.perf_counter()
 
-    for job_url in urls:
+    for job_url in normalized_urls:
         output_lines.append(f"Processing: {job_url}")
 
         current_stage = "url_gate"
@@ -1264,7 +1365,7 @@ def _build_jobs_from_urls(
 
     output_lines.append("")
     output_lines.append("Validation + ingestion complete.")
-    output_lines.append(f"Seen URLs: {len(urls)}")
+    output_lines.append(f"Seen URLs: {len(normalized_urls)}")
     output_lines.append(f"Accepted jobs: {len(accepted_jobs)}")
     output_lines.append(f"Skipped by scoring: {skipped_count}")
     output_lines.append(f"Skipped URL title prefilter: {skipped_title_prefilter_count}")
@@ -1292,7 +1393,7 @@ def _build_jobs_from_urls(
 
     _append_run_quality_summary_lines(
         output_lines=output_lines,
-        seen_urls=len(urls),
+        seen_urls=len(normalized_urls),
         accepted_jobs=len(accepted_jobs),
         skip_counts=skip_counts,
     )
@@ -1323,7 +1424,7 @@ def _build_jobs_from_urls(
         "output": "\n".join(output_lines).strip(),
         "summary": summary,
         "accepted_jobs": len(accepted_jobs),
-        "seen_urls": len(urls),
+        "seen_urls": len(normalized_urls),
         "skipped_count": skipped_count,
         "skipped_title_prefilter_count": skipped_title_prefilter_count,
         "skipped_duplicate_batch_count": skipped_duplicate_batch_count,
@@ -1728,11 +1829,11 @@ def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[
     if not isinstance(postings, list):
         return []
 
-    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    target_titles = _seed_search_title_variants(settings, max_variants=6)
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
     location_tokens = {token.lower() for token in preferred_locations if token}
-    title_tokens = {token.lower() for token in target_titles if token}
+    title_tokens = {normalize_text(token) for token in target_titles if token}
 
     discovered: list[str] = []
     for posting in postings:
@@ -1748,7 +1849,7 @@ def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[
         normalized_title = normalize_text(title)
         normalized_location = normalize_text(location_text)
 
-        if title_tokens and not any(normalize_text(token) in normalized_title for token in title_tokens):
+        if title_tokens and not any(token in normalized_title for token in title_tokens):
             continue
         if remote_only and "remote" not in normalized_location:
             continue
@@ -1783,18 +1884,20 @@ def _build_successfactors_search_url(endpoint_url: str, settings: dict[str, Any]
     if not _supports_successfactors_seed_endpoint(endpoint):
         return ""
 
-    target_titles = parse_csv_setting(settings.get("target_titles", ""))
-    title = safe_text(target_titles[0] if target_titles else "")
+    title = _seed_search_title(settings)
     if not title:
         return ""
 
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
-    location_value = "Remote" if remote_only else safe_text(preferred_locations[0] if preferred_locations else "")
+    location_value = "" if remote_only else safe_text(preferred_locations[0] if preferred_locations else "")
 
     parsed = urlparse(endpoint)
     base_url = f"{parsed.scheme or 'https'}://{parsed.netloc}"
-    query = urlencode({"q": title, "locationsearch": location_value})
+    query_params = {"q": title}
+    if location_value:
+        query_params["locationsearch"] = location_value
+    query = urlencode(query_params)
     return f"{base_url}/search/?{query}"
 
 
@@ -1820,8 +1923,7 @@ def _build_taleo_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
     if not _supports_taleo_oracle_seed_endpoint(endpoint):
         return ""
 
-    target_titles = parse_csv_setting(settings.get("target_titles", ""))
-    title = safe_text(target_titles[0] if target_titles else "")
+    title = _seed_search_title(settings)
     if not title:
         return ""
 
@@ -1832,7 +1934,7 @@ def _build_taleo_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
 
 
 def _matches_taleo_seed_title(title: str, settings: dict[str, Any]) -> bool:
-    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    target_titles = _seed_search_title_variants(settings, max_variants=6)
     if not target_titles:
         return True
 
@@ -1908,7 +2010,10 @@ def _extract_icims_search_action(page_text: str) -> str:
 def _match_icims_location_value(page_text: str, settings: dict[str, Any]) -> str:
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
-    desired_locations = ["Remote"] if remote_only else preferred_locations
+    if remote_only:
+        return ""
+
+    desired_locations = preferred_locations
     if not desired_locations:
         return ""
 
@@ -1955,8 +2060,7 @@ def _build_icims_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
     if not action_url:
         return ""
 
-    target_titles = parse_csv_setting(settings.get("target_titles", ""))
-    title = safe_text(target_titles[0] if target_titles else "")
+    title = _seed_search_title(settings)
     if not title:
         return ""
 
@@ -2030,21 +2134,52 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         )
         if seed_log_lines:
             output_parts.append("\n".join(seed_log_lines).strip())
+        fallback_shadow_result: dict[str, Any] | None = None
+        if not seeded_urls:
+            active_count = int(shadow_result.get("active_endpoint_count", 0) or 0)
+            selected_count = int(shadow_result.get("selected_endpoint_count", 0) or 0)
+            if active_count > selected_count >= SHADOW_SELECTION_CAP:
+                output_parts.append(
+                    "Next-gen seed fallback triggered. First seed batch produced no kept URLs, so the next shadow batch will be scanned."
+                )
+                first_batch_endpoint_urls = [
+                    safe_text(candidate.get("endpoint_url", ""))
+                    for candidate in (shadow_result.get("selected_candidates", []) or [])
+                    if isinstance(candidate, dict) and safe_text(candidate.get("endpoint_url", ""))
+                ]
+                fallback_settings = {
+                    **source_layer_settings,
+                    "_shadow_selection_cap": SHADOW_SELECTION_CAP,
+                    "_shadow_exclude_endpoint_urls": "\n".join(first_batch_endpoint_urls),
+                }
+                fallback_shadow_result = run_shadow_endpoint_selection(fallback_settings)
+                fallback_seeded_urls, fallback_seed_log_lines, fallback_supported_scanned, fallback_unsupported_skipped, fallback_seed_failures = _discover_urls_from_next_gen_seeds(
+                    settings=settings,
+                    shadow_result=fallback_shadow_result,
+                )
+                if fallback_seed_log_lines:
+                    output_parts.append("\n".join(fallback_seed_log_lines).strip())
+                seeded_urls = fallback_seeded_urls
+                supported_scanned += fallback_supported_scanned
+                unsupported_skipped += fallback_unsupported_skipped
+                seed_failures = [*seed_failures, *fallback_seed_failures]
+                discovery_result["next_gen_fallback_shadow_result"] = fallback_shadow_result
         discovery_result["next_gen_supported_seeds_scanned"] = supported_scanned
         discovery_result["next_gen_unsupported_seeds_skipped"] = unsupported_skipped
         discovery_result["next_gen_seed_failures"] = seed_failures
         if seeded_urls:
             existing_urls = discovery_result.get("all_urls", []) or []
-            merged_urls = list(dict.fromkeys(seeded_urls + existing_urls))
+            merged_urls = _normalize_job_posting_urls(seeded_urls + existing_urls)
             discovery_result["all_urls"] = merged_urls
-            discovery_result["next_gen_seed_urls"] = seeded_urls
+            discovery_result["next_gen_seed_urls"] = _normalize_job_posting_urls(seeded_urls)
             output_parts.append(
-                f"Next-gen seeds added {len(seeded_urls)} URL(s) ahead of legacy results for this run."
+                f"Next-gen seeds added {len(discovery_result['next_gen_seed_urls'])} URL(s) ahead of legacy results for this run."
             )
         else:
             discovery_result["next_gen_seed_urls"] = []
 
-    discovered_urls = discovery_result.get("all_urls", [])
+    discovered_urls = _normalize_job_posting_urls(discovery_result.get("all_urls", []) or [])
+    discovery_result["all_urls"] = discovered_urls
     discover_module.save_output_urls(JOB_URLS_FILE, discovered_urls)
 
     return {
@@ -2387,6 +2522,15 @@ def discover_and_ingest(
     )
 
     total_seconds = time.perf_counter() - total_started_at
+    summary = ingest_result.get("summary", {}) if isinstance(ingest_result.get("summary", {}), dict) else {}
+    run_id = int(summary.get("run_id", 0) or 0)
+    if run_id:
+        update_ingestion_run_details(
+            run_id,
+            {
+                "pipeline_total_seconds": round(total_seconds, 2),
+            },
+        )
     combined_output_parts.append(f"Total pipeline seconds: {total_seconds:.2f}")
 
     return {

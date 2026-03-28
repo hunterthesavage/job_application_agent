@@ -13,7 +13,7 @@ except ImportError:
 
 from services.search_plan import build_search_plan as build_structured_search_plan
 from services.url_resolution import (
-    choose_best_discovery_url,
+    choose_best_discovery_url_with_reason,
     is_discovery_only_host,
     is_likely_job_detail_url,
     is_preferred_job_host,
@@ -34,6 +34,7 @@ MAX_SEARCH_URLS = 15
 MAX_GREENHOUSE_BOARDS_TO_SCAN = 10
 MAX_LEVER_BOARDS_TO_SCAN = 15
 SKIP_JOBGETHER_IN_FAST_MODE = True
+MAX_SEARCH_REJECTION_SAMPLES_PER_TIER = 5
 
 ALLOWED_JOB_DOMAINS = [
     "greenhouse.io",
@@ -482,6 +483,9 @@ def build_search_plan(settings: dict[str, str]) -> list[str]:
         plan_lines.append(f"Include keywords: {', '.join(plan.include_keywords[:6])}")
 
     plan_lines.append(f"Remote only: {'true' if plan.remote_only else 'false'}")
+    plan_lines.append(
+        f"Search strategy: {'Broad Recall' if plan.search_strategy == 'broad_recall' else 'Balanced'}"
+    )
     plan_lines.append(f"Generated queries: {len(plan.queries)}")
 
     return plan_lines
@@ -631,6 +635,52 @@ def extract_result_url(result: dict) -> str:
     return ""
 
 
+def _format_search_result_candidates(candidate_urls: list[str], limit: int = 3) -> str:
+    cleaned = [safe_text(url) for url in candidate_urls if safe_text(url)]
+    if not cleaned:
+        return ""
+    return " | ".join(cleaned[:limit])
+
+
+def _log_search_result_rejection(
+    *,
+    tier_name: str,
+    reason: str,
+    raw_url: str,
+    candidate_urls: list[str],
+    log_lines: list[str] | None,
+    rejection_counts: dict[str, int],
+    rejection_samples_logged: list[int],
+) -> None:
+    rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
+
+    if log_lines is None:
+        return
+
+    if rejection_samples_logged[0] >= MAX_SEARCH_REJECTION_SAMPLES_PER_TIER:
+        return
+
+    parts = [f"Rejected search result [{tier_name}]: {reason}"]
+
+    raw_value = safe_text(raw_url)
+    if raw_value:
+        parts.append(f"raw={raw_value}")
+
+    candidates_text = _format_search_result_candidates(candidate_urls)
+    if candidates_text:
+        parts.append(f"candidates={candidates_text}")
+
+    log_lines.append(" | ".join(parts))
+    rejection_samples_logged[0] += 1
+
+
+def _is_empty_search_result_error(exc: Exception) -> bool:
+    message = safe_text(exc).lower()
+    if not message:
+        return False
+    return "no results found" in message
+
+
 def discover_google_style_urls(
     settings: dict[str, str],
     log_lines: list[str] | None = None,
@@ -684,6 +734,8 @@ def discover_google_style_urls(
 
             tier_result_count = 0
             tier_url_count_before = len(discovered)
+            tier_rejection_counts: dict[str, int] = {}
+            tier_rejection_samples_logged = [0]
 
             for query in queries:
                 if web_discovery_disabled:
@@ -717,12 +769,30 @@ def discover_google_style_urls(
                             if value:
                                 candidate_urls.append(str(value))
 
-                        best_url = choose_best_discovery_url(candidate_urls)
+                        best_url, selection_reason = choose_best_discovery_url_with_reason(candidate_urls)
                         if not best_url:
+                            _log_search_result_rejection(
+                                tier_name=tier_name,
+                                reason=selection_reason,
+                                raw_url=primary_url,
+                                candidate_urls=candidate_urls,
+                                log_lines=log_lines,
+                                rejection_counts=tier_rejection_counts,
+                                rejection_samples_logged=tier_rejection_samples_logged,
+                            )
                             continue
 
                         resolved_url, resolution_reason = resolve_candidate_url(best_url)
                         if not resolved_url:
+                            _log_search_result_rejection(
+                                tier_name=tier_name,
+                                reason=f"resolution_{resolution_reason}",
+                                raw_url=primary_url or best_url,
+                                candidate_urls=candidate_urls,
+                                log_lines=log_lines,
+                                rejection_counts=tier_rejection_counts,
+                                rejection_samples_logged=tier_rejection_samples_logged,
+                            )
                             continue
 
                         final_url = resolved_url
@@ -730,6 +800,9 @@ def discover_google_style_urls(
 
                         if is_discovery_only_host(resolved_url):
                             if not is_likely_job_detail_url(resolved_url):
+                                tier_rejection_counts["discovery_non_detail"] = (
+                                    tier_rejection_counts.get("discovery_non_detail", 0) + 1
+                                )
                                 if log_lines is not None:
                                     log_lines.append(f"Rejected gateway URL [{tier_name}]: {resolved_url} | non-detail discovery page")
                                 continue
@@ -739,6 +812,9 @@ def discover_google_style_urls(
                                 final_url = upgraded_url
                                 final_reason = f"{resolution_reason}|{upgrade_reason}"
                             else:
+                                tier_rejection_counts[f"gateway_{upgrade_reason}"] = (
+                                    tier_rejection_counts.get(f"gateway_{upgrade_reason}", 0) + 1
+                                )
                                 if log_lines is not None:
                                     log_lines.append(
                                         f"Rejected gateway URL [{tier_name}]: {resolved_url} | {upgrade_reason} | no canonical employer/ATS URL"
@@ -751,6 +827,12 @@ def discover_google_style_urls(
                         discovered.append(final_url)
 
                 except Exception as exc:
+                    if _is_empty_search_result_error(exc):
+                        if log_lines is not None:
+                            log_lines.append(f"Search results returned [{tier_name}]: 0")
+                        consecutive_search_failures = 0
+                        continue
+
                     consecutive_search_failures += 1
                     if log_lines is not None:
                         log_lines.append(f"Search failed [{tier_name}] for query '{query}': {exc}")
@@ -768,6 +850,15 @@ def discover_google_style_urls(
             if log_lines is not None:
                 log_lines.append(f"Tier result count [{tier_name}]: {tier_result_count}")
                 log_lines.append(f"Tier unique URLs added [{tier_name}]: {tier_new_urls}")
+                if tier_rejection_counts:
+                    rejection_summary = ", ".join(
+                        f"{reason}={count}"
+                        for reason, count in sorted(
+                            tier_rejection_counts.items(),
+                            key=lambda item: (-item[1], item[0]),
+                        )
+                    )
+                    log_lines.append(f"Tier rejected search results [{tier_name}]: {rejection_summary}")
 
     discovered = list(dict.fromkeys(discovered))
 

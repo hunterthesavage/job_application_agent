@@ -41,6 +41,7 @@ def _build_prompt(
     profile_summary: str = "",
     resume_text: str = "",
     include_keywords: str = "",
+    max_titles: int = 6,
 ) -> str:
     return f"""
 You are helping a job seeker broaden executive and senior technology role titles for job search.
@@ -53,7 +54,7 @@ Return strict JSON with this shape:
 
 Rules:
 - Return only JSON.
-- Suggest 4 to 6 titles total.
+- Suggest up to {max_titles} titles total.
 - Keep titles in the same seniority band as the input.
 - Keep titles in the same functional lane unless the profile strongly supports a nearby adjacent lane.
 - Prefer close ATS-friendly variants first, then only the most relevant adjacent titles.
@@ -83,6 +84,7 @@ def suggest_titles_with_openai(
     profile_summary: str = "",
     resume_text: str = "",
     include_keywords: str = "",
+    max_titles: int = 6,
 ) -> dict[str, object]:
     api_key = get_effective_openai_api_key()
     if not api_key:
@@ -93,11 +95,14 @@ def suggest_titles_with_openai(
             "notes": "",
         }
 
+    suggestion_limit = max(1, min(int(max_titles or 6), 10))
+
     prompt = _build_prompt(
         current_titles=current_titles,
         profile_summary=profile_summary,
         resume_text=resume_text,
         include_keywords=include_keywords,
+        max_titles=suggestion_limit,
     )
 
     payload = {
@@ -137,7 +142,7 @@ def suggest_titles_with_openai(
             .get("content", "")
         )
         parsed = json.loads(content or "{}")
-        titles = _unique_titles(parsed.get("titles", []))[:6]
+        titles = _unique_titles(parsed.get("titles", []))[:suggestion_limit]
         notes = str(parsed.get("notes", "") or "").strip()
 
         if not titles:

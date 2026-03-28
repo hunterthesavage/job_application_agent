@@ -16,6 +16,44 @@ SUPPORTED_NEXT_GEN_SEED_VENDORS = {
     "taleo / oracle recruiting",
 }
 
+SENIORITY_MARKERS = {
+    "chief",
+    "ceo",
+    "cto",
+    "cio",
+    "cfo",
+    "coo",
+    "vice",
+    "president",
+    "vp",
+    "svp",
+    "evp",
+    "avp",
+    "head",
+    "director",
+}
+
+TECHNOLOGY_MARKERS = {
+    "technology",
+    "information",
+    "it",
+    "engineering",
+    "infrastructure",
+    "platform",
+    "systems",
+    "applications",
+    "application",
+    "software",
+    "security",
+    "cybersecurity",
+    "cyber",
+    "data",
+    "analytics",
+    "digital",
+    "cloud",
+    "network",
+}
+
 
 def _safe_text(value: Any) -> str:
     return str(value or "").strip()
@@ -50,6 +88,27 @@ def _parse_location_like(value: Any) -> list[str]:
     return [text]
 
 
+def _parse_multivalue_setting(value: Any) -> list[str]:
+    text = _safe_text(value)
+    if not text:
+        return []
+    if "\n" in text:
+        return [part.strip() for part in text.splitlines() if part.strip()]
+    if ";" in text:
+        return [part.strip() for part in text.split(";") if part.strip()]
+    if "," in text:
+        return [part.strip() for part in text.split(",") if part.strip()]
+    return [text]
+
+
+def _parse_int_setting(value: Any, default: int) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except Exception:
+        return default
+    return parsed if parsed >= 0 else default
+
+
 def _tokenize(values: list[str]) -> list[str]:
     tokens: list[str] = []
     for value in values:
@@ -57,6 +116,18 @@ def _tokenize(values: list[str]) -> list[str]:
             if len(token) >= 3:
                 tokens.append(token)
     return list(dict.fromkeys(tokens))
+
+
+def _is_sparse_senior_technology_search(target_titles: list[str]) -> bool:
+    cleaned_titles = [title for title in target_titles if _safe_text(title)]
+    if not cleaned_titles or len(cleaned_titles) > 3:
+        return False
+
+    normalized = " ".join(_normalize_text(title) for title in cleaned_titles)
+    tokens = set(normalized.split())
+    has_seniority = bool(tokens.intersection(SENIORITY_MARKERS))
+    has_technology = bool(tokens.intersection(TECHNOLOGY_MARKERS))
+    return has_seniority and has_technology
 
 
 def _score_shadow_candidate(
@@ -149,23 +220,203 @@ def _supports_next_gen_seed_endpoint(ats_vendor: str, endpoint_url: str) -> bool
     return False
 
 
-def _selection_sort_key(item: tuple[int, str, str, Any], *, source_layer_mode: str) -> tuple[Any, ...]:
+def _next_gen_seed_shape_priority(ats_vendor: str, endpoint_url: str) -> int:
+    vendor = _safe_text(ats_vendor).lower() or "unknown"
+    endpoint = _safe_text(endpoint_url)
+    if not endpoint:
+        return 0
+
+    try:
+        parsed = urlparse(endpoint)
+    except Exception:
+        return 0
+
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower().rstrip("/")
+    path_parts = [part for part in path.split("/") if part]
+    last_part = path_parts[-1] if path_parts else ""
+
+    if vendor == "workday":
+        if "myworkdayjobs.com" not in host:
+            return 0
+        if last_part == "login":
+            return 0
+        if last_part == "search":
+            return 1
+        if any(part in {"en-us", "en-ca", "fr-fr"} for part in path_parts) and last_part not in {"search", "login"}:
+            return 4
+        if last_part in {"careers", "external", "external_careers", "externalcareers_globalsite", "assurant_careers"}:
+            return 3
+        return 2
+
+    if vendor == "icims":
+        if any(marker in path for marker in {"job-scams", "job-scam", "resources", "resource", "career-areas", "locations", "categories"}):
+            return 0
+        if last_part in {"jobs", "results.html", "careers", "careers-home"}:
+            return 3
+        return 2
+
+    if vendor == "sap successfactors":
+        if any(marker in path for marker in {"reasonable-accommodations", "accommodations", "benefits", "faq", "content/"}):
+            return 0
+        if "/search" in path or last_part in {"careers", "jobs", "viewalljobs"}:
+            return 3
+        if "/go" in path:
+            return 2
+        return 1
+
+    if vendor == "taleo / oracle recruiting":
+        return 3 if path.endswith("/jobsearch.ftl") else 2
+
+    if vendor in {"greenhouse", "lever"}:
+        return 3
+
+    return 1
+
+
+def _next_gen_vendor_priority(ats_vendor: str, *, senior_technology_bias: bool) -> int:
+    vendor = _safe_text(ats_vendor).lower() or "unknown"
+    if not senior_technology_bias:
+        return 0
+
+    if vendor == "workday":
+        return 5
+    if vendor == "icims":
+        return 4
+    if vendor in {"greenhouse", "lever"}:
+        return 3
+    if vendor == "taleo / oracle recruiting":
+        return 2
+    if vendor == "sap successfactors":
+        return 1
+    return 0
+
+
+def _senior_technology_vendor_quotas(selection_cap: int) -> list[tuple[str, int]]:
+    if selection_cap <= 0:
+        return []
+
+    quotas: list[tuple[str, int]] = [
+        ("workday", max(1, round(selection_cap * 0.40))),
+        ("icims", max(1, round(selection_cap * 0.28))),
+        ("sap successfactors", max(1, round(selection_cap * 0.16))),
+        ("taleo / oracle recruiting", max(1, round(selection_cap * 0.08))),
+        ("greenhouse", max(1, round(selection_cap * 0.04))),
+        ("lever", max(1, round(selection_cap * 0.04))),
+    ]
+
+    allocated = sum(limit for _, limit in quotas)
+    if allocated > selection_cap:
+        overflow = allocated - selection_cap
+        adjustable = [
+            idx for idx, (_, limit) in enumerate(quotas) if limit > 1
+        ]
+        while overflow > 0 and adjustable:
+            for idx in reversed(adjustable):
+                vendor, limit = quotas[idx]
+                if limit <= 1:
+                    continue
+                quotas[idx] = (vendor, limit - 1)
+                overflow -= 1
+                if overflow == 0:
+                    break
+            adjustable = [
+                idx for idx, (_, limit) in enumerate(quotas) if limit > 1
+            ]
+    elif allocated < selection_cap:
+        vendor, limit = quotas[0]
+        quotas[0] = (vendor, limit + (selection_cap - allocated))
+
+    return quotas
+
+
+def _select_diversified_next_gen_rows(
+    scored_rows: list[tuple[int, str, str, Any]],
+    *,
+    selection_cap: int,
+) -> list[Any]:
+    if selection_cap <= 0 or not scored_rows:
+        return []
+
+    quotas = _senior_technology_vendor_quotas(selection_cap)
+    selected_indices: set[int] = set()
+    selected_rows: list[Any] = []
+
+    for vendor, limit in quotas:
+        if len(selected_rows) >= selection_cap:
+            break
+        taken = 0
+        for idx, (_, _, endpoint_url, row) in enumerate(scored_rows):
+            if idx in selected_indices:
+                continue
+            ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
+            if ats_vendor != vendor:
+                continue
+            if not _supports_next_gen_seed_endpoint(ats_vendor, endpoint_url):
+                continue
+            selected_indices.add(idx)
+            selected_rows.append(row)
+            taken += 1
+            if taken >= limit or len(selected_rows) >= selection_cap:
+                break
+
+    if len(selected_rows) >= selection_cap:
+        return selected_rows[:selection_cap]
+
+    for idx, (_, _, endpoint_url, row) in enumerate(scored_rows):
+        if idx in selected_indices:
+            continue
+        ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
+        if not _supports_next_gen_seed_endpoint(ats_vendor, endpoint_url):
+            continue
+        selected_indices.add(idx)
+        selected_rows.append(row)
+        if len(selected_rows) >= selection_cap:
+            return selected_rows
+
+    for idx, (_, _, _, row) in enumerate(scored_rows):
+        if idx in selected_indices:
+            continue
+        selected_rows.append(row)
+        if len(selected_rows) >= selection_cap:
+            break
+
+    return selected_rows
+
+
+def _selection_sort_key(
+    item: tuple[int, str, str, Any],
+    *,
+    source_layer_mode: str,
+    senior_technology_bias: bool,
+) -> tuple[Any, ...]:
     score, company_name, endpoint_url, row = item
     ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
     supported_priority = int(ats_vendor in SUPPORTED_NEXT_GEN_SEED_VENDORS)
     seedable_priority = int(_supports_next_gen_seed_endpoint(ats_vendor, endpoint_url))
+    seed_shape_priority = _next_gen_seed_shape_priority(ats_vendor, endpoint_url)
+    vendor_priority = _next_gen_vendor_priority(ats_vendor, senior_technology_bias=senior_technology_bias)
     if source_layer_mode == "next_gen":
-        return (-seedable_priority, -supported_priority, -score, company_name.lower(), endpoint_url.lower())
+        return (-seedable_priority, -seed_shape_priority, -vendor_priority, -supported_priority, -score, company_name.lower(), endpoint_url.lower())
     return (-score, company_name.lower(), endpoint_url.lower())
 
 
 def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dict[str, Any]:
     settings = settings or {}
     source_layer_mode = _safe_text(settings.get("_source_layer_mode", "legacy")).lower() or "legacy"
+    selection_offset = _parse_int_setting(settings.get("_shadow_selection_offset", 0), 0)
+    selection_cap = _parse_int_setting(settings.get("_shadow_selection_cap", SHADOW_SELECTION_CAP), SHADOW_SELECTION_CAP) or SHADOW_SELECTION_CAP
+    excluded_endpoint_urls = {
+        _safe_text(url)
+        for url in _parse_multivalue_setting(settings.get("_shadow_exclude_endpoint_urls", ""))
+        if _safe_text(url)
+    }
 
     title_tokens = _tokenize(_parse_csv_like(settings.get("target_titles", "")))
+    target_titles = _parse_csv_like(settings.get("target_titles", ""))
     location_tokens = _tokenize(_parse_location_like(settings.get("preferred_locations", "")))
     remote_only = _safe_text(settings.get("remote_only", "false")).lower() == "true"
+    senior_technology_bias = _is_sparse_senior_technology_search(target_titles)
 
     with db_connection() as conn:
         rows = conn.execute(
@@ -220,11 +471,22 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
                 row,
             )
             for row in rows
+            if _safe_text(row["endpoint_url"]) not in excluded_endpoint_urls
         ),
-        key=lambda item: _selection_sort_key(item, source_layer_mode=source_layer_mode),
+        key=lambda item: _selection_sort_key(
+            item,
+            source_layer_mode=source_layer_mode,
+            senior_technology_bias=senior_technology_bias,
+        ),
     )
 
-    selected_rows = [item[3] for item in scored_rows[:SHADOW_SELECTION_CAP]]
+    if source_layer_mode == "next_gen" and senior_technology_bias:
+        selected_rows = _select_diversified_next_gen_rows(
+            scored_rows[selection_offset:],
+            selection_cap=selection_cap,
+        )
+    else:
+        selected_rows = [item[3] for item in scored_rows[selection_offset:selection_offset + selection_cap]]
     selected_companies = list(
         dict.fromkeys(
             _safe_text(row["company_name"]) or "(unknown company)"
@@ -258,6 +520,8 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
         f"- Primary endpoints: {primary_count}",
         f"- Selected shadow candidates: {len(selected_rows)}",
     ]
+    if selection_offset:
+        lines.append(f"- Shadow selection offset: {selection_offset}")
     if source_layer_mode == "next_gen":
         supported_selected = sum(
             1
@@ -268,6 +532,9 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
             )
         )
         lines.append(f"- Next-gen seed-supporting candidates: {supported_selected}")
+        if senior_technology_bias:
+            lines.append("- Next-gen ranking bias: senior technology leadership")
+            lines.append("- Next-gen ATS mix profile: diversified senior tech")
     if selected_companies:
         lines.append(f"- Selected companies: {', '.join(selected_companies)}")
     else:

@@ -211,18 +211,26 @@ def is_likely_job_detail_url(url: str) -> bool:
 
 
 def choose_best_discovery_url(urls: list[str]) -> str:
+    best_url, _ = choose_best_discovery_url_with_reason(urls)
+    return best_url
+
+
+def choose_best_discovery_url_with_reason(urls: list[str]) -> tuple[str, str]:
     cleaned = [normalize_url(url) for url in urls if safe_text(url)]
     cleaned = list(dict.fromkeys(cleaned))
 
+    if not cleaned:
+        return "", "no_candidate_url"
+
     preferred = [url for url in cleaned if is_preferred_job_host(url)]
     if preferred:
-        return preferred[0]
+        return preferred[0], "preferred_host"
 
     detail_like = [url for url in cleaned if is_likely_job_detail_url(url)]
     if detail_like:
-        return detail_like[0]
+        return detail_like[0], "detail_like_discovery_url"
 
-    return ""
+    return "", "no_preferred_or_detail_candidate"
 
 
 def resolve_candidate_url(url: str) -> tuple[str, str]:
