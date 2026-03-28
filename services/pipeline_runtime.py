@@ -50,6 +50,8 @@ MAX_URLS_PER_RUN = 25  # temporary fast-test cap; set to 0 for unlimited
 TRANSIENT_FETCH_RETRY_ATTEMPTS = 2
 TRANSIENT_FETCH_RETRY_DELAY_SECONDS = 0.35
 NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY = 3
+WORKDAY_SEED_PAGE_SIZE = 20
+WORKDAY_SEED_MAX_PAGES = 5
 
 
 def safe_text(value) -> str:
@@ -1820,46 +1822,41 @@ def _discover_workday_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[
         return []
 
     jobs_url = f"{base_url}/wday/cxs/{tenant}/{site_id}/jobs"
-    payload = {"limit": 10, "offset": 0}
-    jobs_response = requests.post(jobs_url, json=payload, timeout=20, headers=headers)
-    jobs_response.raise_for_status()
-
-    body = jobs_response.json()
-    postings = body.get("jobPostings", []) if isinstance(body, dict) else []
-    if not isinstance(postings, list):
-        return []
-
-    target_titles = _seed_search_title_variants(settings, max_variants=6)
-    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
-    remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
-    location_tokens = {token.lower() for token in preferred_locations if token}
-    title_tokens = {normalize_text(token) for token in target_titles if token}
-
     discovered: list[str] = []
-    for posting in postings:
-        if not isinstance(posting, dict):
-            continue
-        external_path = safe_text(posting.get("externalPath", ""))
-        if not external_path:
-            continue
+    total = 0
+    for page_index in range(WORKDAY_SEED_MAX_PAGES):
+        payload = {
+            "limit": WORKDAY_SEED_PAGE_SIZE,
+            "offset": page_index * WORKDAY_SEED_PAGE_SIZE,
+        }
+        jobs_response = requests.post(jobs_url, json=payload, timeout=20, headers=headers)
+        jobs_response.raise_for_status()
 
-        title = safe_text(posting.get("title", ""))
-        location_text = safe_text(posting.get("locationsText", ""))
+        body = jobs_response.json()
+        if not isinstance(body, dict):
+            break
 
-        normalized_title = normalize_text(title)
-        normalized_location = normalize_text(location_text)
+        postings = body.get("jobPostings", [])
+        if not isinstance(postings, list) or not postings:
+            break
 
-        if title_tokens and not any(token in normalized_title for token in title_tokens):
-            continue
-        if remote_only and "remote" not in normalized_location:
-            continue
-        if location_tokens and "remote" not in normalized_location:
-            if not any(normalize_text(token) in normalized_location for token in location_tokens):
+        total = int(body.get("total", 0) or 0)
+
+        for posting in postings:
+            if not isinstance(posting, dict):
+                continue
+            external_path = safe_text(posting.get("externalPath", ""))
+            if not external_path:
                 continue
 
-        detail_url = _build_workday_detail_url(endpoint_url, external_path)
-        if detail_url:
-            discovered.append(detail_url)
+            detail_url = _build_workday_detail_url(endpoint_url, external_path)
+            if detail_url:
+                discovered.append(detail_url)
+
+        if total and payload["offset"] + len(postings) >= total:
+            break
+        if not total and len(postings) < WORKDAY_SEED_PAGE_SIZE:
+            break
 
     return list(dict.fromkeys(discovered))
 
@@ -1885,8 +1882,6 @@ def _build_successfactors_search_url(endpoint_url: str, settings: dict[str, Any]
         return ""
 
     title = _seed_search_title(settings)
-    if not title:
-        return ""
 
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
@@ -1894,11 +1889,15 @@ def _build_successfactors_search_url(endpoint_url: str, settings: dict[str, Any]
 
     parsed = urlparse(endpoint)
     base_url = f"{parsed.scheme or 'https'}://{parsed.netloc}"
-    query_params = {"q": title}
+    query_params: dict[str, str] = {}
+    if title:
+        query_params["q"] = title
     if location_value:
         query_params["locationsearch"] = location_value
     query = urlencode(query_params)
-    return f"{base_url}/search/?{query}"
+    if query:
+        return f"{base_url}/search/?{query}"
+    return f"{base_url}/search/"
 
 
 def _supports_taleo_oracle_seed_endpoint(endpoint_url: str) -> bool:
@@ -2007,6 +2006,33 @@ def _extract_icims_search_action(page_text: str) -> str:
     return html.unescape(safe_text(match.group(1)))
 
 
+def _extract_icims_job_links(page_text: str, base_url: str) -> list[str]:
+    hits = re.findall(
+        r'href="((?:https?://[^"]+)?/jobs/\d+(?:/[^"]*)?/job(?:\?[^"]*)?)"',
+        page_text,
+        re.I,
+    )
+    discovered = [urljoin(base_url, html.unescape(href)) for href in hits]
+    return list(dict.fromkeys(discovered))
+
+
+def _extract_generic_job_links(page_text: str, base_url: str) -> list[str]:
+    hits = re.findall(r'href="((?:https?://[^"]+)?/job/[^"]+)"', page_text, re.I)
+    discovered = [urljoin(base_url, html.unescape(href)) for href in hits]
+    return list(dict.fromkeys(discovered))
+
+
+def _extract_talentbrew_search_url(page_text: str, page_url: str) -> str:
+    base_match = re.search(r"<base\s+href=\"([^\"]+)\"", page_text, re.I)
+    base_url = safe_text(base_match.group(1) if base_match else "") or page_url
+    href_matches = re.findall(r'href="([^"]*search-jobs[^"]*)"', page_text, re.I)
+    for href in href_matches:
+        return urljoin(base_url, html.unescape(href))
+    if re.search(r"search-jobs", page_text, re.I):
+        return urljoin(base_url, "/search-jobs")
+    return ""
+
+
 def _match_icims_location_value(page_text: str, settings: dict[str, Any]) -> str:
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
@@ -2050,8 +2076,12 @@ def _build_icims_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
     action_url = ""
     page_text = ""
     for page_url in candidate_pages:
-        response = requests.get(page_url, timeout=20, headers=headers)
-        response.raise_for_status()
+        try:
+            response = requests.get(page_url, timeout=20, headers=headers)
+            response.raise_for_status()
+        except requests.RequestException:
+            continue
+
         page_text = response.text
         action_url = _extract_icims_search_action(page_text)
         if action_url:
@@ -2061,13 +2091,12 @@ def _build_icims_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
         return ""
 
     title = _seed_search_title(settings)
-    if not title:
-        return ""
 
     parsed = urlparse(action_url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    query["searchKeyword"] = title
-    query["searchRelation"] = "keyword_all"
+    if title:
+        query["searchKeyword"] = title
+        query["searchRelation"] = "keyword_all"
     location_value = _match_icims_location_value(page_text, settings)
     if location_value:
         query["searchLocation"] = location_value
@@ -2076,17 +2105,51 @@ def _build_icims_search_url(endpoint_url: str, settings: dict[str, Any]) -> str:
 
 
 def _discover_icims_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
+    headers = {"User-Agent": "Mozilla/5.0"}
+    if not parse_csv_setting(settings.get("target_titles", "")):
+        candidate_pages = [safe_text(endpoint_url)]
+        jobs_root = urljoin(endpoint_url, "/jobs")
+        if jobs_root not in candidate_pages:
+            candidate_pages.append(jobs_root)
+
+        discovered: list[str] = []
+        for page_url in candidate_pages:
+            try:
+                response = requests.get(page_url, timeout=20, headers=headers)
+                response.raise_for_status()
+            except requests.RequestException:
+                continue
+            discovered.extend(_extract_icims_job_links(response.text, page_url))
+            if not discovered:
+                talentbrew_search_url = _extract_talentbrew_search_url(response.text, page_url)
+                if talentbrew_search_url:
+                    try:
+                        search_response = requests.get(
+                            talentbrew_search_url,
+                            timeout=20,
+                            headers=headers,
+                        )
+                        search_response.raise_for_status()
+                    except requests.RequestException:
+                        pass
+                    else:
+                        discovered.extend(
+                            _extract_generic_job_links(
+                                search_response.text,
+                                talentbrew_search_url,
+                            )
+                        )
+            if discovered:
+                return list(dict.fromkeys(discovered))
+
     search_url = _build_icims_search_url(endpoint_url, settings)
     if not search_url:
         return []
 
-    headers = {"User-Agent": "Mozilla/5.0"}
     response = requests.get(search_url, timeout=20, headers=headers)
     response.raise_for_status()
 
-    hits = re.findall(r'href="([^"]+/jobs/\d+/[^"]*/job[^"]*)"', response.text, re.I)
-    discovered = [urljoin(search_url, html.unescape(href)) for href in hits]
-    return list(dict.fromkeys(discovered))
+    return _extract_icims_job_links(response.text, search_url)
 
 
 def _discover_successfactors_jobs(endpoint_url: str, settings: dict[str, Any]) -> list[str]:
@@ -2100,6 +2163,8 @@ def _discover_successfactors_jobs(endpoint_url: str, settings: dict[str, Any]) -
 
     links = re.findall(r'<a[^>]+class="[^"]*jobTitle-link[^"]*"[^>]+href="([^"]+)"', response.text, re.I)
     discovered = [urljoin(search_url, href) for href in links if "/job/" in href]
+    if not discovered:
+        discovered = _extract_generic_job_links(response.text, search_url)
     return list(dict.fromkeys(discovered))
 
 

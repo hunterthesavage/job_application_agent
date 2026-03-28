@@ -971,6 +971,161 @@ def test_build_icims_search_url_uses_form_action_and_location_value(monkeypatch)
     assert "searchLocation=-12787-Dallas" in url
 
 
+def test_build_icims_search_url_without_title_keeps_search_shell(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    html = """
+    <form action="https://career-schwab.icims.com/jobs/search?in_iframe=1&amp;hashed=-626009902">
+      <select name="searchLocation">
+        <option value="">(All)</option>
+      </select>
+    </form>
+    """
+
+    class Response:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(runtime.requests, "get", lambda *args, **kwargs: Response(html))
+
+    url = runtime._build_icims_search_url(
+        "https://career-schwab.icims.com/jobs",
+        {
+            "target_titles": "",
+            "preferred_locations": "",
+            "remote_only": "false",
+        },
+    )
+
+    assert url == "https://career-schwab.icims.com/jobs/search?in_iframe=1&hashed=-626009902"
+
+
+def test_discover_icims_jobs_without_titles_uses_listing_page_links(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    class Response:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    html = """
+    <a href="/jobs/120302/business-analyst-dallas/job?mode=job">Business Analyst</a>
+    <a href="/jobs/120303/business-analyst-remote/job">Business Analyst Remote</a>
+    """
+
+    monkeypatch.setattr(runtime.requests, "get", lambda *args, **kwargs: Response(html))
+
+    urls = runtime._discover_icims_jobs(
+        "https://career-schwab.icims.com/jobs",
+        {
+            "target_titles": "",
+            "preferred_locations": "",
+            "remote_only": "false",
+        },
+    )
+
+    assert urls == [
+        "https://career-schwab.icims.com/jobs/120302/business-analyst-dallas/job?mode=job",
+        "https://career-schwab.icims.com/jobs/120303/business-analyst-remote/job",
+    ]
+
+
+def test_discover_icims_jobs_without_titles_falls_back_to_talentbrew_search_jobs(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    class Response:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, *args, **kwargs):
+        if url == "https://career-schwab.icims.com/jobs":
+            return Response(
+                """
+                <html>
+                  <head><base href="https://www.schwabjobs.com/" /></head>
+                  <body><a href="/search-jobs">Search Jobs</a></body>
+                </html>
+                """
+            )
+        if url == "https://www.schwabjobs.com/search-jobs":
+            return Response(
+                """
+                <a href="/job/westlake/director-platform-engineering/33727/92849236608">
+                  Director Platform Engineering
+                </a>
+                """
+            )
+        raise AssertionError(url)
+
+    monkeypatch.setattr(runtime.requests, "get", fake_get)
+
+    urls = runtime._discover_icims_jobs(
+        "https://career-schwab.icims.com/jobs",
+        {
+            "target_titles": "",
+            "preferred_locations": "",
+            "remote_only": "false",
+        },
+    )
+
+    assert urls == [
+        "https://www.schwabjobs.com/job/westlake/director-platform-engineering/33727/92849236608"
+    ]
+
+
+def test_build_icims_search_url_ignores_failing_jobs_root_fallback(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    class Response:
+        def __init__(self, text, should_raise=False):
+            self.text = text
+            self.should_raise = should_raise
+
+        def raise_for_status(self):
+            if self.should_raise:
+                raise runtime.requests.HTTPError("404")
+            return None
+
+    def fake_get(url, *args, **kwargs):
+        if url == "https://careers.questdiagnostics.com/job-seeker-resources":
+            return Response("<html><body>No search form here.</body></html>")
+        if url == "https://careers.questdiagnostics.com/jobs":
+            return Response("", should_raise=True)
+        raise AssertionError(url)
+
+    monkeypatch.setattr(runtime.requests, "get", fake_get)
+
+    url = runtime._build_icims_search_url(
+        "https://careers.questdiagnostics.com/job-seeker-resources",
+        {
+            "target_titles": "Vice President of IT",
+            "preferred_locations": "",
+            "remote_only": "false",
+        },
+    )
+
+    assert url == ""
+
+
+def test_build_successfactors_search_url_without_title_uses_browse_page():
+    import services.pipeline_runtime as runtime
+
+    url = runtime._build_successfactors_search_url(
+        "https://jobs.brighthousefinancial.com/content/Reasonable-Accommodations/",
+        {"target_titles": "", "preferred_locations": "", "remote_only": "false"},
+    )
+
+    assert url == "https://jobs.brighthousefinancial.com/search/"
+
+
 def test_build_workday_detail_url_preserves_board_prefix():
     import services.pipeline_runtime as runtime
 
@@ -983,6 +1138,85 @@ def test_build_workday_detail_url_preserves_board_prefix():
         url
         == "https://allstate.wd5.myworkdayjobs.com/allstate_careers/job/USA---WI-Remote/Project---Program-Management-Lead-Consultant_R26558-1"
     )
+
+
+def test_discover_workday_jobs_pages_through_results_without_internal_filtering(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    class Response:
+        def __init__(self, text="", json_data=None):
+            self.text = text
+            self._json_data = json_data
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._json_data
+
+    page_html = """
+    <script>
+      tenant: "centene",
+      siteId: "Centene_External",
+      locale: "",
+      requestLocale: "en-US",
+    </script>
+    """
+
+    posts = [
+        {
+            "total": 25,
+            "jobPostings": [
+                {"externalPath": "/job/Remote-MO/General-Role-1_1001"},
+                {"externalPath": "/job/Remote-MO/General-Role-2_1002"},
+            ],
+        },
+        {
+            "total": 25,
+            "jobPostings": [
+                {"externalPath": "/job/Remote-MO/VP-of-IT_2001"},
+                {"externalPath": "/job/Remote-MO/Head-of-Technology_2002"},
+            ],
+        },
+        {
+            "total": 25,
+            "jobPostings": [],
+        },
+    ]
+    seen_payloads = []
+
+    def fake_get(url, *args, **kwargs):
+        assert url == "https://centene.wd5.myworkdayjobs.com/Centene_External"
+        return Response(text=page_html)
+
+    def fake_post(url, json=None, *args, **kwargs):
+        assert url == "https://centene.wd5.myworkdayjobs.com/wday/cxs/centene/Centene_External/jobs"
+        seen_payloads.append(dict(json or {}))
+        return Response(json_data=posts[len(seen_payloads) - 1])
+
+    monkeypatch.setattr(runtime.requests, "get", fake_get)
+    monkeypatch.setattr(runtime.requests, "post", fake_post)
+
+    urls = runtime._discover_workday_jobs(
+        "https://centene.wd5.myworkdayjobs.com/Centene_External",
+        {
+            "target_titles": "VP of IT",
+            "preferred_locations": "Remote",
+            "remote_only": "false",
+        },
+    )
+
+    assert urls == [
+        "https://centene.wd5.myworkdayjobs.com/Centene_External/job/Remote-MO/General-Role-1_1001",
+        "https://centene.wd5.myworkdayjobs.com/Centene_External/job/Remote-MO/General-Role-2_1002",
+        "https://centene.wd5.myworkdayjobs.com/Centene_External/job/Remote-MO/VP-of-IT_2001",
+        "https://centene.wd5.myworkdayjobs.com/Centene_External/job/Remote-MO/Head-of-Technology_2002",
+    ]
+    assert seen_payloads == [
+        {"limit": runtime.WORKDAY_SEED_PAGE_SIZE, "offset": 0},
+        {"limit": runtime.WORKDAY_SEED_PAGE_SIZE, "offset": runtime.WORKDAY_SEED_PAGE_SIZE},
+        {"limit": runtime.WORKDAY_SEED_PAGE_SIZE, "offset": runtime.WORKDAY_SEED_PAGE_SIZE * 2},
+    ]
 
 
 def test_build_successfactors_search_url_uses_branded_search_path():
