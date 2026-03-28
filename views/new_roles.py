@@ -241,13 +241,22 @@ def _apply_new_roles_sort(df, sort_label: str):
 
 
 def _render_header_sort_controls(current_page: int, total_pages: int, total_rows: int) -> None:
+    st.markdown('<div class="queue-toolbar">', unsafe_allow_html=True)
     left, right = st.columns([3.2, 1.45], vertical_alignment="bottom")
 
     with left:
-        st.markdown('<div class="section-title">New Roles</div>', unsafe_allow_html=True)
+        role_label = "role" if total_rows == 1 else "roles"
+        st.markdown(
+            (
+                '<div class="section-kicker">Review Queue</div>'
+                '<div class="section-title">Roles Ready to Review</div>'
+                f'<div class="section-meta">{total_rows} {role_label} match your current filters.</div>'
+            ),
+            unsafe_allow_html=True,
+        )
 
     with right:
-        st.markdown('<div class="soft-control-label">Sort jobs by</div>', unsafe_allow_html=True)
+        st.markdown('<div class="soft-control-label">Sort order</div>', unsafe_allow_html=True)
         st.selectbox(
             "Sort jobs by",
             NEW_ROLES_SORT_OPTIONS,
@@ -259,6 +268,7 @@ def _render_header_sort_controls(current_page: int, total_pages: int, total_rows
             f'<div class="section-meta section-meta-right">Page {current_page} of {total_pages} | Showing {total_rows} total jobs</div>',
             unsafe_allow_html=True,
         )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def initialize_filter_state_from_settings(settings: dict) -> None:
@@ -319,8 +329,6 @@ def _apply_source_trust_filter(df):
 def render_new_roles() -> None:
     _process_pending_action_before_render()
 
-    st.subheader("New Roles")
-
     settings = load_settings()
     initialize_filter_state_from_settings(settings)
 
@@ -375,7 +383,6 @@ def render_new_roles() -> None:
                 int(job_id),
                 row,
             )
-            st.markdown("---")
 
     render_bottom_pagination_controls(
         total_rows=len(df_filtered),

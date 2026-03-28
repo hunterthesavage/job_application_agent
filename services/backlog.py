@@ -63,6 +63,11 @@ BACKLOG_ITEMS: list[dict[str, str]] = [
         "detail": "The app now explains saved versus environment keys clearly, but public users may still benefit from an even simpler saved-local-key-only model.",
     },
     {
+        "priority": "Medium",
+        "title": "Surface OpenAI usage, token, and cost visibility",
+        "detail": "Add a read-only app view that shows OpenAI usage for the configured key, including token consumption, cost, and helpful links back to OpenAI billing or usage pages. This may also apply to the related source-layer project if both products rely on the same key-management expectations.",
+    },
+    {
         "priority": "Low",
         "title": "Tighten internal docs after launch hardening",
         "detail": "Refresh architecture, current-state, and settings-reference docs so they reflect the current app instead of earlier build phases.",

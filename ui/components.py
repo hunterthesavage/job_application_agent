@@ -151,7 +151,7 @@ def render_kpis(kpis: dict[str, str]) -> None:
         f"""
         <div class="kpi-grid">
             <div class="kpi-card blue">
-                <div class="kpi-label">New Roles</div>
+                <div class="kpi-label">Ready to Review</div>
                 <div class="kpi-value">{html.escape(kpis["new_roles"])}</div>
             </div>
             <div class="kpi-card green">
@@ -170,7 +170,11 @@ def render_kpis(kpis: dict[str, str]) -> None:
 
 def render_filter_bar() -> None:
     st.markdown('<div class="filters-shell">', unsafe_allow_html=True)
-    st.markdown('<div class="filters-heading">Filters</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="filters-heading">Refine Results</div>'
+        '<div class="filters-subtle">Narrow the queue before you spend time opening cards.</div>',
+        unsafe_allow_html=True,
+    )
 
     c1, c2, c3 = st.columns([1.2, 1, 1.2])
     nonce = _widget_nonce()
@@ -383,42 +387,50 @@ def render_job_card(
         if pills:
             st.markdown(f'<div class="meta-row">{"".join(pills)}</div>', unsafe_allow_html=True)
 
-        if match_rationale or risk_flags or application_angle or last_refreshed:
-            with st.expander("AI Fit Detail", expanded=False):
-                if last_refreshed:
-                    st.caption(f"Score refreshed: {_format_refresh_timestamp(last_refreshed)}")
+        has_ai_details = bool(match_rationale or risk_flags or application_angle or last_refreshed)
+        has_source_details = bool(source or source_type or source_trust or source_detail or discovery_state)
 
-                if match_rationale:
-                    st.markdown("**Why it matches**")
-                    st.write(match_rationale)
+        if has_ai_details or has_source_details:
+            with st.expander("More Details", expanded=False):
+                if has_ai_details:
+                    st.markdown("**AI Fit**")
+                    if last_refreshed:
+                        st.caption(f"Score refreshed: {_format_refresh_timestamp(last_refreshed)}")
 
-                if scrub_corrections:
-                    st.markdown("**AI corrections**")
-                    for part in scrub_corrections:
-                        st.write(f"• {part}")
+                    if match_rationale:
+                        st.markdown("**Why it matches**")
+                        st.write(match_rationale)
 
-                if display_risks:
-                    st.markdown("**Risks / gaps**")
-                    for part in display_risks:
-                        st.write(f"• {part}")
+                    if scrub_corrections:
+                        st.markdown("**AI corrections**")
+                        for part in scrub_corrections:
+                            st.write(f"• {part}")
 
-                if application_angle:
-                    st.markdown("**Suggested application angle**")
-                    st.write(application_angle)
+                    if display_risks:
+                        st.markdown("**Risks / gaps**")
+                        for part in display_risks:
+                            st.write(f"• {part}")
 
-        if source or source_type or source_trust or source_detail or discovery_state:
-            with st.expander("Source", expanded=False):
-                if source_trust:
-                    st.markdown(f"**Trust**: {source_trust}")
-                if source_type:
-                    st.markdown(f"**Source Type**: {source_type}")
-                if source:
-                    st.markdown(f"**Source**: {source}")
-                if discovery_state:
-                    st.markdown(f"**Discovery State**: {discovery_state}")
-                if source_detail:
-                    st.markdown("**Source Detail**")
-                    st.write(source_detail)
+                    if application_angle:
+                        st.markdown("**Suggested application angle**")
+                        st.write(application_angle)
+
+                if has_ai_details and has_source_details:
+                    st.markdown("---")
+
+                if has_source_details:
+                    st.markdown("**Source**")
+                    if source_trust:
+                        st.markdown(f"**Trust**: {source_trust}")
+                    if source_type:
+                        st.markdown(f"**Source Type**: {source_type}")
+                    if source:
+                        st.markdown(f"**Source**: {source}")
+                    if discovery_state:
+                        st.markdown(f"**Discovery State**: {discovery_state}")
+                    if source_detail:
+                        st.markdown("**Source Detail**")
+                        st.write(source_detail)
 
     with right:
         if isinstance(notice, dict) and str(notice.get("message", "")).strip():
@@ -431,7 +443,10 @@ def render_job_card(
             else:
                 st.success(message)
 
-        btn1, btn2, btn3, btn4 = st.columns(4)
+        st.markdown('<div class="job-actions-label">Next actions</div>', unsafe_allow_html=True)
+
+        top_actions = st.columns(2)
+        bottom_actions = st.columns(2)
 
         api_key = get_effective_openai_api_key()
         cover_letter_enabled = bool(api_key)
@@ -441,7 +456,7 @@ def render_job_card(
             else "No OpenAI API key is configured. Add one in Settings > OpenAI API."
         )
 
-        with btn1:
+        with top_actions[0]:
             _render_ai_button_chip()
             if st.button(
                 "✍️ Cover Letter",
@@ -459,7 +474,7 @@ def render_job_card(
                 )
                 st.rerun()
 
-        with btn2:
+        with top_actions[1]:
             apply_disabled = not bool(job_url)
 
             if st.button(
@@ -476,7 +491,7 @@ def render_job_card(
                 else:
                     st.warning("Could not automatically open the URL.")
 
-        with btn3:
+        with bottom_actions[0]:
             if st.button(
                 "Mark as Applied",
                 key=f"mark_applied_{job_id}",
@@ -492,7 +507,7 @@ def render_job_card(
                 )
                 st.rerun()
 
-        with btn4:
+        with bottom_actions[1]:
             confirm_remove_key = f"confirm_remove_job_{job_id}"
             remove_label = "Confirm Remove" if st.session_state.get(confirm_remove_key, False) else "Remove Job"
             if st.button(

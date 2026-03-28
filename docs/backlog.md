@@ -41,6 +41,9 @@ Evaluate direct API integrations that can pull additional job URLs into the pipe
 ### Decide whether environment-key fallback should stay
 The app now explains saved versus environment keys clearly, but public users may still benefit from an even simpler saved-local-key-only model.
 
+### Surface OpenAI usage, token, and cost visibility
+Add a read-only app view that shows OpenAI usage for the configured key, including token consumption, cost, and helpful links back to OpenAI billing or usage pages. This may also apply to the related source-layer project if both products rely on the same key-management expectations.
+
 ## Low Priority
 
 ### Tighten internal docs after launch hardening

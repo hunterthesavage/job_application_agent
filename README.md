@@ -79,6 +79,11 @@ If that happens:
 ```bat
 cd /d "%USERPROFILE%\Downloads"
 curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
+```
+
+Then run:
+
+```bat
 start /wait python-3.13.12-amd64.exe
 ```
 

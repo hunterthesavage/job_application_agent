@@ -1,26 +1,18 @@
 # Changelog
 
-All notable changes to this project will be tracked here.
+All notable changes to this project should be tracked here.
 
-## 1.0.0 - 2026-03-23
+This project follows semantic versioning:
+- `MAJOR` for product-shape changes or major architectural shifts
+- `MINOR` for meaningful new capabilities that keep the product recognizably the same
+- `PATCH` for bug fixes, polish, install improvements, and small workflow refinements
 
-Initial stable local-first milestone.
+## [1.0.0] - 2026-03-26
 
-### Added
-- SQLite-first local storage as the primary source of truth
-- Source trust and source registry tracking
-- Discovery-state tracking for net new versus rediscovered roles
-- Run telemetry and Last Run Monitor
-- Preferred-location handling aligned across setup, settings, and pipeline
-- New Roles sorting with a saved default sort setting
-- Reset App / Remove All Data flow
+Initial soft-launch baseline.
 
-### Changed
-- Pipeline now owns live Run Inputs
-- Settings navigation simplified by removing Search Criteria as a separate tab
-- Busy-state labels use human-readable wording
-- Last Run Monitor is collapsed by default
-
-### Notes
-- Versioning now follows MAJOR.MINOR.PATCH
-- Use 1.0.x for small fixes, 1.x.0 for meaningful feature slices, and 2.0.0+ for major architectural shifts
+Highlights:
+- local-first Streamlit app with Setup Wizard, Pipeline, New Roles, Applied Roles, and Settings
+- OpenAI-assisted title suggestions, scoring, scrub, and cover letters
+- backup, health check, reset, and local key management
+- friend-test-ready onboarding on macOS and a validated Windows path

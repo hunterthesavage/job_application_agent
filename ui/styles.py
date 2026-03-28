@@ -182,7 +182,13 @@ def inject_custom_css() -> None:
                 font-size: 1rem;
                 font-weight: 700;
                 color: rgba(255,255,255,0.92);
-                margin-bottom: 0.75rem;
+                margin-bottom: 0.2rem;
+            }
+
+            .filters-subtle {
+                font-size: 0.9rem;
+                color: rgba(255,255,255,0.64);
+                margin-bottom: 0.85rem;
             }
 
             .job-card {
@@ -266,15 +272,25 @@ def inject_custom_css() -> None:
                 color: rgba(255,255,255,0.98);
             }
 
+            .section-kicker {
+                font-size: 0.78rem;
+                font-weight: 780;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: rgba(96,165,250,0.92);
+                margin-bottom: 0.28rem;
+            }
+
             .section-meta {
-                font-size: 1rem;
+                font-size: 0.98rem;
                 font-weight: 650;
-                color: rgba(255,255,255,0.82);
+                color: rgba(255,255,255,0.72);
+                margin-top: 0.38rem;
             }
 
             .section-meta-right {
                 text-align: right;
-                margin-top: 0.45rem;
+                margin-top: 0.5rem;
             }
 
             .soft-control-label {
@@ -283,6 +299,17 @@ def inject_custom_css() -> None:
                 color: rgba(255,255,255,0.72);
                 margin-bottom: 0.25rem;
                 text-align: right;
+            }
+
+            .queue-toolbar {
+                border: 1px solid rgba(255,255,255,0.07);
+                border-radius: 20px;
+                background:
+                    radial-gradient(circle at top right, rgba(59,130,246,0.12), transparent 34%),
+                    linear-gradient(180deg, rgba(14,20,33,0.96), rgba(9,13,23,0.97));
+                box-shadow: 0 14px 36px rgba(0,0,0,0.18);
+                padding: 1rem 1rem 0.9rem 1rem;
+                margin: 1.2rem 0 0.9rem 0;
             }
 
             .bottom-controls-wrap {
@@ -361,7 +388,7 @@ def inject_custom_css() -> None:
                 display: flex;
                 justify-content: flex-end;
                 pointer-events: none;
-                margin-bottom: -0.95rem;
+                margin-bottom: -0.8rem;
                 padding-right: 0.45rem;
             }
 
@@ -390,6 +417,16 @@ def inject_custom_css() -> None:
                 font-weight: 650;
                 color: rgba(255,255,255,0.78);
                 margin-bottom: 0.25rem;
+            }
+
+            .job-actions-label {
+                font-size: 0.82rem;
+                font-weight: 760;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: rgba(255,255,255,0.58);
+                text-align: right;
+                margin-bottom: 0.45rem;
             }
 
             @media (max-width: 1200px) {
