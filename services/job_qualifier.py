@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from services.search_plan import build_search_title_variants
+
 
 def safe_text(value: Any) -> str:
     if value is None:
@@ -284,11 +286,13 @@ def qualify_job(
     include_keywords = parse_csv_text(settings.get("include_keywords", ""))
     exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    title_variants = build_search_title_variants(target_titles, max_variants=6) if target_titles else []
+    scoring_titles = title_variants or target_titles
 
     searchable = " ".join([job_title, company, location, job_text])
 
-    title_score, title_reasons = _title_overlap_score(job_title, target_titles)
-    function_score, function_reasons, function_reject_reason = _function_lane_score(job_title, target_titles)
+    title_score, title_reasons = _title_overlap_score(job_title, scoring_titles)
+    function_score, function_reasons, function_reject_reason = _function_lane_score(job_title, scoring_titles)
     location_score, location_reasons, location_reject_reason = _location_score(location, preferred_locations, remote_only)
     keyword_score, keyword_reasons, keyword_reject_reason = _keyword_score(
         searchable_text=searchable,
