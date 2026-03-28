@@ -52,6 +52,30 @@ TRANSIENT_FETCH_RETRY_DELAY_SECONDS = 0.35
 NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY = 3
 WORKDAY_SEED_PAGE_SIZE = 20
 WORKDAY_SEED_MAX_PAGES = 5
+SEED_FOREIGN_REMOTE_MARKERS = {
+    "argentina",
+    "australia",
+    "brazil",
+    "canada",
+    "colombia",
+    "europe",
+    "france",
+    "germany",
+    "india",
+    "ireland",
+    "italy",
+    "japan",
+    "latam",
+    "latin america",
+    "mexico",
+    "netherlands",
+    "philippines",
+    "poland",
+    "portugal",
+    "spain",
+    "united kingdom",
+    "uk",
+}
 
 
 def safe_text(value) -> str:
@@ -872,6 +896,15 @@ def _cheap_seed_location_prefilter_from_hint(hint_source: str, settings: dict[st
     normalized_hint = normalize_text(hint_source)
     if not normalized_hint:
         return True, "no reliable url location hint"
+
+    if remote_only and "remote" in normalized_hint:
+        foreign_markers = [
+            marker
+            for marker in SEED_FOREIGN_REMOTE_MARKERS
+            if marker in normalized_hint
+        ]
+        if foreign_markers:
+            return False, f"url location prefilter foreign remote mismatch: {hint_source}"
 
     if "remote" in normalized_hint:
         return True, "url location hint matched remote"

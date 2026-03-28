@@ -865,6 +865,36 @@ def test_filter_next_gen_seed_urls_prefers_relevant_matches():
     assert location_skips == 1
 
 
+def test_cheap_seed_location_prefilter_rejects_explicit_foreign_remote_hint():
+    import services.pipeline_runtime as runtime
+
+    passed, reason = runtime._cheap_seed_location_prefilter_from_hint(
+        "Mexico Remote",
+        {
+            "preferred_locations": "Remote",
+            "remote_only": "true",
+        },
+    )
+
+    assert passed is False
+    assert "foreign remote mismatch" in reason
+
+
+def test_cheap_seed_location_prefilter_allows_us_remote_hint():
+    import services.pipeline_runtime as runtime
+
+    passed, reason = runtime._cheap_seed_location_prefilter_from_hint(
+        "United States Remote",
+        {
+            "preferred_locations": "Remote",
+            "remote_only": "true",
+        },
+    )
+
+    assert passed is True
+    assert "matched remote" in reason
+
+
 def test_cheap_url_title_prefilter_rejects_wrong_executive_lane_without_hardcoded_title():
     import services.pipeline_runtime as runtime
 
@@ -1399,8 +1429,8 @@ def test_discover_workday_jobs_prefilters_using_structured_posting_title_and_loc
                     },
                     {
                         "title": "Vice President, Information Technology",
-                        "locationsText": "Boston, MA",
-                        "externalPath": "/job/Boston-MA/VP-Information-Technology_1003",
+                        "locationsText": "Mexico Remote",
+                        "externalPath": "/job/Mexico-Remote/VP-Information-Technology_1003",
                     },
                 ],
             }
