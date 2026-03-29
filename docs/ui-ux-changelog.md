@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-29
 
+### Trimmed Windows packaging merge scope to the proven path
+- Summary: removed the flaky dedicated lab release workflow from the packaging branch, kept the Windows smoke coverage, and documented that the lab tester zip is refreshed manually from the latest passing smoke artifact instead of through a second automation path.
+- Why: the packaging branch was otherwise ready to merge, but every push still showed a failing no-job Actions run from the extra release workflow, which created noise and made the merge look less trustworthy than the actual tested package state.
+- Validation: reviewed the latest lab branch Actions runs, confirmed the newest Windows smoke run passed, and updated the maintainer docs to match the slimmer release process before merging back to `main`.
+- Files: `.github/workflows/windows-portable-release.yml`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+
 ### Made the in-app close action swap to a shutdown page before attempting tab close
 - Summary: changed the `Close Application` flow to replace the current page with a lightweight shutdown screen and then attempt to close that page, instead of trying to close the live Streamlit view directly.
 - Why: browsers are more willing to close a blank or minimal replacement page than an active app page, so this improves the odds that the tab closes cleanly after the local app process stops.

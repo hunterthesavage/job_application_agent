@@ -59,14 +59,11 @@ For friend testers, share only the final portable zip and ask them to:
 
 ## GitHub workflow
 
-The repo includes a manual GitHub Actions workflow at:
+The repo includes a maintainer-only GitHub Actions workflow at:
 
 - `.github/workflows/windows-portable.yml`
-- `.github/workflows/windows-portable-release.yml`
 
-Use `windows-portable.yml` when you want a maintainer-only Actions artifact build.
-
-Use `windows-portable-release.yml` when you want a friend-tester-friendly GitHub Release download from the lab branch without touching the known-good recovery release on `main`.
+Use `windows-portable.yml` when you want an Actions artifact build from the current branch.
 
 The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `JobApplicationAgent` folder so maintainers can:
 
@@ -76,10 +73,4 @@ The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `Jo
 4. double-click `INSTALL JAA.bat`
 5. use `STOP JAA.bat` later if needed
 
-The lab Release workflow publishes:
-
-- tag: `windows-portable-lab`
-- title: `Windows Portable Lab`
-- asset: `JobApplicationAgent-windows-portable-lab.zip`
-
-That keeps packaging experiments separate from the known-good fallback on `windows-portable-latest`.
+The public lab test download is still kept separate from the known-good fallback on `windows-portable-latest`, but it is refreshed manually from the latest passing Windows smoke artifact instead of through a dedicated release workflow.
