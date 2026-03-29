@@ -56,23 +56,12 @@ For friend testers, share only the final portable zip and ask them to:
 The repo includes a manual GitHub Actions workflow at:
 
 - `.github/workflows/windows-portable.yml`
-- `.github/workflows/windows-portable-release.yml`
 
-Use `windows-portable.yml` when you want a maintainer-only Actions artifact build.
+Use that workflow when you want GitHub to build the package on a Windows runner and upload a tester-friendly `JobApplicationAgent` artifact.
 
-Use `windows-portable-release.yml` when you want a friend-tester-friendly GitHub Release download.
-
-The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `JobApplicationAgent` folder so maintainers can:
+The GitHub artifact is uploaded as the unpacked `JobApplicationAgent` folder so testers can:
 
 1. download the artifact zip from Actions
 2. extract it once
 3. open the `JobApplicationAgent` folder
 4. double-click `Launch Job Application Agent.bat`
-
-The Release workflow publishes:
-
-- tag: `windows-portable-latest`
-- title: `Windows Portable Latest`
-- asset: `JobApplicationAgent-windows-portable.zip`
-
-That is the simplest download path to hand to non-technical testers.

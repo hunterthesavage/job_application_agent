@@ -22,12 +22,6 @@ Entry format:
 
 ## 2026-03-28
 
-### Added a release-based Windows download path for testers
-- Summary: added a GitHub workflow that builds the portable Windows package and publishes `JobApplicationAgent-windows-portable.zip` as a release asset, then rewrote the README to send testers to Releases instead of Actions artifacts.
-- Why: Actions artifacts were too hidden and confusing for friend testers, even after the portable installer itself was working.
-- Validation: reviewed the release workflow inputs, asset path, and README install steps together so the tester path now points at a normal GitHub release download.
-- Files: `.github/workflows/windows-portable-release.yml`, `README.md`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
-
 ### Aligned GitHub Windows artifact flow with README install steps
 - Summary: changed the portable-package GitHub workflow to upload the unpacked `JobApplicationAgent` folder and tightened the README/docs wording so the Actions download path now matches the actual tester extraction flow.
 - Why: the previous setup produced a nested zip experience that did not cleanly match the README’s “download, extract, open folder, launch” instructions.

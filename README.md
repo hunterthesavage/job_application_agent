@@ -99,7 +99,7 @@ If you want the easy Windows install, do **not** download the normal GitHub "Sou
 Use the portable package zip instead:
 
 - if the maintainer sent you `JobApplicationAgent-windows-portable.zip`, use that file
-- if you are downloading it yourself from GitHub, get it from the repo [Releases](https://github.com/hunterthesavage/job_application_agent/releases) page, not from the normal source-code download
+- if you are downloading it yourself from GitHub, get it from the latest successful Windows build artifact, not from the repo source download
 
 ### Portable install steps for testers
 
@@ -115,10 +115,10 @@ The app should open in your browser at:
 
 ### If you are downloading the portable package from GitHub yourself
 
-1. Open the repo [Releases](https://github.com/hunterthesavage/job_application_agent/releases) page.
-2. Open the latest `Windows Portable Latest` release.
-3. Download `JobApplicationAgent-windows-portable.zip` from the release assets.
-4. Right-click the zip and choose `Extract All...`
+1. Open the repo `Actions` tab.
+2. Open the latest successful `Build Windows Portable Package` run.
+3. Download the artifact named `job-application-agent-windows-portable`.
+4. Unzip the downloaded artifact zip.
 5. Open the extracted `JobApplicationAgent` folder.
 6. Double-click `Launch Job Application Agent.bat`.
 
