@@ -15,7 +15,7 @@ That means testers can:
 
 1. unzip the package
 2. open the folder
-3. double-click `Launch Job Application Agent.bat`
+3. double-click `INSTALL JAA.bat`
 
 No separate Python install or local virtual environment is required.
 
@@ -49,7 +49,7 @@ For friend testers, share only the final portable zip and ask them to:
 
 1. extract it
 2. open the extracted folder
-3. double-click `Launch Job Application Agent.bat`
+3. double-click `INSTALL JAA.bat`
 
 ## GitHub workflow
 
@@ -67,7 +67,7 @@ The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `Jo
 1. download the artifact zip from Actions
 2. extract it once
 3. open the `JobApplicationAgent` folder
-4. double-click `Launch Job Application Agent.bat`
+4. double-click `INSTALL JAA.bat`
 
 The Release workflow publishes:
 

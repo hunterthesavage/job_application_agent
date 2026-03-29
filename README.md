@@ -79,66 +79,48 @@ If that happens:
 
 # Windows Setup
 
-### Recommended: Portable Windows package
+### Step 1) Download The Windows Package
 
-This is now the preferred Windows tester path.
+Download:
 
-The portable package includes:
+- [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip)
 
-- the app
-- the required Python runtime
-- the installed dependencies
-- a double-click launcher
+Save it somewhere easy to find, like `Downloads`.
 
-That means testers do **not** need to install Python or create a virtual environment.
+![Windows install step 1](docs/assets/windows-install-step-1-download.svg)
 
-### Important
+### Step 2) Extract The Zip
 
-If you want the easy Windows install, do **not** download the normal GitHub "Source code" zip.
-
-Use the portable package zip instead:
-
-- if the maintainer sent you `JobApplicationAgent-windows-portable.zip`, use that file
-- if you are downloading it yourself from GitHub, get it from the repo [Releases](https://github.com/hunterthesavage/job_application_agent/releases) page, not from the normal source-code download
-- direct download: [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip)
-
-### Portable install steps for testers
-
-1. Download [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip).
-2. Save it somewhere easy to find, like `Downloads`.
-3. In File Explorer, right-click the zip and choose `Extract All...`
+1. Open File Explorer.
+2. Find `JobApplicationAgent-windows-portable.zip`.
+3. Right-click the zip and choose `Extract All...`
 4. Click `Extract`.
-5. Open the extracted `JobApplicationAgent` folder.
-6. Make sure you can see these three things in that folder:
-   - `Launch Job Application Agent.bat`
-   - `app`
-   - `python`
-7. Double-click `Launch Job Application Agent.bat`.
-8. If Windows SmartScreen appears, click `More info` and then `Run anyway`.
-9. Wait a few seconds for the browser to open.
+
+Do **not** run the installer from inside the zip preview window.
+
+![Windows install step 2](docs/assets/windows-install-step-2-extract.svg)
+
+### Step 3) Open The Extracted Folder
+
+Open the extracted `JobApplicationAgent` folder.
+
+Make sure you can see these three things inside it:
+
+- `INSTALL JAA.bat`
+- `app`
+- `python`
+
+![Windows install step 3](docs/assets/windows-install-step-3-launch.svg)
+
+### Step 4) Start The App
+
+1. Double-click `INSTALL JAA.bat`.
+2. If Windows SmartScreen appears, click `More info` and then `Run anyway`.
+3. Wait a few seconds for the browser to open.
 
 The app should open in your browser at:
 
 - [http://localhost:8505](http://localhost:8505)
-
-Do **not** double-click the `.bat` file from inside the zip preview window. It must be launched from the extracted `JobApplicationAgent` folder.
-
-### If you are downloading the portable package from GitHub yourself
-
-1. Open the repo [Releases](https://github.com/hunterthesavage/job_application_agent/releases) page.
-2. Open the latest `Windows Portable Latest` release.
-3. Download `JobApplicationAgent-windows-portable.zip` from the release assets.
-4. Right-click the zip and choose `Extract All...`
-5. Open the extracted `JobApplicationAgent` folder.
-6. Double-click `Launch Job Application Agent.bat`.
-
-### Notes for Windows users
-
-- Windows support is still more lightly tested than Mac
-- the portable package is the easiest path for friend testers
-- on first launch, Windows SmartScreen may ask for confirmation because the package is unsigned
-- the first launch may take a few extra seconds before the browser opens
-- if the launcher says it cannot find the path specified, the zip was usually not extracted before launch
 
 ### Manual fallback setup
 

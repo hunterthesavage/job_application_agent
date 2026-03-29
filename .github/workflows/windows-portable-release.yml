@@ -47,7 +47,7 @@ How to install:
 1. Download `JobApplicationAgent-windows-portable.zip` from this release.
 2. Extract it.
 3. Open the `JobApplicationAgent` folder.
-4. Double-click `Launch Job Application Agent.bat`.
+4. Double-click `INSTALL JAA.bat`.
 "@
           Set-Content -Path release-notes.txt -Value $notes -Encoding ASCII
 

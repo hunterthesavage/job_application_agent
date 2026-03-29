@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-28
 
+### Simplified Windows install guide and renamed the launcher
+- Summary: reduced the Windows README section to a tester-only step-by-step flow, added visual install panels, and renamed the packaged launcher from `Launch Job Application Agent.bat` to `INSTALL JAA.bat`.
+- Why: the old wording still created confusion during friend testing, and the launcher name needed to be shorter and more obvious once the folder was extracted.
+- Validation: reviewed the README against the portable package structure and updated the build/release docs so the packaged launcher name now matches the install steps.
+- Files: `README.md`, `scripts/build_windows_portable.ps1`, `docs/windows-portable-build.md`, `.github/workflows/windows-portable-release.yml`, `docs/assets/windows-install-step-1-download.svg`, `docs/assets/windows-install-step-2-extract.svg`, `docs/assets/windows-install-step-3-launch.svg`, `docs/ui-ux-changelog.md`
+
 ### Added a direct Windows release link and extraction checklist
 - Summary: updated the README to include the exact portable zip release link, clearer post-download steps, a folder-content check for `Launch Job Application Agent.bat` plus the `app` and `python` folders, and an explicit warning not to run the launcher from inside the zip preview.
 - Why: a tester hit a confusing Windows path error because the prior README still was not concrete enough about extracting the zip fully before launching.

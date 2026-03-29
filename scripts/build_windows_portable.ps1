@@ -88,6 +88,7 @@ base = "dark"
 '@
 Set-Content -Path (Join-Path $appRoot ".streamlit/config.toml") -Value $streamlitConfig -Encoding ASCII
 
+$launcherName = "INSTALL JAA.bat"
 $launcher = @'
 @echo off
 setlocal
@@ -122,7 +123,7 @@ if errorlevel 1 (
 
 endlocal
 '@
-Set-Content -Path (Join-Path $packageRoot "Launch Job Application Agent.bat") -Value $launcher -Encoding ASCII
+Set-Content -Path (Join-Path $packageRoot $launcherName) -Value $launcher -Encoding ASCII
 
 $readme = @'
 Job Application Agent - Windows Portable Package
@@ -130,7 +131,7 @@ Job Application Agent - Windows Portable Package
 How to use:
 1. Extract this folder anywhere you like.
 2. Open the extracted folder.
-3. Double-click "Launch Job Application Agent.bat".
+3. Double-click "INSTALL JAA.bat".
 4. Your browser should open to http://localhost:8505
 
 Notes:
