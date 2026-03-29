@@ -87,27 +87,30 @@ Download:
 
 Save it somewhere easy to find, like `Downloads`.
 
-(PLACEHOLDER FOR SCREENSHOT)
+![Windows install step 1](docs/assets/windows-install-step-1-download.svg)
 
 ### Step 2) Extract The Zip
 
 1. Open File Explorer.
 2. Find `JobApplicationAgent-windows-portable.zip`.
-3. Click the zip once to highlight it.
-4. Use one of these options:
-   - click `Extract all` in the File Explorer toolbar
-   - or right-click the zip, click `Show more options`, then click `Extract All...`
-5. Click `Extract`.
+3. Right-click the zip and choose `Extract All...`
+4. Click `Extract`.
 
 Do **not** run the installer from inside the zip preview window.
 
-(PLACEHOLDER FOR SCREENSHOT)
+![Windows install step 2](docs/assets/windows-install-step-2-extract.svg)
 
 ### Step 3) Open The Extracted Folder
 
 Open the extracted `JobApplicationAgent` folder.
 
-(PLACEHOLDER FOR SCREENSHOT)
+Make sure you can see these three things inside it:
+
+- `INSTALL JAA.bat`
+- `app`
+- `python`
+
+![Windows install step 3](docs/assets/windows-install-step-3-launch.svg)
 
 ### Step 4) Start The App
 
