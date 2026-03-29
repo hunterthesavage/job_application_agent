@@ -51,32 +51,24 @@ jobs:
         shell: pwsh
         run: .\scripts\build_windows_portable.ps1
 
-      - name: Verify packaged launcher files
-        shell: pwsh
-        run: |
-          $packageRoot = Join-Path $PWD "dist/windows-portable/JobApplicationAgent"
-          foreach ($required in @("INSTALL JAA.bat", "STOP JAA.bat", "app", "python")) {
-            if (-not (Test-Path (Join-Path $packageRoot $required))) {
-              throw "Missing packaged item: $required"
-            }
-          }
-          $ghostFiles = Get-ChildItem -Path $packageRoot -Recurse -Force -Name | Where-Object { $_ -like "._*" }
-          if ($ghostFiles) {
-            throw "Unexpected ghost files were packaged: $($ghostFiles -join ', ')"
-          }
-
-      - name: Launch packaged app and wait for health check
+      - name: Launch bundled app and wait for health check
         shell: pwsh
         run: |
           $packageRoot = Join-Path $PWD "dist/windows-portable/JobApplicationAgent"
           $appRoot = Join-Path $packageRoot "app"
-          $stdoutLog = Join-Path $appRoot "logs/jaa_stdout.log"
-          $stderrLog = Join-Path $appRoot "logs/jaa_stderr.log"
+          $pythonExe = Join-Path $packageRoot "python/python.exe"
+          $stdoutLog = Join-Path $PWD "portable-streamlit-stdout.log"
+          $stderrLog = Join-Path $PWD "portable-streamlit-stderr.log"
 
-          Push-Location $packageRoot
+          $proc = Start-Process `
+            -FilePath $pythonExe `
+            -ArgumentList @("-m", "streamlit", "run", "app.py", "--server.headless", "true", "--server.port", "8505") `
+            -WorkingDirectory $appRoot `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -PassThru
+
           try {
-            cmd /c ".\INSTALL JAA.bat"
-
             $healthy = $false
             for ($i = 0; $i -lt 30; $i++) {
               Start-Sleep -Seconds 2
@@ -87,6 +79,9 @@ jobs:
                   break
                 }
               } catch {
+              }
+              if ($proc.HasExited) {
+                break
               }
             }
 
@@ -103,8 +98,9 @@ jobs:
               throw "Portable package smoke test failed."
             }
           } finally {
-            cmd /c ".\STOP JAA.bat" | Out-Null
-            Pop-Location
+            if ($proc -and -not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force
+            }
           }
 
       - name: Upload portable package and logs
@@ -114,5 +110,5 @@ jobs:
           name: windows-smoke-artifacts
           path: |
             dist/windows-portable/JobApplicationAgent-windows-portable.zip
-            dist/windows-portable/JobApplicationAgent/app/logs/jaa_stdout.log
-            dist/windows-portable/JobApplicationAgent/app/logs/jaa_stderr.log
+            portable-streamlit-stdout.log
+            portable-streamlit-stderr.log

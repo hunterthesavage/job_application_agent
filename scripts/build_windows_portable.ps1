@@ -83,161 +83,47 @@ $streamlitConfig = @'
 toolbarMode = "minimal"
 showSidebarNavigation = false
 
-[browser]
-gatherUsageStats = false
-
 [theme]
 base = "dark"
 '@
 Set-Content -Path (Join-Path $appRoot ".streamlit/config.toml") -Value $streamlitConfig -Encoding ASCII
 
 $launcherName = "INSTALL JAA.bat"
-$installLauncher = @'
+$launcher = @'
 @echo off
 setlocal
 
-set "ROOT_DIR=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launch_jaa.ps1"
+cd /d "%~dp0app"
+
+if not exist data mkdir data
+if not exist backups mkdir backups
+if not exist logs mkdir logs
+if not exist .streamlit mkdir .streamlit
+
+if not exist .streamlit\config.toml (
+    (
+        echo [client]
+        echo toolbarMode = "minimal"
+        echo showSidebarNavigation = false
+        echo.
+        echo [theme]
+        echo base = "dark"
+    ) > .streamlit\config.toml
+)
+
+start "" powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 3; Start-Process 'http://localhost:8505'"
+"..\python\python.exe" -m streamlit run app.py --server.headless true --server.port 8505
 if errorlevel 1 (
     echo.
     echo Job Application Agent failed to launch.
-    echo Check app\logs\jaa_stderr.log for details.
+    echo Keep this window open and share the error details with the maintainer.
     pause
     exit /b 1
 )
 
 endlocal
 '@
-Set-Content -Path (Join-Path $packageRoot $launcherName) -Value $installLauncher -Encoding ASCII
-
-$stopLauncher = @'
-@echo off
-setlocal
-
-set "ROOT_DIR=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%stop_jaa.ps1"
-if errorlevel 1 (
-    echo.
-    echo Job Application Agent was not running.
-    pause
-    exit /b 1
-)
-
-echo Job Application Agent stopped.
-timeout /t 2 >nul
-endlocal
-'@
-Set-Content -Path (Join-Path $packageRoot "STOP JAA.bat") -Value $stopLauncher -Encoding ASCII
-
-$launchScript = @'
-$ErrorActionPreference = "Stop"
-
-$rootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$appRoot = Join-Path $rootDir "app"
-$pythonExe = Join-Path $rootDir "python\python.exe"
-$pidFile = Join-Path $appRoot "data\jaa_server.pid"
-$stdoutLog = Join-Path $appRoot "logs\jaa_stdout.log"
-$stderrLog = Join-Path $appRoot "logs\jaa_stderr.log"
-
-foreach ($path in @(
-    (Join-Path $appRoot "data"),
-    (Join-Path $appRoot "backups"),
-    (Join-Path $appRoot "logs"),
-    (Join-Path $appRoot ".streamlit")
-)) {
-    New-Item -ItemType Directory -Force -Path $path | Out-Null
-}
-
-if (-not (Test-Path $pythonExe)) {
-    throw "Bundled Python runtime was not found."
-}
-
-if (Test-Path $pidFile) {
-    $savedPid = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-    if ($savedPid -match '^\d+$') {
-        $existing = Get-Process -Id ([int]$savedPid) -ErrorAction SilentlyContinue
-        if ($existing) {
-            Start-Process "http://127.0.0.1:8505"
-            exit 0
-        }
-    }
-    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-}
-
-$arguments = @(
-    "-m",
-    "streamlit",
-    "run",
-    "app.py",
-    "--server.headless", "true",
-    "--server.address", "127.0.0.1",
-    "--server.port", "8505",
-    "--browser.gatherUsageStats", "false"
-)
-
-$proc = Start-Process `
-    -FilePath $pythonExe `
-    -ArgumentList $arguments `
-    -WorkingDirectory $appRoot `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $stdoutLog `
-    -RedirectStandardError $stderrLog `
-    -PassThru
-
-Set-Content -Path $pidFile -Value $proc.Id -Encoding ASCII
-
-$healthy = $false
-for ($i = 0; $i -lt 25; $i++) {
-    Start-Sleep -Seconds 1
-    if ($proc.HasExited) {
-        break
-    }
-    try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8505/_stcore/health" -TimeoutSec 2
-        if ($response.StatusCode -eq 200) {
-            $healthy = $true
-            break
-        }
-    } catch {
-    }
-}
-
-if (-not $healthy -and $proc.HasExited) {
-    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-    throw "Job Application Agent exited before the local server became healthy."
-}
-
-Start-Process "http://127.0.0.1:8505"
-'@
-Set-Content -Path (Join-Path $packageRoot "launch_jaa.ps1") -Value $launchScript -Encoding ASCII
-
-$stopScript = @'
-$ErrorActionPreference = "Stop"
-
-$rootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$appRoot = Join-Path $rootDir "app"
-$pidFile = Join-Path $appRoot "data\jaa_server.pid"
-
-if (-not (Test-Path $pidFile)) {
-    exit 1
-}
-
-$savedPid = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-if (-not ($savedPid -match '^\d+$')) {
-    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-    exit 1
-}
-
-$proc = Get-Process -Id ([int]$savedPid) -ErrorAction SilentlyContinue
-if (-not $proc) {
-    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-    exit 1
-}
-
-Stop-Process -Id ([int]$savedPid) -Force -ErrorAction Stop
-Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-'@
-Set-Content -Path (Join-Path $packageRoot "stop_jaa.ps1") -Value $stopScript -Encoding ASCII
+Set-Content -Path (Join-Path $packageRoot $launcherName) -Value $launcher -Encoding ASCII
 
 $readme = @'
 Job Application Agent - Windows Portable Package
@@ -251,8 +137,7 @@ How to use:
 Notes:
 - This package already includes its own Python runtime.
 - You do not need to install Python separately.
-- Keep the python and app folders next to the launcher batch files.
-- Use "STOP JAA.bat" when you want to fully stop the local app server.
+- Keep the python and app folders next to the launcher batch file.
 - On first launch, Windows SmartScreen may ask for confirmation because this package is unsigned.
 '@
 Set-Content -Path (Join-Path $packageRoot "WINDOWS_PORTABLE_README.txt") -Value $readme -Encoding ASCII

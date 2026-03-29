@@ -16,7 +16,6 @@ That means testers can:
 1. unzip the package
 2. open the folder
 3. double-click `INSTALL JAA.bat`
-4. use `STOP JAA.bat` later if you want to stop the local app server outside the UI
 
 No separate Python install or local virtual environment is required.
 
@@ -51,7 +50,6 @@ For friend testers, share only the final portable zip and ask them to:
 1. extract it
 2. open the extracted folder
 3. double-click `INSTALL JAA.bat`
-4. use `STOP JAA.bat` later if needed
 
 ## GitHub workflow
 
@@ -70,7 +68,6 @@ The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `Jo
 2. extract it once
 3. open the `JobApplicationAgent` folder
 4. double-click `INSTALL JAA.bat`
-5. use `STOP JAA.bat` later if needed
 
 The Release workflow publishes:
 

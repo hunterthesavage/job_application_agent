@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="840" viewBox="0 0 1400 840" fill="none">
+  <rect width="1400" height="840" fill="#0B1020"/>
+  <rect x="48" y="48" width="1304" height="744" rx="28" fill="#11182B" stroke="#26314D"/>
+  <text x="88" y="120" fill="#F8FAFC" font-size="34" font-family="Arial, sans-serif" font-weight="700">Step 2: Extract The Zip</text>
+  <text x="88" y="165" fill="#A5B4D4" font-size="22" font-family="Arial, sans-serif">Right-click the zip, choose Extract All..., then click Extract.</text>
+  <rect x="88" y="220" width="590" height="500" rx="24" fill="#16213A" stroke="#31456E"/>
+  <text x="122" y="268" fill="#E2E8F0" font-size="26" font-family="Arial, sans-serif" font-weight="700">File Explorer</text>
+  <rect x="122" y="304" width="522" height="90" rx="16" fill="#0F172A" stroke="#475569"/>
+  <text x="156" y="359" fill="#7DD3FC" font-size="24" font-family="Courier New, monospace">JobApplicationAgent-windows-portable.zip</text>
+  <rect x="420" y="340" width="230" height="290" rx="16" fill="#1E293B" stroke="#64748B"/>
+  <text x="454" y="388" fill="#F8FAFC" font-size="22" font-family="Arial, sans-serif">Open</text>
+  <text x="454" y="434" fill="#FDE68A" font-size="22" font-family="Arial, sans-serif" font-weight="700">Extract All...</text>
+  <text x="454" y="480" fill="#F8FAFC" font-size="22" font-family="Arial, sans-serif">Copy</text>
+  <text x="454" y="526" fill="#F8FAFC" font-size="22" font-family="Arial, sans-serif">Delete</text>
+  <rect x="720" y="220" width="592" height="500" rx="24" fill="#16213A" stroke="#31456E"/>
+  <text x="754" y="268" fill="#E2E8F0" font-size="26" font-family="Arial, sans-serif" font-weight="700">Extraction Window</text>
+  <rect x="754" y="314" width="524" height="210" rx="16" fill="#0F172A" stroke="#475569"/>
+  <text x="786" y="376" fill="#F8FAFC" font-size="22" font-family="Arial, sans-serif">Select a destination and extract files.</text>
+  <rect x="786" y="414" width="460" height="54" rx="12" fill="#111827" stroke="#334155"/>
+  <text x="812" y="448" fill="#93C5FD" font-size="20" font-family="Arial, sans-serif">C:\Users\You\Downloads\JobApplicationAgent</text>
+  <rect x="1038" y="560" width="208" height="70" rx="14" fill="#2563EB"/>
+  <text x="1092" y="605" fill="#FFFFFF" font-size="26" font-family="Arial, sans-serif" font-weight="700">Extract</text>
+  <text x="754" y="680" fill="#FCA5A5" font-size="22" font-family="Arial, sans-serif">Do not run the .bat file from inside the zip preview window.</text>
+</svg>
