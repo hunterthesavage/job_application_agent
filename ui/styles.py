@@ -27,6 +27,34 @@ def inject_custom_css() -> None:
                 margin-bottom: 0.25rem;
             }
 
+            .st-key-hero_close_application_button button {
+                min-height: 3.25rem;
+                border-radius: 18px;
+                border: 1px solid rgba(248,113,113,0.42);
+                background:
+                    linear-gradient(180deg, rgba(127,29,29,0.96) 0%, rgba(69,10,10,0.98) 100%);
+                color: rgba(255,244,244,0.98);
+                font-weight: 800;
+                letter-spacing: 0.01em;
+                box-shadow:
+                    0 12px 30px rgba(127,29,29,0.24),
+                    inset 0 1px 0 rgba(255,255,255,0.06);
+            }
+
+            .st-key-hero_close_application_button button:hover {
+                border-color: rgba(252,165,165,0.62);
+                background:
+                    linear-gradient(180deg, rgba(153,27,27,0.98) 0%, rgba(91,15,15,0.99) 100%);
+                color: white;
+            }
+
+            .st-key-hero_close_application_button button:focus,
+            .st-key-hero_close_application_button button:focus-visible {
+                box-shadow:
+                    0 0 0 0.18rem rgba(248,113,113,0.18),
+                    0 14px 32px rgba(127,29,29,0.22);
+            }
+
             .hero-title {
                 display: flex;
                 align-items: flex-end;

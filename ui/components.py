@@ -52,13 +52,13 @@ def _get_openai_badge() -> tuple[str, str]:
 
     key_status = str(status.get("openai_api_key_status", "Not configured")).strip().lower()
 
-    if key_status == "validated":
-        return "OpenAI: Validated", "validated"
-
     if key_status in {"saved not validated", "configured"}:
-        return "OpenAI: Configured", "saved"
+        return "OpenAI: Active", "active"
 
-    return "OpenAI: Not Configured", "not-configured"
+    if key_status == "validated":
+        return "OpenAI: Active", "active"
+
+    return "OpenAI: Not Active", "not-active"
 
 
 def _split_semicolon_text(value: str) -> list[str]:
@@ -91,59 +91,102 @@ def _render_ai_button_chip() -> None:
     )
 
 
-def render_hero(*, show_busy_banner: bool = True) -> None:
+def render_hero(*, show_busy_banner: bool = True) -> bool:
     badge_text, badge_class = _get_openai_badge()
 
     busy_text = ""
     if show_busy_banner and app_is_busy() and current_busy_label():
         busy_text = f'<div class="app-busy-banner">Working: {html.escape(current_busy_label())}</div>'
 
-    st.markdown(
-        f"""
-        <div class="hero-wrap">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+    left_col, right_col = st.columns([6.2, 1.6], gap="large")
+
+    with left_col:
+        st.markdown(
+            f"""
+            <div class="hero-wrap">
                 <div class="hero-title">
                     <span class="hero-title-main">{html.escape(APP_NAME)}</span>
                     <span class="hero-title-version">{html.escape(APP_VERSION)}</span>
                 </div>
+                <div class="hero-subtle">High-signal roles, faster action, cleaner workflow.</div>
+                {busy_text}
+            </div>
+
+            <style>
+            .openai-badge {{
+                font-size: 0.9rem;
+                font-weight: 700;
+                padding: 0.6rem 0.9rem;
+                border-radius: 999px;
+                border: 1px solid rgba(255,255,255,0.12);
+                letter-spacing: 0.01em;
+                white-space: nowrap;
+                justify-content: center;
+                width: 100%;
+                box-sizing: border-box;
+            }}
+            .openai-badge-active {{
+                background: rgba(34, 197, 94, 0.14);
+                border-color: rgba(34, 197, 94, 0.40);
+                color: #b9f8ce;
+            }}
+            .openai-badge-not-active {{
+                background: rgba(255, 99, 99, 0.12);
+                border-color: rgba(255, 99, 99, 0.28);
+                color: #ffb3b3;
+            }}
+            .hero-side-stack {{
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.75rem;
+                width: 100%;
+                max-width: 260px;
+                margin-left: auto;
+            }}
+            .hero-status-label {{
+                font-size: 0.72rem;
+                font-weight: 700;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: rgba(255,255,255,0.52);
+                margin-bottom: 0.28rem;
+                text-align: right;
+            }}
+            .app-busy-banner {{
+                margin-top: 12px;
+                font-size: 0.9rem;
+                font-weight: 600;
+                color: #b8c7ff;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    close_requested = False
+    with right_col:
+        st.markdown('<div class="hero-side-stack">', unsafe_allow_html=True)
+        close_requested = bool(
+            st.button(
+                "\u2715 Close Application",
+                key="hero_close_application_button",
+                use_container_width=True,
+                type="secondary",
+            )
+        )
+        st.markdown(
+            f"""
+            <div>
+                <div class="hero-status-label">OpenAI Status</div>
                 <div class="openai-badge openai-badge-{html.escape(badge_class)}">{html.escape(badge_text)}</div>
             </div>
-            <div class="hero-subtle">High-signal roles, faster action, cleaner workflow.</div>
-            {busy_text}
-        </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        <style>
-        .openai-badge {{
-            font-size: 0.9rem;
-            font-weight: 600;
-            padding: 8px 12px;
-            border-radius: 999px;
-            border: 1px solid rgba(255,255,255,0.12);
-            letter-spacing: 0.01em;
-            white-space: nowrap;
-        }}
-        .openai-badge-not-configured {{
-            background: rgba(255, 99, 99, 0.12);
-            color: #ffb3b3;
-        }}
-        .openai-badge-saved {{
-            background: rgba(255, 193, 7, 0.12);
-            color: #ffd666;
-        }}
-        .openai-badge-validated {{
-            background: rgba(46, 204, 113, 0.12);
-            color: #9af0b7;
-        }}
-        .app-busy-banner {{
-            margin-top: 12px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #b8c7ff;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    return close_requested
 
 
 def render_kpis(kpis: dict[str, str]) -> None:

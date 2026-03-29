@@ -269,26 +269,75 @@ def initialize_app_once() -> None:
     st.session_state["_app_initialized"] = True
 
 
-def render_close_application_button() -> bool:
-    _, action_col = st.columns([5, 1])
-    with action_col:
-        st.markdown("<div style='height: 1.65rem;'></div>", unsafe_allow_html=True)
-        return bool(
-            st.button(
-                "Close Application",
-                key="close_application_button",
-                use_container_width=True,
-                type="tertiary",
-            )
-        )
+def trigger_close_application() -> None:
+    st.session_state["_shutdown_requested"] = True
+    st.rerun()
 
 
-def handle_close_application() -> None:
-    st.info("Closing Job Application Agent...")
+def render_shutdown_screen() -> None:
+    st.markdown(
+        """
+        <div style="
+            min-height: 68vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+        ">
+            <div style="
+                max-width: 34rem;
+                width: 100%;
+                border-radius: 24px;
+                border: 1px solid rgba(255,255,255,0.10);
+                background:
+                    radial-gradient(circle at top left, rgba(59,130,246,0.10), transparent 28%),
+                    radial-gradient(circle at top right, rgba(239,68,68,0.08), transparent 22%),
+                    linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(9,13,24,0.99) 100%);
+                box-shadow: 0 24px 56px rgba(0,0,0,0.28);
+                padding: 1.6rem 1.55rem;
+                text-align: center;
+            ">
+                <div style="
+                    width: 3.15rem;
+                    height: 3.15rem;
+                    margin: 0 auto 0.95rem auto;
+                    border-radius: 999px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1.45rem;
+                    font-weight: 800;
+                    color: #fecaca;
+                    border: 1px solid rgba(248,113,113,0.35);
+                    background: rgba(127,29,29,0.34);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+                ">×</div>
+                <div style="
+                    font-size: 1.22rem;
+                    font-weight: 800;
+                    color: rgba(255,255,255,0.97);
+                    margin-bottom: 0.45rem;
+                ">Job Application Agent is closing</div>
+                <div style="
+                    font-size: 0.98rem;
+                    color: rgba(229,238,252,0.82);
+                    line-height: 1.55;
+                ">You can close this tab now if it does not close itself automatically.</div>
+                <div style="
+                    margin-top: 0.8rem;
+                    font-size: 0.84rem;
+                    color: rgba(229,238,252,0.58);
+                ">The local app process is shutting down in the background.</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     components_html(
         """
         <script>
-        setTimeout(function () {
+        (function () {
           const shutdownHtml = `
             <!doctype html>
             <html>
@@ -302,22 +351,40 @@ def handle_close_application() -> None:
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: #0b1120;
+                    background:
+                      radial-gradient(circle at top left, rgba(59,130,246,0.12), transparent 28%),
+                      radial-gradient(circle at top right, rgba(239,68,68,0.10), transparent 24%),
+                      linear-gradient(180deg, #050914 0%, #090d18 100%);
                     color: #e5eefc;
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                   }
                   .card {
                     max-width: 32rem;
-                    padding: 1.25rem 1.4rem;
-                    border-radius: 16px;
+                    padding: 1.4rem 1.5rem;
+                    border-radius: 20px;
                     border: 1px solid rgba(255,255,255,0.10);
                     background: rgba(15, 23, 42, 0.96);
                     box-shadow: 0 20px 45px rgba(0,0,0,0.25);
                     text-align: center;
                     line-height: 1.5;
                   }
+                  .icon {
+                    width: 3rem;
+                    height: 3rem;
+                    margin: 0 auto 0.9rem auto;
+                    border-radius: 999px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1.35rem;
+                    font-weight: 800;
+                    color: #fecaca;
+                    border: 1px solid rgba(248,113,113,0.35);
+                    background: rgba(127,29,29,0.34);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+                  }
                   .title {
-                    font-size: 1.15rem;
+                    font-size: 1.18rem;
                     font-weight: 700;
                     margin-bottom: 0.45rem;
                   }
@@ -325,42 +392,36 @@ def handle_close_application() -> None:
                     color: rgba(229,238,252,0.80);
                     font-size: 0.96rem;
                   }
+                  .subtle {
+                    margin-top: 0.7rem;
+                    color: rgba(229,238,252,0.56);
+                    font-size: 0.83rem;
+                  }
                 </style>
               </head>
               <body>
                 <div class="card">
-                  <div class="title">Closing Job Application Agent</div>
-                  <div class="copy">You can close this tab if it does not close itself automatically.</div>
+                  <div class="icon">×</div>
+                  <div class="title">Job Application Agent has closed</div>
+                  <div class="copy">You can close this tab now.</div>
+                  <div class="subtle">The local app process has already been asked to shut down.</div>
                 </div>
-                <script>
-                  setTimeout(function () {
-                    try { window.open('', '_self'); } catch (e) {}
-                    try { window.close(); } catch (e) {}
-                  }, 450);
-                <\\/script>
               </body>
             </html>
           `;
 
           const target = window.parent && window.parent !== window ? window.parent : window;
-          try {
-            target.document.open();
-            target.document.write(shutdownHtml);
-            target.document.close();
-          } catch (e) {
-            try { target.location.replace("about:blank"); } catch (e2) {}
-          }
+          const shutdownUrl = "data:text/html;charset=utf-8," + encodeURIComponent(shutdownHtml);
 
           setTimeout(function () {
-            try { target.open("", "_self"); } catch (e) {}
-            try { target.close(); } catch (e) {}
-          }, 600);
-        }, 150);
+            try { target.location.replace(shutdownUrl); } catch (e) {}
+          }, 220);
+        })();
         </script>
         """,
         height=0,
     )
-    request_process_shutdown()
+    request_process_shutdown(delay_seconds=1.8)
     st.stop()
 
 
@@ -408,16 +469,20 @@ def main() -> None:
     if boot_placeholder is not None:
         boot_placeholder.empty()
 
+    if st.session_state.get("_shutdown_requested", False):
+        render_shutdown_screen()
+        return
+
     pipeline_action = get_action("pipeline")
     new_roles_action = get_action("new_roles")
     show_pipeline_loading = bool(pipeline_action) and app_is_busy()
     show_new_roles_loading = bool(new_roles_action) and app_is_busy()
 
-    render_hero(show_busy_banner=not (show_pipeline_loading or show_new_roles_loading))
+    close_requested = render_hero(show_busy_banner=not (show_pipeline_loading or show_new_roles_loading))
+    if close_requested:
+        trigger_close_application()
 
     if should_show_setup_wizard():
-        if render_close_application_button():
-            handle_close_application()
         render_setup_wizard()
         return
 
@@ -433,8 +498,6 @@ def main() -> None:
 
     initialize_top_nav(default_value="New Roles")
     selected_view = render_top_nav()
-    if render_close_application_button():
-        handle_close_application()
 
     render_post_wizard_message()
 

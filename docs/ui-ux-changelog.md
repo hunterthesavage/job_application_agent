@@ -22,6 +22,24 @@ Entry format:
 
 ## 2026-03-29
 
+### Moved the close control into the hero and simplified OpenAI status colors
+- Summary: moved `Close Application` into the upper-right hero stack, changed it to a more explicit `✕ Close Application` control, and simplified the OpenAI badge so it shows green when active and red when inactive.
+- Why: the floating close button was too easy to mistake for a normal workflow action, and the prior OpenAI badge colors did not make the active/not-active state obvious enough during local UI review.
+- Validation: `python3 -m py_compile app.py ui/components.py ui/styles.py`
+- Files: `app.py`, `ui/components.py`, `ui/styles.py`, `docs/ui-ux-changelog.md`
+
+### Replaced the close-action blank page with a branded shutdown screen
+- Summary: updated the browser-close handoff so the fallback page now shows a styled “You can close this tab now” shutdown message instead of dropping to a blank screen if the browser refuses to close automatically.
+- Why: the blank shutdown page felt broken and abrupt during local UI review, especially when the browser kept the tab open after the app process had already stopped.
+- Validation: `python3 -m py_compile app.py`
+- Files: `app.py`, `docs/ui-ux-changelog.md`
+
+### Switched the shutdown handoff to navigate directly to the fallback page
+- Summary: converted the close flow into a two-step shutdown state so the app first rerenders a dedicated shutdown screen, then navigates the browser to a static fallback page and only after that delay shuts down the backend.
+- Why: the earlier handoff still let Streamlit’s disconnect behavior interfere, so the safer sequence is to leave the live app page first and stop the backend second.
+- Validation: `python3 -m py_compile app.py`
+- Files: `app.py`, `docs/ui-ux-changelog.md`
+
 ### Trimmed Windows packaging merge scope to the proven path
 - Summary: removed the flaky dedicated lab release workflow from the packaging branch, kept the Windows smoke coverage, and documented that the lab tester zip is refreshed manually from the latest passing smoke artifact instead of through a second automation path.
 - Why: the packaging branch was otherwise ready to merge, but every push still showed a failing no-job Actions run from the extra release workflow, which created noise and made the merge look less trustworthy than the actual tested package state.
