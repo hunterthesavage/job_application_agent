@@ -76,8 +76,6 @@ The Release workflow publishes:
 
 - tag: `windows-portable-latest`
 - title: `Windows Portable Latest`
-- asset: `JobApplicationAgent-windows-portable-YYYYMMDD-HHMM.zip`
-
-It deletes older `JobApplicationAgent-windows-portable*.zip` assets on that release first, then uploads the newest timestamped package. That keeps the release page simple and avoids browser/download-cache confusion from reusing the same filename.
+- asset: `JobApplicationAgent-windows-portable.zip`
 
 That is the simplest download path to hand to non-technical testers.

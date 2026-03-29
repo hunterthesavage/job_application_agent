@@ -22,12 +22,6 @@ Entry format:
 
 ## 2026-03-28
 
-### Switched Windows release downloads to timestamped zip names
-- Summary: changed the Windows release workflow to publish a timestamped portable zip name, delete older `JobApplicationAgent-windows-portable*.zip` assets on the release first, and updated the README/install docs to send testers to the release page instead of a cache-prone direct asset link.
-- Why: repeated Windows retests were still pulling old zips from browser or download caching because the release asset filename stayed the same across rebuilds.
-- Validation: reviewed the release workflow, the README Windows download step, and the maintainer packaging doc together so the tester path now points to a unique timestamped asset name on each publish.
-- Files: `.github/workflows/windows-portable-release.yml`, `README.md`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
-
 ### Reverted the broad packaged shell polish pass
 - Summary: backed out the wider packaged-shell styling changes that had reworked the wizard shell and Streamlit chrome handling, returning the app to the previous safer UI baseline while keeping the separate Windows launch/stop/package improvements.
 - Why: live Windows testing showed the polish pass introduced new visual regressions, including washed-out wizard content and incorrect button styling, so the safest move was to remove that layer before more end-to-end testing.
