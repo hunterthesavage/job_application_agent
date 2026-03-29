@@ -92,42 +92,22 @@ The portable package includes:
 
 That means testers do **not** need to install Python or create a virtual environment.
 
-### Important
+### Portable install steps
 
-If you want the easy Windows install, do **not** download the normal GitHub "Source code" zip.
-
-Use the portable package zip instead:
-
-- if the maintainer sent you `JobApplicationAgent-windows-portable.zip`, use that file
-- if you are downloading it yourself from GitHub, get it from the latest successful Windows build artifact, not from the repo source download
-
-### Portable install steps for testers
-
-1. Get `JobApplicationAgent-windows-portable.zip`.
-2. Right-click the zip and choose `Extract All...`
-3. Open the extracted `JobApplicationAgent` folder.
+1. Download the portable Windows package zip from the maintainer or the latest published build.
+2. Extract the zip anywhere you like.
+3. Open the extracted folder.
 4. Double-click `Launch Job Application Agent.bat`.
-5. If Windows SmartScreen appears, click `More info` and then `Run anyway`.
 
 The app should open in your browser at:
 
 - [http://localhost:8505](http://localhost:8505)
-
-### If you are downloading the portable package from GitHub yourself
-
-1. Open the repo `Actions` tab.
-2. Open the latest successful `Build Windows Portable Package` run.
-3. Download the artifact named `job-application-agent-windows-portable`.
-4. Unzip the downloaded artifact.
-5. Open the extracted folder and then open the inner `JobApplicationAgent` folder.
-6. Double-click `Launch Job Application Agent.bat`.
 
 ### Notes for Windows users
 
 - Windows support is still more lightly tested than Mac
 - the portable package is the easiest path for friend testers
 - on first launch, Windows SmartScreen may ask for confirmation because the package is unsigned
-- the first launch may take a few extra seconds before the browser opens
 
 ### Manual fallback setup
 
