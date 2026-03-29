@@ -81,9 +81,13 @@ If that happens:
 
 ### Step 1) Download The Windows Package
 
-Download:
+Download the newest Windows package from the release page:
 
-- [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip)
+- [Windows Portable Latest](https://github.com/hunterthesavage/job_application_agent/releases/tag/windows-portable-latest)
+
+On that page, download the asset whose name starts with:
+
+- `JobApplicationAgent-windows-portable-`
 
 Save it somewhere easy to find, like `Downloads`.
 
@@ -92,7 +96,7 @@ Save it somewhere easy to find, like `Downloads`.
 ### Step 2) Extract The Zip
 
 1. Open File Explorer.
-2. Find `JobApplicationAgent-windows-portable.zip`.
+2. Find the downloaded `JobApplicationAgent-windows-portable-...zip` file.
 3. Click the zip once to highlight it.
 4. Use one of these options:
    - click `Extract all` in the File Explorer toolbar

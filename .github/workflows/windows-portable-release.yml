@@ -39,12 +39,16 @@ jobs:
         run: |
           $tag = "${{ inputs.tag_name }}"
           $title = "${{ inputs.release_name }}"
-          $asset = "dist/windows-portable/JobApplicationAgent-windows-portable.zip"
+          $stamp = Get-Date -Format "yyyyMMdd-HHmm"
+          $assetName = "JobApplicationAgent-windows-portable-$stamp.zip"
+          $assetSource = "dist/windows-portable/JobApplicationAgent-windows-portable.zip"
+          $asset = "dist/windows-portable/$assetName"
+          Copy-Item $assetSource $asset -Force
           $notes = @"
 Portable Windows build of Job Application Agent.
 
 How to install:
-1. Download `JobApplicationAgent-windows-portable.zip` from this release.
+1. Download the newest `JobApplicationAgent-windows-portable-YYYYMMDD-HHMM.zip` asset from this release.
 2. Extract it.
 3. Open the `JobApplicationAgent` folder.
 4. Double-click `INSTALL JAA.bat`.
@@ -56,6 +60,13 @@ How to install:
             gh release create $tag --title $title --notes-file release-notes.txt
           } else {
             gh release edit $tag --title $title --notes-file release-notes.txt
+          }
+
+          $existingAssets = gh release view $tag --json assets --jq '.assets[].name'
+          foreach ($existingAsset in $existingAssets) {
+            if ($existingAsset -like 'JobApplicationAgent-windows-portable*.zip') {
+              gh release delete-asset $tag $existingAsset --yes
+            }
           }
 
           gh release upload $tag $asset --clobber
