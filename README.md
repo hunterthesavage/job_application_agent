@@ -83,7 +83,7 @@ If that happens:
 
 Download Link:
 
-- [Windows Install Zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-lab/JobApplicationAgent-windows-portable-lab.zip) - cleaner Windows package for current friend testing
+- [Windows Install Zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-lab/JobApplicationAgent-windows-portable-lab.zip)
 
 
 ### Step 2) Extract The Zip
@@ -92,12 +92,12 @@ Download Link:
    
   ![Step 1 - Download the Windows package](docs/assets/windows-step-1-download.png)
 
-3. Find the zip you downloaded.
-4. Click the zip once to highlight it.
-5. Use one of these options:
+2. Find the zip you downloaded.
+3. Click the zip once to highlight it.
+4. Use one of these options:
    - click `Extract all` in the File Explorer toolbar
    - or right-click the zip and click `Extract All...`
-6. Click `Extract`.
+5. Click `Extract`.
   ![Step 2 - Extract the zip](docs/assets/windows-step-2-extract.png)
 
 ### Step 3) Start The App
@@ -106,13 +106,13 @@ Download Link:
 2. Double-click `INSTALL JAA.bat`.
    ![Step 3 - Open the extracted folder](docs/assets/windows-step-3-open-folder.png)
   
-5. If Windows asks whether to run the file, click `Run`.
+3. If Windows asks whether to run the file, click `Run`.
    ![Step 4 - Run the installer](docs/assets/windows-step-4-run-warning.png)
   
-7. If Windows Security asks about Python network access, click `Allow`.
+4. If Windows Security asks about Python network access, click `Allow`.
    ![Step 4 - Allow Python through Windows Security](docs/assets/windows-step-4-firewall.png)
   
-9. Wait a few seconds for the browser to open.
+5. Wait a few seconds for the browser to open.
 
 The app should open in your browser at:
 
