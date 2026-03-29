@@ -278,6 +278,7 @@ def render_close_application_button() -> bool:
                 "Close Application",
                 key="close_application_button",
                 use_container_width=True,
+                type="tertiary",
             )
         )
 

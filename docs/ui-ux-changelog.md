@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-29
 
+### Restored the hidden Streamlit chrome settings and matched the shutdown button style
+- Summary: updated the lab package builder to write the same `.streamlit/config.toml` settings the old working Windows launcher created at first run, and changed the in-app `Close Application` control to use the existing tertiary button styling instead of the default white Streamlit button.
+- Why: the lab package reintroduced the top-right Streamlit chrome because the hidden launcher no longer generated the old config file, and the new shutdown button looked out of place because it was rendering with Streamlit's default button style.
+- Validation: compared the exact working zip launcher to the lab launcher, confirmed the missing config creation path, and aligned the close button with the current CSS hook used by the existing shell styling.
+- Files: `app.py`, `scripts/build_windows_portable.ps1`, `docs/ui-ux-changelog.md`
+
 ### Restored the Close Application control during setup
 - Summary: rendered the existing `Close Application` button during the setup wizard, not just after the main top navigation shell loads.
 - Why: the lab package already had the shutdown action wired up, but the setup wizard returned too early for that button to appear, which made it look missing during first-run testing.

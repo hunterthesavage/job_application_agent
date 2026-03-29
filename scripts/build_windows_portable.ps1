@@ -116,6 +116,20 @@ Copy-OverlayFile -Source (Join-Path $repoRoot "app.py") -Destination (Join-Path 
 Copy-OverlayFile -Source (Join-Path $repoRoot "config.py") -Destination (Join-Path $appRoot "config.py")
 Copy-OverlayFile -Source (Join-Path $repoRoot "services/app_control.py") -Destination (Join-Path $appRoot "services/app_control.py")
 
+New-Item -ItemType Directory -Force -Path (Join-Path $appRoot ".streamlit") | Out-Null
+$streamlitConfig = @'
+[client]
+toolbarMode = "minimal"
+showSidebarNavigation = false
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
+'@
+Set-Content -Path (Join-Path $appRoot ".streamlit/config.toml") -Value $streamlitConfig -Encoding ASCII
+
 $installLauncher = @'
 @echo off
 setlocal
