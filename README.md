@@ -81,52 +81,38 @@ If that happens:
 
 ### Step 1) Download The Windows Package
 
-Recommended for this friend test:
+Download Link:
 
-- [Test Link](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-lab/JobApplicationAgent-windows-portable-lab.zip) - cleaner Windows package for current friend testing
+- [Windows Install Zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-lab/JobApplicationAgent-windows-portable-lab.zip) - cleaner Windows package for current friend testing
 
-Fallback if the test package has trouble on this machine:
-
-- [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip) - known-good Windows recovery package
-
-Recovery baseline details:
-
-- source: exact zip pulled from the Windows machine that was confirmed working
-- size: `142,376,536` bytes
-- SHA256: `b1058358dfce16c9c58a52ec5c32ae1a08f0caefa1da2633887365901d7ba2a8`
-
-Save it somewhere easy to find, like `Downloads`.
-
-![Step 1 - Download the Windows package](docs/assets/windows-step-1-download.png)
 
 ### Step 2) Extract The Zip
 
 1. Open File Explorer.
-2. Find the zip you downloaded.
-3. Click the zip once to highlight it.
-4. Use one of these options:
+   
+  ![Step 1 - Download the Windows package](docs/assets/windows-step-1-download.png)
+
+3. Find the zip you downloaded.
+4. Click the zip once to highlight it.
+5. Use one of these options:
    - click `Extract all` in the File Explorer toolbar
    - or right-click the zip and click `Extract All...`
-5. Click `Extract`.
+6. Click `Extract`.
+  ![Step 2 - Extract the zip](docs/assets/windows-step-2-extract.png)
 
-![Step 2 - Extract the zip](docs/assets/windows-step-2-extract.png)
+### Step 3) Start The App
 
-### Step 3) Open The Extracted Folder
-
-Open the extracted `JobApplicationAgent` folder.
-
-![Step 3 - Open the extracted folder](docs/assets/windows-step-3-open-folder.png)
-
-### Step 4) Start The App
-
-1. Double-click `INSTALL JAA.bat`.
-2. If Windows asks whether to run the file, click `Run`.
-3. If Windows Security asks about Python network access, click `Allow`.
-4. Wait a few seconds for the browser to open.
-
-![Step 4 - Run the installer](docs/assets/windows-step-4-run-warning.png)
-
-![Step 4 - Allow Python through Windows Security](docs/assets/windows-step-4-firewall.png)
+1. Open the extracted `JobApplicationAgent` folder.
+2. Double-click `INSTALL JAA.bat`.
+   ![Step 3 - Open the extracted folder](docs/assets/windows-step-3-open-folder.png)
+  
+5. If Windows asks whether to run the file, click `Run`.
+   ![Step 4 - Run the installer](docs/assets/windows-step-4-run-warning.png)
+  
+7. If Windows Security asks about Python network access, click `Allow`.
+   ![Step 4 - Allow Python through Windows Security](docs/assets/windows-step-4-firewall.png)
+  
+9. Wait a few seconds for the browser to open.
 
 The app should open in your browser at:
 
@@ -138,6 +124,10 @@ When you are done:
 - for the fallback known-good package, close the browser tab and then close the Command Prompt window that launched with the app
 
 ### Manual fallback setup
+
+Fallback Download Link if the other one did not install on this machine:
+
+- [Older Install Zip File](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip) - known-good Windows recovery package
 
 If you are running directly from the repo instead of the portable package, use the existing Python-based setup:
 
