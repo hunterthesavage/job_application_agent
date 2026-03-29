@@ -57,11 +57,4 @@ The repo includes a manual GitHub Actions workflow at:
 
 - `.github/workflows/windows-portable.yml`
 
-Use that workflow when you want GitHub to build the package on a Windows runner and upload a tester-friendly `JobApplicationAgent` artifact.
-
-The GitHub artifact is uploaded as the unpacked `JobApplicationAgent` folder so testers can:
-
-1. download the artifact zip from Actions
-2. extract it once
-3. open the `JobApplicationAgent` folder
-4. double-click `Launch Job Application Agent.bat`
+Use that workflow when you want GitHub to build the package on a Windows runner and upload the portable zip as an artifact.

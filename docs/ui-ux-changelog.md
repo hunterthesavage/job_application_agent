@@ -22,12 +22,6 @@ Entry format:
 
 ## 2026-03-28
 
-### Aligned GitHub Windows artifact flow with README install steps
-- Summary: changed the portable-package GitHub workflow to upload the unpacked `JobApplicationAgent` folder and tightened the README/docs wording so the Actions download path now matches the actual tester extraction flow.
-- Why: the previous setup produced a nested zip experience that did not cleanly match the README’s “download, extract, open folder, launch” instructions.
-- Validation: reviewed the portable build output, workflow artifact path, and README steps together to ensure the GitHub Actions artifact now unpacks directly to the launcher folder.
-- Files: `.github/workflows/windows-portable.yml`, `README.md`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
-
 ### Clarified Windows tester install directions in README
 - Summary: rewrote the Windows portable-install section so testers are explicitly told not to use the normal source zip, where to find the portable artifact, and exactly which launcher to double-click after extraction.
 - Why: the earlier README still left too much room for confusion even after the portable package work landed, especially for friend testers downloading from GitHub.
