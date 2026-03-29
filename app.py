@@ -289,8 +289,72 @@ def handle_close_application() -> None:
         """
         <script>
         setTimeout(function () {
-          try { window.location.replace("about:blank"); } catch (e) {}
-          try { window.open("", "_self"); window.close(); } catch (e) {}
+          const shutdownHtml = `
+            <!doctype html>
+            <html>
+              <head>
+                <meta charset="utf-8">
+                <title>Closing Job Application Agent</title>
+                <style>
+                  body {
+                    margin: 0;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: #0b1120;
+                    color: #e5eefc;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                  }
+                  .card {
+                    max-width: 32rem;
+                    padding: 1.25rem 1.4rem;
+                    border-radius: 16px;
+                    border: 1px solid rgba(255,255,255,0.10);
+                    background: rgba(15, 23, 42, 0.96);
+                    box-shadow: 0 20px 45px rgba(0,0,0,0.25);
+                    text-align: center;
+                    line-height: 1.5;
+                  }
+                  .title {
+                    font-size: 1.15rem;
+                    font-weight: 700;
+                    margin-bottom: 0.45rem;
+                  }
+                  .copy {
+                    color: rgba(229,238,252,0.80);
+                    font-size: 0.96rem;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="card">
+                  <div class="title">Closing Job Application Agent</div>
+                  <div class="copy">You can close this tab if it does not close itself automatically.</div>
+                </div>
+                <script>
+                  setTimeout(function () {
+                    try { window.open('', '_self'); } catch (e) {}
+                    try { window.close(); } catch (e) {}
+                  }, 450);
+                <\\/script>
+              </body>
+            </html>
+          `;
+
+          const target = window.parent && window.parent !== window ? window.parent : window;
+          try {
+            target.document.open();
+            target.document.write(shutdownHtml);
+            target.document.close();
+          } catch (e) {
+            try { target.location.replace("about:blank"); } catch (e2) {}
+          }
+
+          setTimeout(function () {
+            try { target.open("", "_self"); } catch (e) {}
+            try { target.close(); } catch (e) {}
+          }, 600);
         }, 150);
         </script>
         """,

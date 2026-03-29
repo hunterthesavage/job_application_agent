@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-29
 
+### Made the in-app close action swap to a shutdown page before attempting tab close
+- Summary: changed the `Close Application` flow to replace the current page with a lightweight shutdown screen and then attempt to close that page, instead of trying to close the live Streamlit view directly.
+- Why: browsers are more willing to close a blank or minimal replacement page than an active app page, so this improves the odds that the tab closes cleanly after the local app process stops.
+- Validation: reviewed the existing shutdown handler in `app.py` and replaced the direct `about:blank`/`window.close()` attempt with a shutdown-page handoff while keeping the same background-process shutdown path.
+- Files: `app.py`, `docs/ui-ux-changelog.md`
+
 ### Added a dedicated Windows test link next to the known-good package
 - Summary: updated the Windows README section to include a separate `Test Link` right next to the known-good package link, pointing at the current `windows-portable-lab` release asset.
 - Why: using a single stable link and a single current test link side by side makes it much easier to tell whether a Windows test is using the frozen recovery package or the latest lab package.
