@@ -81,9 +81,9 @@ If that happens:
 
 ### Step 1) Download The Windows Package
 
-Download Link:
+Current Windows Package:
 
-- [Windows Install Zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-lab/JobApplicationAgent-windows-portable-lab.zip)
+- [Windows Install Zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-current/JobApplicationAgent-windows-portable.zip)
 
 
 ### Step 2) Extract The Zip
@@ -123,11 +123,13 @@ When you are done:
 - for the current test package, click `Close Application` inside the app or double-click `STOP JAA.bat`
 - for the fallback known-good package, close the browser tab and then close the Command Prompt window that launched with the app
 
-### Manual fallback setup
+### Fallback Windows Package
 
-Fallback Download Link if the other one did not install on this machine:
+Fallback Download Link if the current package does not install on this machine:
 
 - [Older Install Zip File](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip) - known-good Windows recovery package
+
+### Manual fallback setup
 
 If you are running directly from the repo instead of the portable package, use the existing Python-based setup:
 
@@ -152,7 +154,7 @@ More details:
 
 ### Windows packaging status
 
-The current GitHub release asset above is the exact known-good recovery package. Future Windows packaging changes are frozen on `main` and should be developed only on the separate `codex/windows-packaging-lab` branch until a new package is verified end to end against this baseline.
+The current Windows package above is the most up-to-date live package. The older known-good recovery package remains linked as the fallback option if the current package has trouble on a tester machine.
 
 ## First launch
 

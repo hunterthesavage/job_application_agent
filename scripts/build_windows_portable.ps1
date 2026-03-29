@@ -111,10 +111,12 @@ if (Test-Path $pythonRoot) {
     Remove-PythonNoise -PythonRoot $pythonRoot
 }
 
-Write-Host "==> Overlaying narrow app shutdown updates"
+Write-Host "==> Overlaying current app updates"
 Copy-OverlayFile -Source (Join-Path $repoRoot "app.py") -Destination (Join-Path $appRoot "app.py")
 Copy-OverlayFile -Source (Join-Path $repoRoot "config.py") -Destination (Join-Path $appRoot "config.py")
 Copy-OverlayFile -Source (Join-Path $repoRoot "services/app_control.py") -Destination (Join-Path $appRoot "services/app_control.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "ui/components.py") -Destination (Join-Path $appRoot "ui/components.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "ui/styles.py") -Destination (Join-Path $appRoot "ui/styles.py")
 
 New-Item -ItemType Directory -Force -Path (Join-Path $appRoot ".streamlit") | Out-Null
 $streamlitConfig = @'

@@ -90,6 +90,6 @@ The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `Jo
 4. double-click `INSTALL JAA.bat`
 5. use `STOP JAA.bat` later if needed
 
-The public lab test download is still kept separate from the known-good fallback on `windows-portable-latest`, but it is refreshed manually from the latest passing Windows smoke artifact instead of through a dedicated release workflow.
+The current live Windows package is published separately from the known-good fallback on `windows-portable-latest`, and it is refreshed manually from the latest passing Windows smoke artifact instead of through a dedicated release workflow.
 
-The stable recovery release on `windows-portable-latest` remains the simplest download path to hand to non-technical testers. Future experiments should happen on `codex/windows-packaging-lab` and only replace that recovery asset after a full Windows retest passes.
+The stable recovery release on `windows-portable-latest` remains the fallback path to hand to non-technical testers if the current package has trouble on their machine.

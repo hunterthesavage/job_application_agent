@@ -22,6 +22,18 @@ Entry format:
 
 ## 2026-03-29
 
+### Promoted the newer Windows package to the primary live download
+- Summary: updated the Windows docs so the newer portable package is treated as the current live Windows install, while the older known-good recovery zip remains linked as the fallback option.
+- Why: the newer package is now the preferred friend-test path, and continuing to describe it as a test package creates confusion once it becomes the package we actually want people to use first.
+- Validation: reviewed the Windows README and build notes so the primary/fallback roles now match the intended release flow.
+- Files: `README.md`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+
+### Included the current UI files in the Windows package overlay
+- Summary: expanded the Windows package builder so it now overlays `ui/components.py` and `ui/styles.py` in addition to the existing narrow app updates.
+- Why: the latest close-button and OpenAI badge changes were present on `main` but missing from the Windows package because the builder was not copying those UI files into the packaged app.
+- Validation: reviewed the builder overlay list against the files changed by the recent UI pass and confirmed the missing UI modules are now explicitly copied into the package.
+- Files: `scripts/build_windows_portable.ps1`, `docs/ui-ux-changelog.md`
+
 ### Promoted the Windows test package to the primary README download
 - Summary: updated the Windows README section so the `Test Link` is now the recommended download for friend testing, while the older known-good recovery zip stays visible as the fallback option.
 - Why: the newer package has the cleaner setup and worked in current testing, so the README should point testers at the package we actually want them to try first without hiding the fallback path.
