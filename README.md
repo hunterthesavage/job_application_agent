@@ -100,28 +100,18 @@ Use the portable package zip instead:
 
 - if the maintainer sent you `JobApplicationAgent-windows-portable.zip`, use that file
 - if you are downloading it yourself from GitHub, get it from the repo [Releases](https://github.com/hunterthesavage/job_application_agent/releases) page, not from the normal source-code download
-- direct download: [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip)
 
 ### Portable install steps for testers
 
-1. Download [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip).
-2. Save it somewhere easy to find, like `Downloads`.
-3. In File Explorer, right-click the zip and choose `Extract All...`
-4. Click `Extract`.
-5. Open the extracted `JobApplicationAgent` folder.
-6. Make sure you can see these three things in that folder:
-   - `Launch Job Application Agent.bat`
-   - `app`
-   - `python`
-7. Double-click `Launch Job Application Agent.bat`.
-8. If Windows SmartScreen appears, click `More info` and then `Run anyway`.
-9. Wait a few seconds for the browser to open.
+1. Get `JobApplicationAgent-windows-portable.zip`.
+2. Right-click the zip and choose `Extract All...`
+3. Open the extracted `JobApplicationAgent` folder.
+4. Double-click `Launch Job Application Agent.bat`.
+5. If Windows SmartScreen appears, click `More info` and then `Run anyway`.
 
 The app should open in your browser at:
 
 - [http://localhost:8505](http://localhost:8505)
-
-Do **not** double-click the `.bat` file from inside the zip preview window. It must be launched from the extracted `JobApplicationAgent` folder.
 
 ### If you are downloading the portable package from GitHub yourself
 
@@ -138,7 +128,6 @@ Do **not** double-click the `.bat` file from inside the zip preview window. It m
 - the portable package is the easiest path for friend testers
 - on first launch, Windows SmartScreen may ask for confirmation because the package is unsigned
 - the first launch may take a few extra seconds before the browser opens
-- if the launcher says it cannot find the path specified, the zip was usually not extracted before launch
 
 ### Manual fallback setup
 
