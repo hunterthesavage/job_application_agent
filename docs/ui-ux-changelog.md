@@ -28,6 +28,12 @@ Entry format:
 - Validation: reviewed the Windows README flow to keep the screenshot placeholder order and install steps unchanged while swapping the primary/fallback download emphasis.
 - Files: `README.md`, `docs/ui-ux-changelog.md`
 
+### Replaced the Windows README placeholders with real friend-test screenshots
+- Summary: added the actual Windows screenshots for downloading the zip, extracting it, opening the extracted folder, and handling the two launch prompts so the README now mirrors the real tester flow.
+- Why: the placeholders were ready, and swapping in the real screenshots makes it much easier for a non-technical tester to follow the install path without guessing.
+- Validation: matched each screenshot to the existing Step 1-4 order and updated the Step 4 wording so it lines up with the actual `Run` and `Allow` prompts shown in Windows.
+- Files: `README.md`, `docs/assets/windows-step-1-download.png`, `docs/assets/windows-step-2-extract.png`, `docs/assets/windows-step-3-open-folder.png`, `docs/assets/windows-step-4-run-warning.png`, `docs/assets/windows-step-4-firewall.png`, `docs/ui-ux-changelog.md`
+
 ### Moved the close control into the hero and simplified OpenAI status colors
 - Summary: moved `Close Application` into the upper-right hero stack, changed it to a more explicit `✕ Close Application` control, and simplified the OpenAI badge so it shows green when active and red when inactive.
 - Why: the floating close button was too easy to mistake for a normal workflow action, and the prior OpenAI badge colors did not make the active/not-active state obvious enough during local UI review.

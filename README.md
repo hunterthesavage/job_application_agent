@@ -97,7 +97,7 @@ Recovery baseline details:
 
 Save it somewhere easy to find, like `Downloads`.
 
-(PLACEHOLDER FOR SCREENSHOT)
+![Step 1 - Download the Windows package](docs/assets/windows-step-1-download.png)
 
 ### Step 2) Extract The Zip
 
@@ -109,19 +109,24 @@ Save it somewhere easy to find, like `Downloads`.
    - or right-click the zip and click `Extract All...`
 5. Click `Extract`.
 
-(PLACEHOLDER FOR SCREENSHOT)
+![Step 2 - Extract the zip](docs/assets/windows-step-2-extract.png)
 
 ### Step 3) Open The Extracted Folder
 
 Open the extracted `JobApplicationAgent` folder.
 
-(PLACEHOLDER FOR SCREENSHOT)
+![Step 3 - Open the extracted folder](docs/assets/windows-step-3-open-folder.png)
 
 ### Step 4) Start The App
 
 1. Double-click `INSTALL JAA.bat`.
-2. If Windows SmartScreen appears, click `More info` and then `Run anyway`.
-3. Wait a few seconds for the browser to open.
+2. If Windows asks whether to run the file, click `Run`.
+3. If Windows Security asks about Python network access, click `Allow`.
+4. Wait a few seconds for the browser to open.
+
+![Step 4 - Run the installer](docs/assets/windows-step-4-run-warning.png)
+
+![Step 4 - Allow Python through Windows Security](docs/assets/windows-step-4-firewall.png)
 
 The app should open in your browser at:
 
