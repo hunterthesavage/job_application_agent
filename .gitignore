@@ -37,7 +37,6 @@ backup_streamlit_chrome_pass/
 backup_validation_fix/
 backup_nav_redesign/
 backup_option_b_style/
-dist/
 
 # Streamlit local state
 .streamlit/secrets.toml

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import html
 import subprocess
 from datetime import datetime

@@ -79,58 +79,72 @@ If that happens:
 
 # Windows Setup
 
-### Recommended: Portable Windows package
-
-This is now the preferred Windows tester path.
-
-The portable package includes:
-
-- the app
-- the required Python runtime
-- the installed dependencies
-- a double-click launcher
-
-That means testers do **not** need to install Python or create a virtual environment.
-
-### Portable install steps
-
-1. Download the portable Windows package zip from the maintainer or the latest published build.
-2. Extract the zip anywhere you like.
-3. Open the extracted folder.
-4. Double-click `Launch Job Application Agent.bat`.
-
-The app should open in your browser at:
-
-- [http://localhost:8505](http://localhost:8505)
-
 ### Notes for Windows users
 
 - Windows support is still more lightly tested than Mac
-- the portable package is the easiest path for friend testers
-- on first launch, Windows SmartScreen may ask for confirmation because the package is unsigned
+- for now, use **Python x64**, not **Python ARM64**
+- the most reliable first-run path is the Command Prompt flow below
+- after setup, `run_app_windows.bat` is the easiest way to reopen the app
 
-### Manual fallback setup
+### Step 1) Install Python x64
 
-If you are running directly from the repo instead of the portable package, use the existing Python-based setup:
-
-1. Install **Python x64 3.13**
-2. Download the repo zip
-3. Run `install_windows.bat`
-4. Launch with `run_app_windows.bat`
-
-Exact installer:
-
-- [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
-
-Maintainers can build the portable package with:
-
-```powershell
-.\scripts\build_windows_portable.ps1
+```bat
+cd /d "%USERPROFILE%\Downloads"
+curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
 ```
 
-More details:
+Then run:
 
-- `docs/windows-portable-build.md`
+```bat
+start /wait python-3.13.12-amd64.exe
+```
+
+NOTE: The above may install the wrong version needed. If so, use this exact installer instead:
+		
+- [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
+
+In the installer: Check `Add Python to PATH`
+
+
+Then:
+1. close Command Prompt
+2. open a new Command Prompt window
+
+### Step 2) Download the app in Command Prompt
+
+Download the latest app ZIP:
+
+```bat
+cd /d "%USERPROFILE%\Downloads"
+curl -L -o job_application_agent.zip https://github.com/hunterthesavage/job_application_agent/archive/refs/heads/main.zip
+tar -xf job_application_agent.zip
+cd /d "%USERPROFILE%\Downloads\job_application_agent-main"
+```
+
+### Step 3) Create the virtual environment and install requirements
+
+Run:
+
+```bat
+py -3 -m venv .venv
+call .venv\Scripts\activate.bat
+python --version
+python -m pip install --upgrade pip
+
+python -m pip install -r requirements.txt
+```
+
+### Step 4) Launch the app
+
+Run:
+
+```bat
+python -m streamlit run app.py --server.headless true --server.port 8505
+```
+
+Then open:
+
+- [http://localhost:8505](http://localhost:8505)
 
 ## First launch
 
