@@ -264,9 +264,9 @@ if (-not $pids -or $pids.Count -eq 0) {
 }
 
 $stopped = $false
-foreach ($pid in $pids) {
+foreach ($targetPid in $pids) {
     try {
-        Stop-Process -Id ([int]$pid) -Force -ErrorAction Stop
+        Stop-Process -Id ([int]$targetPid) -Force -ErrorAction Stop
         $stopped = $true
     } catch {
     }
