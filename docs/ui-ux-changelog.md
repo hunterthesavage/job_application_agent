@@ -22,6 +22,18 @@ Entry format:
 
 ## 2026-03-28
 
+### Corrected the Windows zip-extraction step for Windows 11
+- Summary: updated the README extraction instructions to match Windows 11 behavior by pointing testers to the File Explorer `Extract all` button or the `Show more options` menu path instead of assuming `Extract All...` appears in the first right-click menu.
+- Why: a tester screenshot showed that the previous wording did not match the actual Windows context menu, which made the install guide misleading at a critical step.
+- Validation: compared the updated README wording against the provided Windows screenshot and adjusted the step order to reflect what is actually visible in File Explorer.
+- Files: `README.md`, `docs/ui-ux-changelog.md`
+
+### Replaced Windows install mockups with screenshot placeholders
+- Summary: removed the temporary SVG mockups from the Windows README section, replaced them with `(PLACEHOLDER FOR SCREENSHOT)`, and simplified the extracted-folder step copy.
+- Why: the install guide is ready for real tester screenshots, and placeholder text is less misleading than polished mock visuals before those captures exist.
+- Validation: reviewed the Windows README flow after the change to keep the step order intact while removing the interim image assets from the instructions.
+- Files: `README.md`, `docs/ui-ux-changelog.md`
+
 ### Simplified Windows install guide and renamed the launcher
 - Summary: reduced the Windows README section to a tester-only step-by-step flow, added visual install panels, and renamed the packaged launcher from `Launch Job Application Agent.bat` to `INSTALL JAA.bat`.
 - Why: the old wording still created confusion during friend testing, and the launcher name needed to be shorter and more obvious once the folder was extracted.
