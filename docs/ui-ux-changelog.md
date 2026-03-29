@@ -22,12 +22,6 @@ Entry format:
 
 ## 2026-03-28
 
-### Reverted the broad packaged shell polish pass
-- Summary: backed out the wider packaged-shell styling changes that had reworked the wizard shell and Streamlit chrome handling, returning the app to the previous safer UI baseline while keeping the separate Windows launch/stop/package improvements.
-- Why: live Windows testing showed the polish pass introduced new visual regressions, including washed-out wizard content and incorrect button styling, so the safest move was to remove that layer before more end-to-end testing.
-- Validation: `git revert --no-edit cffded1`; reviewed the revert scope to ensure it only removed the shell-polish changes from `ui/styles.py`, `views/setup_wizard.py`, and the related packaged config updates.
-- Files: `ui/styles.py`, `views/setup_wizard.py`, `scripts/build_windows_portable.ps1`, `install_windows.bat`, `install_mac.sh`, `docs/ui-ux-changelog.md`
-
 ### Trimmed non-runtime weight from the Windows portable package
 - Summary: updated the Windows portable builder to prune `__pycache__`, `.pyc`/`.pyo`, Jupyter assets, JavaScript source maps, and build-only Python folders like `test`, `tkinter`, `idlelib`, `ensurepip`, `pip`, `setuptools`, and `wheel` before zipping the app.
 - Why: the portable Windows download had grown too large, and inspection showed most of the excess size was coming from packaging leftovers rather than app code or required runtime files.
