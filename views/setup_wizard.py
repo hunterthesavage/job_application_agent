@@ -35,6 +35,19 @@ def _inject_wizard_css() -> None:
     st.markdown(
         """
         <style>
+            div[data-testid="stHeadingWithActionElements"] h1,
+            div[data-testid="stHeadingWithActionElements"] h2,
+            div[data-testid="stHeadingWithActionElements"] h3 {
+                color: rgba(255,255,255,0.98) !important;
+            }
+
+            div[data-testid="stMarkdownContainer"] p,
+            div[data-testid="stMarkdownContainer"] li,
+            div[data-testid="stMarkdownContainer"] strong,
+            div[data-testid="stCaptionContainer"] {
+                color: rgba(226,232,240,0.94) !important;
+            }
+
             .wizard-step-heading {
                 display: flex;
                 align-items: center;
@@ -223,7 +236,7 @@ def _render_welcome_step() -> None:
     st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
     skip_col_1, skip_col_2 = st.columns([1, 5])
     with skip_col_1:
-        if st.button("Skip", type="secondary", use_container_width=True, key="wizard_skip_to_app_welcome"):
+        if st.button("Skip", type="tertiary", use_container_width=True, key="wizard_skip_to_app_welcome"):
             _skip_to_app()
             st.rerun()
     with skip_col_2:
@@ -366,7 +379,7 @@ def _render_search_step() -> None:
 
         back_col, next_col = st.columns([1, 1.35])
         with back_col:
-            back_clicked = st.form_submit_button("Back", use_container_width=True)
+            back_clicked = st.form_submit_button("Back", type="tertiary", use_container_width=True)
         with next_col:
             next_clicked = st.form_submit_button("Suggest Relevant Updates", type="primary", use_container_width=True)
 
@@ -495,7 +508,7 @@ def _render_profile_step() -> None:
 
     c1, c2, c3 = st.columns([1, 1.25, 1])
     with c1:
-        back_clicked = st.button("Back", use_container_width=True, key="wizard_profile_back")
+        back_clicked = st.button("Back", type="tertiary", use_container_width=True, key="wizard_profile_back")
     with c2:
         save_clicked = st.button(
             "Save and Continue",
@@ -505,7 +518,7 @@ def _render_profile_step() -> None:
             disabled=not has_unsaved_changes,
         )
     with c3:
-        skip_clicked = st.button("Skip for Now", use_container_width=True, key="wizard_profile_skip")
+        skip_clicked = st.button("Skip for Now", type="tertiary", use_container_width=True, key="wizard_profile_skip")
 
     if back_clicked:
         _go_back()
@@ -571,7 +584,7 @@ def _render_openai_step() -> None:
 
     c1, c2, c3 = st.columns([1, 1.2, 1])
     with c1:
-        if st.button("Back", use_container_width=True, key="wizard_openai_back"):
+        if st.button("Back", type="tertiary", use_container_width=True, key="wizard_openai_back"):
             _go_back()
             st.rerun()
     with c2:
@@ -586,12 +599,12 @@ def _render_openai_step() -> None:
             _go_next()
             st.rerun()
     with c3:
-        if st.button("Skip for Now", use_container_width=True, key="wizard_openai_skip"):
+        if st.button("Skip for Now", type="tertiary", use_container_width=True, key="wizard_openai_skip"):
             _go_next()
             st.rerun()
 
     if details["can_delete_saved_key"]:
-        if st.button("Delete Saved Local Key", type="secondary", key="wizard_delete_saved_openai"):
+        if st.button("Delete Saved Local Key", type="tertiary", key="wizard_delete_saved_openai"):
             try:
                 delete_saved_openai_api_key()
                 st.session_state["wizard_openai_api_key_value"] = ""
@@ -660,7 +673,7 @@ def _render_ai_review_step() -> None:
                     _start_first_discovery()
                     st.rerun()
             with c2:
-                if st.button("Find Jobs Without Changes", use_container_width=True, key="wizard_cancel_titles"):
+                if st.button("Find Jobs Without Changes", type="tertiary", use_container_width=True, key="wizard_cancel_titles"):
                     st.session_state["wizard_ai_review_choice_made"] = True
                     st.session_state["wizard_ai_review_message"] = "Using your current titles. Starting your first job search now."
                     _start_first_discovery()
@@ -672,7 +685,7 @@ def _render_ai_review_step() -> None:
                 _start_first_discovery()
                 st.rerun()
         with c2:
-            if st.button("Back", use_container_width=True, key="wizard_ai_review_back"):
+            if st.button("Back", type="tertiary", use_container_width=True, key="wizard_ai_review_back"):
                 st.session_state["wizard_ai_review_generated"] = False
                 st.session_state["wizard_ai_review_choice_made"] = False
                 _go_back()

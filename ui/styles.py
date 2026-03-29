@@ -5,6 +5,14 @@ def inject_custom_css() -> None:
     st.markdown(
         """
         <style>
+            header[data-testid="stHeader"],
+            [data-testid="stToolbar"],
+            [data-testid="stDecoration"],
+            #MainMenu {
+                display: none !important;
+                visibility: hidden !important;
+            }
+
             .stApp {
                 background:
                     radial-gradient(circle at top left, rgba(59,130,246,0.10), transparent 28%),
@@ -13,7 +21,7 @@ def inject_custom_css() -> None:
             }
 
             .block-container {
-                padding-top: 2.6rem;
+                padding-top: 1.25rem;
                 padding-bottom: 2.75rem;
                 max-width: 1520px;
             }
