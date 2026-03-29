@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-29
 
+### Added a dedicated Windows test link next to the known-good package
+- Summary: updated the Windows README section to include a separate `Test Link` right next to the known-good package link, pointing at the current `windows-portable-lab` release asset.
+- Why: using a single stable link and a single current test link side by side makes it much easier to tell whether a Windows test is using the frozen recovery package or the latest lab package.
+- Validation: verified the live `windows-portable-lab` release asset URL and inserted it directly into the README next to the known-good download link.
+- Files: `README.md`, `docs/ui-ux-changelog.md`
+
 ### Restored the hidden Streamlit chrome settings and matched the shutdown button style
 - Summary: updated the lab package builder to write the same `.streamlit/config.toml` settings the old working Windows launcher created at first run, and changed the in-app `Close Application` control to use the existing tertiary button styling instead of the default white Streamlit button.
 - Why: the lab package reintroduced the top-right Streamlit chrome because the hidden launcher no longer generated the old config file, and the new shutdown button looked out of place because it was rendering with Streamlit's default button style.

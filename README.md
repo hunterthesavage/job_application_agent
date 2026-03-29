@@ -84,6 +84,7 @@ If that happens:
 Download:
 
 - [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip)
+- [Test Link](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-lab/JobApplicationAgent-windows-portable-lab.zip) - latest Windows lab package for current testing
 
 Save it somewhere easy to find, like `Downloads`.
 
