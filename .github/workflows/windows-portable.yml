@@ -25,4 +25,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: job-application-agent-windows-portable
-          path: dist/windows-portable/JobApplicationAgent-windows-portable.zip
+          path: dist/windows-portable/JobApplicationAgent

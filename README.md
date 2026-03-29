@@ -118,8 +118,8 @@ The app should open in your browser at:
 1. Open the repo `Actions` tab.
 2. Open the latest successful `Build Windows Portable Package` run.
 3. Download the artifact named `job-application-agent-windows-portable`.
-4. Unzip the downloaded artifact.
-5. Open the extracted folder and then open the inner `JobApplicationAgent` folder.
+4. Unzip the downloaded artifact zip.
+5. Open the extracted `JobApplicationAgent` folder.
 6. Double-click `Launch Job Application Agent.bat`.
 
 ### Notes for Windows users
