@@ -1,114 +1,99 @@
 param(
-    [string]$PythonVersion = "3.13.12",
     [string]$BuildRoot = "dist/windows-portable",
     [string]$PackageName = "JobApplicationAgent",
+    [string]$BaselineZipPath = "",
+    [string]$BaselineZipUrl = "https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip",
     [switch]$SkipZip
 )
 
 $ErrorActionPreference = "Stop"
 
+function Remove-IfExists {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (Test-Path $Path) {
+        Remove-Item $Path -Recurse -Force
+    }
+}
+
+function Remove-GhostFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root
+    )
+
+    Get-ChildItem -Path $Root -Recurse -Force |
+        Where-Object { $_.Name -like "._*" } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    Get-ChildItem -Path $Root -Directory -Force |
+        Where-Object { $_.Name -eq "__MACOSX" } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+function Remove-PythonNoise {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PythonRoot
+    )
+
+    $safeRemoveDirs = @(
+        "Lib/site-packages/share/jupyter"
+    )
+
+    foreach ($relative in $safeRemoveDirs) {
+        $target = Join-Path $PythonRoot $relative
+        if (Test-Path $target) {
+            Remove-Item $target -Recurse -Force
+        }
+    }
+
+    Get-ChildItem -Path $PythonRoot -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    Get-ChildItem -Path $PythonRoot -Recurse -File -Include "*.pyc", "*.pyo", "*.js.map" -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $distRoot = Join-Path $repoRoot $BuildRoot
 $packageRoot = Join-Path $distRoot $PackageName
 $pythonRoot = Join-Path $packageRoot "python"
-$appRoot = Join-Path $packageRoot "app"
-$sitePackages = Join-Path $pythonRoot "Lib/site-packages"
-$pythonZipName = "python-$PythonVersion-embed-amd64.zip"
-$pythonZipUrl = "https://www.python.org/ftp/python/$PythonVersion/$pythonZipName"
-$pythonZipPath = Join-Path $distRoot $pythonZipName
 $portableZipPath = Join-Path $distRoot "$PackageName-windows-portable.zip"
-$buildPython = Get-Command python -ErrorAction Stop
+$downloadZipPath = Join-Path $distRoot "known-good-windows-portable.zip"
 
 Write-Host "==> Cleaning previous portable build"
-if (Test-Path $packageRoot) {
-    Remove-Item $packageRoot -Recurse -Force
-}
-if (Test-Path $portableZipPath) {
-    Remove-Item $portableZipPath -Force
-}
+Remove-IfExists -Path $packageRoot
+Remove-IfExists -Path $portableZipPath
+Remove-IfExists -Path $downloadZipPath
 
 New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
-New-Item -ItemType Directory -Force -Path $pythonRoot | Out-Null
-New-Item -ItemType Directory -Force -Path $appRoot | Out-Null
-New-Item -ItemType Directory -Force -Path $sitePackages | Out-Null
 
-Write-Host "==> Downloading embedded Python $PythonVersion"
-Invoke-WebRequest -Uri $pythonZipUrl -OutFile $pythonZipPath
-
-Write-Host "==> Extracting embedded Python"
-Expand-Archive -Path $pythonZipPath -DestinationPath $pythonRoot -Force
-
-$pthFile = Get-ChildItem -Path $pythonRoot -Filter "python*._pth" | Select-Object -First 1
-if (-not $pthFile) {
-    throw "Could not find python*._pth in $pythonRoot"
+if ([string]::IsNullOrWhiteSpace($BaselineZipPath)) {
+    Write-Host "==> Downloading known-good baseline package"
+    Invoke-WebRequest -Uri $BaselineZipUrl -OutFile $downloadZipPath
+    $baselineZip = $downloadZipPath
+} else {
+    $baselineZip = (Resolve-Path $BaselineZipPath).Path
 }
 
-$pthLines = @(
-    "$($pthFile.BaseName).zip"
-    "."
-    "Lib\site-packages"
-    "..\app"
-    "import site"
-)
-Set-Content -Path $pthFile.FullName -Value $pthLines -Encoding ASCII
+Write-Host "==> Expanding known-good baseline"
+Expand-Archive -Path $baselineZip -DestinationPath $distRoot -Force
 
-Write-Host "==> Installing app dependencies into embedded runtime"
-& $buildPython.Source -m pip install --upgrade pip
-& $buildPython.Source -m pip install --target $sitePackages -r (Join-Path $repoRoot "requirements.txt")
-
-$copyItems = @(
-    "app.py",
-    "config.py",
-    "requirements.txt",
-    "README.md",
-    "profile_context.txt",
-    "services",
-    "src",
-    "ui",
-    "views"
-)
-
-Write-Host "==> Copying app files"
-foreach ($item in $copyItems) {
-    Copy-Item -Path (Join-Path $repoRoot $item) -Destination $appRoot -Recurse -Force
+if (-not (Test-Path $packageRoot)) {
+    throw "Expected extracted package folder at $packageRoot"
 }
 
-New-Item -ItemType Directory -Force -Path (Join-Path $appRoot "data") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $appRoot "backups") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $appRoot "logs") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $appRoot ".streamlit") | Out-Null
+Write-Host "==> Removing macOS ghost files"
+Remove-GhostFiles -Root $packageRoot
 
-$streamlitConfig = @'
-[client]
-toolbarMode = "minimal"
-showSidebarNavigation = false
-
-[browser]
-gatherUsageStats = false
-
-[theme]
-base = "dark"
-'@
-Set-Content -Path (Join-Path $appRoot ".streamlit/config.toml") -Value $streamlitConfig -Encoding ASCII
-
-$launcherName = "INSTALL JAA.bat"
-$installLauncher = @'
-@echo off
-setlocal
-
-set "ROOT_DIR=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launch_jaa.ps1"
-if errorlevel 1 (
-    echo.
-    echo Job Application Agent failed to launch.
-    echo Check app\logs\jaa_stderr.log for details.
-    pause
-    exit /b 1
-)
-
-endlocal
-'@
-Set-Content -Path (Join-Path $packageRoot $launcherName) -Value $installLauncher -Encoding ASCII
+Write-Host "==> Removing safe Python packaging clutter"
+if (Test-Path $pythonRoot) {
+    Remove-PythonNoise -PythonRoot $pythonRoot
+}
 
 $stopLauncher = @'
 @echo off
@@ -129,117 +114,52 @@ endlocal
 '@
 Set-Content -Path (Join-Path $packageRoot "STOP JAA.bat") -Value $stopLauncher -Encoding ASCII
 
-$launchScript = @'
+$stopScript = @'
 $ErrorActionPreference = "Stop"
 
-$rootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$appRoot = Join-Path $rootDir "app"
-$pythonExe = Join-Path $rootDir "python\python.exe"
-$pidFile = Join-Path $appRoot "data\jaa_server.pid"
-$stdoutLog = Join-Path $appRoot "logs\jaa_stdout.log"
-$stderrLog = Join-Path $appRoot "logs\jaa_stderr.log"
+$port = 8505
+$pids = @()
 
-foreach ($path in @(
-    (Join-Path $appRoot "data"),
-    (Join-Path $appRoot "backups"),
-    (Join-Path $appRoot "logs"),
-    (Join-Path $appRoot ".streamlit")
-)) {
-    New-Item -ItemType Directory -Force -Path $path | Out-Null
-}
-
-if (-not (Test-Path $pythonExe)) {
-    throw "Bundled Python runtime was not found."
-}
-
-if (Test-Path $pidFile) {
-    $savedPid = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-    if ($savedPid -match '^\d+$') {
-        $existing = Get-Process -Id ([int]$savedPid) -ErrorAction SilentlyContinue
-        if ($existing) {
-            Start-Process "http://127.0.0.1:8505"
-            exit 0
+try {
+    $pids = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop |
+        Select-Object -ExpandProperty OwningProcess -Unique
+} catch {
+    $matches = netstat -ano | Select-String "LISTENING"
+    foreach ($line in $matches) {
+        $text = [string]$line
+        if ($text -match "127\.0\.0\.1:$port\s+\S+\s+LISTENING\s+(\d+)$") {
+            $pids += [int]$Matches[1]
+        } elseif ($text -match "0\.0\.0\.0:$port\s+\S+\s+LISTENING\s+(\d+)$") {
+            $pids += [int]$Matches[1]
+        } elseif ($text -match "\[::\]:$port\s+\S+\s+LISTENING\s+(\d+)$") {
+            $pids += [int]$Matches[1]
         }
     }
-    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 }
 
-$arguments = @(
-    "-m",
-    "streamlit",
-    "run",
-    "app.py",
-    "--server.headless", "true",
-    "--server.address", "127.0.0.1",
-    "--server.port", "8505",
-    "--browser.gatherUsageStats", "false"
-)
+$pids = $pids | Where-Object { $_ -and $_ -ne 0 } | Sort-Object -Unique
+if (-not $pids -or $pids.Count -eq 0) {
+    exit 1
+}
 
-$proc = Start-Process `
-    -FilePath $pythonExe `
-    -ArgumentList $arguments `
-    -WorkingDirectory $appRoot `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $stdoutLog `
-    -RedirectStandardError $stderrLog `
-    -PassThru
-
-Set-Content -Path $pidFile -Value $proc.Id -Encoding ASCII
-
-$healthy = $false
-for ($i = 0; $i -lt 25; $i++) {
-    Start-Sleep -Seconds 1
-    if ($proc.HasExited) {
-        break
-    }
+$stopped = $false
+foreach ($pid in $pids) {
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8505/_stcore/health" -TimeoutSec 2
-        if ($response.StatusCode -eq 200) {
-            $healthy = $true
-            break
-        }
+        Stop-Process -Id ([int]$pid) -Force -ErrorAction Stop
+        $stopped = $true
     } catch {
     }
 }
 
-if (-not $healthy -and $proc.HasExited) {
-    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-    throw "Job Application Agent exited before the local server became healthy."
-}
-
-Start-Process "http://127.0.0.1:8505"
-'@
-Set-Content -Path (Join-Path $packageRoot "launch_jaa.ps1") -Value $launchScript -Encoding ASCII
-
-$stopScript = @'
-$ErrorActionPreference = "Stop"
-
-$rootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$appRoot = Join-Path $rootDir "app"
-$pidFile = Join-Path $appRoot "data\jaa_server.pid"
-
-if (-not (Test-Path $pidFile)) {
+if (-not $stopped) {
     exit 1
 }
-
-$savedPid = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-if (-not ($savedPid -match '^\d+$')) {
-    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-    exit 1
-}
-
-$proc = Get-Process -Id ([int]$savedPid) -ErrorAction SilentlyContinue
-if (-not $proc) {
-    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-    exit 1
-}
-
-Stop-Process -Id ([int]$savedPid) -Force -ErrorAction Stop
-Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 '@
 Set-Content -Path (Join-Path $packageRoot "stop_jaa.ps1") -Value $stopScript -Encoding ASCII
 
-$readme = @'
+$readmePath = Join-Path $packageRoot "WINDOWS_PORTABLE_README.txt"
+if (Test-Path $readmePath) {
+    $readme = @'
 Job Application Agent - Windows Portable Package
 
 How to use:
@@ -255,7 +175,8 @@ Notes:
 - Use "STOP JAA.bat" when you want to fully stop the local app server.
 - On first launch, Windows SmartScreen may ask for confirmation because this package is unsigned.
 '@
-Set-Content -Path (Join-Path $packageRoot "WINDOWS_PORTABLE_README.txt") -Value $readme -Encoding ASCII
+    Set-Content -Path $readmePath -Value $readme -Encoding ASCII
+}
 
 if (-not $SkipZip) {
     Write-Host "==> Creating portable zip"
@@ -263,6 +184,7 @@ if (-not $SkipZip) {
 }
 
 Write-Host "==> Windows portable package ready"
+Write-Host "Baseline zip:  $baselineZip"
 Write-Host "Package folder: $packageRoot"
 if (-not $SkipZip) {
     Write-Host "Package zip:    $portableZipPath"

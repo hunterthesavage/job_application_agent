@@ -20,6 +20,14 @@ Entry format:
 
 ---
 
+## 2026-03-29
+
+### Switched lab Windows packaging to patch the known-good baseline
+- Summary: changed the lab portable-package builder to start from the exact known-good Windows release zip, strip `._...` ghost files, add `STOP JAA.bat`, and prune safe non-runtime Python clutter instead of rebuilding the app from repo source.
+- Why: rebuilding the package from scratch introduced UI regressions, so future Windows packaging work needs to preserve the working app shell and only change the packaging layer on the lab branch.
+- Validation: verified the exact baseline zip contents, confirmed the ghost-file count and safe Python clutter targets locally, and updated the lab release workflow defaults so future packaging experiments publish to `windows-portable-lab` instead of the main recovery release.
+- Files: `scripts/build_windows_portable.ps1`, `.github/workflows/windows-portable-release.yml`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+
 ## 2026-03-28
 
 ### Hid the packaged console and added cleaner app shutdown controls

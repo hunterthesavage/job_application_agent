@@ -6,11 +6,11 @@ on:
       tag_name:
         description: Release tag to create or update
         required: true
-        default: windows-portable-latest
+        default: windows-portable-lab
       release_name:
         description: Release title shown on GitHub
         required: true
-        default: Windows Portable Latest
+        default: Windows Portable Lab
 
 jobs:
   publish-windows-portable:
@@ -40,11 +40,14 @@ jobs:
           $tag = "${{ inputs.tag_name }}"
           $title = "${{ inputs.release_name }}"
           $asset = "dist/windows-portable/JobApplicationAgent-windows-portable.zip"
+          $assetLabel = "JobApplicationAgent-windows-portable-lab.zip"
           $notes = @"
-Portable Windows build of Job Application Agent.
+Lab Windows build of Job Application Agent.
+
+This release is for packaging experiments only. The main known-good fallback remains the recovery asset on the `windows-portable-latest` release.
 
 How to install:
-1. Download `JobApplicationAgent-windows-portable.zip` from this release.
+1. Download `$assetLabel` from this release.
 2. Extract it.
 3. Open the `JobApplicationAgent` folder.
 4. Double-click `INSTALL JAA.bat`.
@@ -58,4 +61,4 @@ How to install:
             gh release edit $tag --title $title --notes-file release-notes.txt
           }
 
-          gh release upload $tag $asset --clobber
+          gh release upload $tag "$asset#$assetLabel" --clobber

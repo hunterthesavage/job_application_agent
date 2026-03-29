@@ -28,6 +28,8 @@ Run this on Windows with PowerShell and a normal builder Python available:
 .\scripts\build_windows_portable.ps1
 ```
 
+On `codex/windows-packaging-lab`, this build script starts from the exact known-good Windows release zip instead of rebuilding the app from repo source.
+
 Output:
 
 - package folder: `dist/windows-portable/JobApplicationAgent`
@@ -35,14 +37,14 @@ Output:
 
 ## How it works
 
-The script:
+The lab script:
 
-1. downloads the official embedded Python zip from python.org
-2. expands it into the package
-3. installs `requirements.txt` into the embedded runtime's `Lib/site-packages`
-4. copies the app source into an `app/` folder
-5. writes a batch launcher that starts Streamlit with the bundled Python
-6. zips the finished package for sharing
+1. downloads or reuses the exact known-good Windows baseline zip
+2. expands that working package into the build folder
+3. strips macOS `._...` ghost files that confuse Windows testers
+4. removes safe non-runtime Python clutter like `__pycache__`, `.pyc`, `.pyo`, `.js.map`, and Jupyter assets
+5. adds `STOP JAA.bat` plus `stop_jaa.ps1`
+6. rezips the finished package for sharing
 
 ## Recommended tester flow
 
@@ -62,7 +64,7 @@ The repo includes a manual GitHub Actions workflow at:
 
 Use `windows-portable.yml` when you want a maintainer-only Actions artifact build.
 
-Use `windows-portable-release.yml` when you want a friend-tester-friendly GitHub Release download.
+Use `windows-portable-release.yml` when you want a friend-tester-friendly GitHub Release download from the lab branch without touching the known-good recovery release on `main`.
 
 The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `JobApplicationAgent` folder so maintainers can:
 
@@ -72,10 +74,10 @@ The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `Jo
 4. double-click `INSTALL JAA.bat`
 5. use `STOP JAA.bat` later if needed
 
-The Release workflow publishes:
+The lab Release workflow publishes:
 
-- tag: `windows-portable-latest`
-- title: `Windows Portable Latest`
-- asset: `JobApplicationAgent-windows-portable.zip`
+- tag: `windows-portable-lab`
+- title: `Windows Portable Lab`
+- asset: `JobApplicationAgent-windows-portable-lab.zip`
 
-That is the simplest download path to hand to non-technical testers.
+That keeps packaging experiments separate from the known-good fallback on `windows-portable-latest`.
