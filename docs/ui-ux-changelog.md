@@ -22,18 +22,6 @@ Entry format:
 
 ## 2026-03-28
 
-### Re-hid the Streamlit top bar in packaged installs
-- Summary: tightened the shipped Streamlit client config from `minimal` to `viewer` and added CSS to hide the Streamlit header, toolbar, decoration, and menu chrome so the packaged app no longer shows the Deploy/top-bar controls.
-- Why: end-to-end Windows testing showed the Streamlit Deploy/top-bar UI had resurfaced after the packaging work, which made the app feel unfinished and regressed earlier UI cleanup.
-- Validation: reviewed the packaged config sources and added a direct CSS hide in the app shell so the UI no longer depends on Streamlit's weaker minimal-toolbar behavior alone.
-- Files: `ui/styles.py`, `scripts/build_windows_portable.ps1`, `install_mac.sh`, `install_windows.bat`, `docs/ui-ux-changelog.md`
-
-### Restored full-contrast setup wizard rendering
-- Summary: switched the setup wizard shell to a real bordered Streamlit container and added stronger wizard-page CSS for headings, body copy, and the shell wrapper so the first-run setup no longer appears washed out or dimmed.
-- Why: Windows testing showed the wizard content was rendering with muted, gray-looking text and a flimsy shell presentation, which made the onboarding flow feel like a disabled background screen.
-- Validation: `python3 -m py_compile views/setup_wizard.py ui/styles.py app.py config.py services/app_control.py`
-- Files: `views/setup_wizard.py`, `ui/styles.py`, `docs/ui-ux-changelog.md`
-
 ### Trimmed non-runtime weight from the Windows portable package
 - Summary: updated the Windows portable builder to prune `__pycache__`, `.pyc`/`.pyo`, Jupyter assets, JavaScript source maps, and build-only Python folders like `test`, `tkinter`, `idlelib`, `ensurepip`, `pip`, `setuptools`, and `wheel` before zipping the app.
 - Why: the portable Windows download had grown too large, and inspection showed most of the excess size was coming from packaging leftovers rather than app code or required runtime files.

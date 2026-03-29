@@ -41,7 +41,7 @@ mkdir -p data backups logs .streamlit
 if [ ! -f .streamlit/config.toml ]; then
   cat > .streamlit/config.toml <<'EOF'
 [client]
-toolbarMode = "viewer"
+toolbarMode = "minimal"
 showSidebarNavigation = false
 
 [theme]

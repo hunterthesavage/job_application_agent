@@ -77,7 +77,7 @@ if not exist backups\.gitkeep type nul > backups\.gitkeep
 if not exist .streamlit\config.toml (
     (
         echo [client]
-        echo toolbarMode = "viewer"
+        echo toolbarMode = "minimal"
         echo showSidebarNavigation = false
         echo.
         echo [theme]
