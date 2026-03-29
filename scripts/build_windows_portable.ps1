@@ -58,9 +58,25 @@ function Remove-PythonNoise {
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
+function Copy-OverlayFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Source,
+        [Parameter(Mandatory = $true)]
+        [string]$Destination
+    )
+
+    $parent = Split-Path -Parent $Destination
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    Copy-Item -Path $Source -Destination $Destination -Force
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $distRoot = Join-Path $repoRoot $BuildRoot
 $packageRoot = Join-Path $distRoot $PackageName
+$appRoot = Join-Path $packageRoot "app"
 $pythonRoot = Join-Path $packageRoot "python"
 $portableZipPath = Join-Path $distRoot "$PackageName-windows-portable.zip"
 $downloadZipPath = Join-Path $distRoot "known-good-windows-portable.zip"
@@ -94,6 +110,11 @@ Write-Host "==> Removing safe Python packaging clutter"
 if (Test-Path $pythonRoot) {
     Remove-PythonNoise -PythonRoot $pythonRoot
 }
+
+Write-Host "==> Overlaying narrow app shutdown updates"
+Copy-OverlayFile -Source (Join-Path $repoRoot "app.py") -Destination (Join-Path $appRoot "app.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "config.py") -Destination (Join-Path $appRoot "config.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "services/app_control.py") -Destination (Join-Path $appRoot "services/app_control.py")
 
 $stopLauncher = @'
 @echo off

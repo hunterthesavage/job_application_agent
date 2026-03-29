@@ -43,8 +43,9 @@ The lab script:
 2. expands that working package into the build folder
 3. strips macOS `._...` ghost files that confuse Windows testers
 4. removes safe non-runtime Python clutter like `__pycache__`, `.pyc`, `.pyo`, `.js.map`, and Jupyter assets
-5. adds `STOP JAA.bat` plus `stop_jaa.ps1`
-6. rezips the finished package for sharing
+5. overlays only the narrow app shutdown files needed for the in-app `Close Application` button
+6. adds `STOP JAA.bat` plus `stop_jaa.ps1`
+7. rezips the finished package for sharing
 
 ## Recommended tester flow
 

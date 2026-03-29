@@ -351,6 +351,8 @@ def main() -> None:
     render_hero(show_busy_banner=not (show_pipeline_loading or show_new_roles_loading))
 
     if should_show_setup_wizard():
+        if render_close_application_button():
+            handle_close_application()
         render_setup_wizard()
         return
 
