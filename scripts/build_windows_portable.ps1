@@ -143,7 +143,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $appRoot ".streamlit") | Ou
 
 $streamlitConfig = @'
 [client]
-toolbarMode = "viewer"
+toolbarMode = "minimal"
 showSidebarNavigation = false
 
 [browser]
