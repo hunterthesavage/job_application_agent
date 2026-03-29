@@ -45,6 +45,8 @@ Run this on Windows with PowerShell and a normal builder Python available:
 .\scripts\build_windows_portable.ps1
 ```
 
+On `codex/windows-packaging-lab`, this build script starts from the exact known-good Windows release zip instead of rebuilding the app from repo source.
+
 Output:
 
 - package folder: `dist/windows-portable/JobApplicationAgent`
@@ -52,14 +54,16 @@ Output:
 
 ## How it works
 
-The script:
+The lab script:
 
-1. downloads the official embedded Python zip from python.org
-2. expands it into the package
-3. installs `requirements.txt` into the embedded runtime's `Lib/site-packages`
-4. copies the app source into an `app/` folder
-5. writes a batch launcher that starts Streamlit with the bundled Python
-6. zips the finished package for sharing
+1. downloads or reuses the exact known-good Windows baseline zip
+2. expands that working package into the build folder
+3. strips macOS `._...` ghost files that confuse Windows testers
+4. removes safe non-runtime Python clutter like `__pycache__`, `.pyc`, `.pyo`, `.js.map`, and Jupyter assets
+5. overlays only the narrow app shutdown files needed for the in-app `Close Application` button
+6. replaces the old foreground launcher with a hidden PowerShell start flow plus `launch_jaa.ps1`
+7. adds `STOP JAA.bat` plus `stop_jaa.ps1`
+8. rezips the finished package for sharing
 
 ## Recommended tester flow
 
@@ -72,14 +76,11 @@ For friend testers, share only the final portable zip and ask them to:
 
 ## GitHub workflow
 
-The repo includes a manual GitHub Actions workflow at:
+The repo includes a maintainer-only GitHub Actions workflow at:
 
 - `.github/workflows/windows-portable.yml`
-- `.github/workflows/windows-portable-release.yml`
 
-Use `windows-portable.yml` when you want a maintainer-only Actions artifact build.
-
-Use `windows-portable-release.yml` when you want a friend-tester-friendly GitHub Release download.
+Use `windows-portable.yml` when you want an Actions artifact build from the current branch.
 
 The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `JobApplicationAgent` folder so maintainers can:
 
@@ -89,10 +90,6 @@ The Actions artifact from `windows-portable.yml` is uploaded as the unpacked `Jo
 4. double-click `INSTALL JAA.bat`
 5. use `STOP JAA.bat` later if needed
 
-The Release workflow publishes:
+The public lab test download is still kept separate from the known-good fallback on `windows-portable-latest`, but it is refreshed manually from the latest passing Windows smoke artifact instead of through a dedicated release workflow.
 
-- tag: `windows-portable-latest`
-- title: `Windows Portable Latest`
-- asset: `JobApplicationAgent-windows-portable.zip`
-
-That is the simplest download path to hand to non-technical testers. Future experiments should happen on `codex/windows-packaging-lab` and only replace the release asset after a full Windows retest passes.
+The stable recovery release on `windows-portable-latest` remains the simplest download path to hand to non-technical testers. Future experiments should happen on `codex/windows-packaging-lab` and only replace that recovery asset after a full Windows retest passes.

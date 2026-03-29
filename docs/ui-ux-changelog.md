@@ -22,6 +22,17 @@ Entry format:
 
 ## 2026-03-29
 
+### Trimmed Windows packaging merge scope to the proven path
+- Summary: removed the flaky dedicated lab release workflow from the packaging branch, kept the Windows smoke coverage, and documented that the lab tester zip is refreshed manually from the latest passing smoke artifact instead of through a second automation path.
+- Why: the packaging branch was otherwise ready to merge, but every push still showed a failing no-job Actions run from the extra release workflow, which created noise and made the merge look less trustworthy than the actual tested package state.
+- Validation: reviewed the latest lab branch Actions runs, confirmed the newest Windows smoke run passed, and updated the maintainer docs to match the slimmer release process before merging back to `main`.
+- Files: `.github/workflows/windows-portable-release.yml`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+
+### Made the in-app close action swap to a shutdown page before attempting tab close
+- Summary: changed the `Close Application` flow to replace the current page with a lightweight shutdown screen and then attempt to close that page, instead of trying to close the live Streamlit view directly.
+- Why: browsers are more willing to close a blank or minimal replacement page than an active app page, so this improves the odds that the tab closes cleanly after the local app process stops.
+- Validation: reviewed the existing shutdown handler in `app.py` and replaced the direct `about:blank`/`window.close()` attempt with a shutdown-page handoff while keeping the same background-process shutdown path.
+- Files: `app.py`, `docs/ui-ux-changelog.md`
 ### Added a dedicated Windows test link next to the known-good package
 - Summary: updated the Windows README section to include a separate `Test Link` right next to the known-good package link, pointing at the current `windows-portable-lab` release asset.
 - Why: using a single stable link and a single current test link side by side makes it much easier to tell whether a Windows test is using the frozen recovery package or the latest lab package.
@@ -33,6 +44,24 @@ Entry format:
 - Why: Windows packaging changes had drifted away from the last package that actually worked in friend testing, so the repo needed a clearly documented fallback baseline before any more installer work continued.
 - Validation: verified the live release asset matches the recovered zip byte-for-byte at `142,376,536` bytes with SHA256 `b1058358dfce16c9c58a52ec5c32ae1a08f0caefa1da2633887365901d7ba2a8`, then aligned the docs to the exact package contents.
 - Files: `README.md`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+
+### Restored the hidden Streamlit chrome settings and matched the shutdown button style
+- Summary: updated the lab package builder to write the same `.streamlit/config.toml` settings the old working Windows launcher created at first run, and changed the in-app `Close Application` control to use the existing tertiary button styling instead of the default white Streamlit button.
+- Why: the lab package reintroduced the top-right Streamlit chrome because the hidden launcher no longer generated the old config file, and the new shutdown button looked out of place because it was rendering with Streamlit's default button style.
+- Validation: compared the exact working zip launcher to the lab launcher, confirmed the missing config creation path, and aligned the close button with the current CSS hook used by the existing shell styling.
+- Files: `app.py`, `scripts/build_windows_portable.ps1`, `docs/ui-ux-changelog.md`
+
+### Restored the Close Application control during setup
+- Summary: rendered the existing `Close Application` button during the setup wizard, not just after the main top navigation shell loads.
+- Why: the lab package already had the shutdown action wired up, but the setup wizard returned too early for that button to appear, which made it look missing during first-run testing.
+- Validation: reviewed the app shell flow in `app.py` and moved the same button path into the wizard branch so the UI now exposes shutdown before setup is finished.
+- Files: `app.py`, `docs/ui-ux-changelog.md`
+
+### Switched lab Windows packaging to patch the known-good baseline
+- Summary: changed the lab portable-package builder to start from the exact known-good Windows release zip, strip `._...` ghost files, overlay only the narrow shutdown files needed for the in-app close flow, replace the old foreground launcher with the hidden launch helper, add `STOP JAA.bat`, and prune safe non-runtime Python clutter instead of rebuilding the app from repo source.
+- Why: rebuilding the package from scratch introduced UI regressions, so future Windows packaging work needs to preserve the working app shell and only change the packaging layer on the lab branch.
+- Validation: verified the exact baseline zip contents, confirmed the ghost-file count and safe Python clutter targets locally, updated the lab release workflow defaults so future packaging experiments publish to `windows-portable-lab`, expanded the Windows smoke workflow so the lab branch now gets automated Windows validation too, and fixed the stop-script cleanup path after the smoke run exposed a PowerShell `$PID` name collision.
+- Files: `scripts/build_windows_portable.ps1`, `app.py`, `config.py`, `services/app_control.py`, `.github/workflows/windows-portable-release.yml`, `.github/workflows/windows-smoke.yml`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
 
 ## 2026-03-28
 

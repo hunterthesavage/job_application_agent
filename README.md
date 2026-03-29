@@ -99,7 +99,7 @@ Save it somewhere easy to find, like `Downloads`.
 ### Step 2) Extract The Zip
 
 1. Open File Explorer.
-2. Find `JobApplicationAgent-windows-portable.zip`.
+2. Find the zip you downloaded.
 3. Click the zip once to highlight it.
 4. Use one of these options:
    - click `Extract all` in the File Explorer toolbar
@@ -124,10 +124,10 @@ The app should open in your browser at:
 
 - [http://localhost:8505](http://localhost:8505)
 
-When you are done with this known-good package:
+When you are done:
 
-- close the browser tab
-- then close the Command Prompt window that launched with the app
+- for the known-good package, close the browser tab and then close the Command Prompt window that launched with the app
+- for the current test package, click `Close Application` inside the app or double-click `STOP JAA.bat`
 
 ### Manual fallback setup
 
