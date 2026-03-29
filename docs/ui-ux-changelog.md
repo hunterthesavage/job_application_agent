@@ -22,12 +22,6 @@ Entry format:
 
 ## 2026-03-28
 
-### Narrowed the packaged UI fix to chrome hiding and wizard readability
-- Summary: added a targeted CSS hide for the Streamlit header/toolbar chrome, reduced top padding to match, strengthened wizard heading/body text color, and moved wizard back/skip-style actions onto the existing tertiary button treatment instead of reworking the whole shell.
-- Why: the earlier broad packaged-shell polish and its rollback together showed that the real need was narrower: hide the Streamlit chrome and restore wizard readability without introducing new button or container regressions.
-- Validation: `python3 -m py_compile ui/styles.py views/setup_wizard.py app.py`
-- Files: `ui/styles.py`, `views/setup_wizard.py`, `docs/ui-ux-changelog.md`
-
 ### Switched Windows release downloads to timestamped zip names
 - Summary: changed the Windows release workflow to publish a timestamped portable zip name, delete older `JobApplicationAgent-windows-portable*.zip` assets on the release first, and updated the README/install docs to send testers to the release page instead of a cache-prone direct asset link.
 - Why: repeated Windows retests were still pulling old zips from browser or download caching because the release asset filename stayed the same across rebuilds.
