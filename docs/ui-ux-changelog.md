@@ -22,12 +22,6 @@ Entry format:
 
 ## 2026-03-28
 
-### Trimmed non-runtime weight from the Windows portable package
-- Summary: updated the Windows portable builder to prune `__pycache__`, `.pyc`/`.pyo`, Jupyter assets, JavaScript source maps, and build-only Python folders like `test`, `tkinter`, `idlelib`, `ensurepip`, `pip`, `setuptools`, and `wheel` before zipping the app.
-- Why: the portable Windows download had grown too large, and inspection showed most of the excess size was coming from packaging leftovers rather than app code or required runtime files.
-- Validation: `python3 -m py_compile app.py config.py services/app_control.py tests/test_app_control.py`; local zip-content analysis of the existing package showed roughly 162 MB of clearly pruneable non-runtime files targeted by the new builder step.
-- Files: `scripts/build_windows_portable.ps1`, `docs/ui-ux-changelog.md`
-
 ### Hid the packaged console and added cleaner app shutdown controls
 - Summary: changed the Windows portable package to start the app through hidden PowerShell helpers, added `STOP JAA.bat`, bound the packaged server to `127.0.0.1`, disabled usage-stat prompts, and added a `Close Application` button in the main UI that shuts the local app down.
 - Why: friend testing showed that the visible command window sticking around after launch felt broken and that closing the browser tab alone did not clearly stop the app.
