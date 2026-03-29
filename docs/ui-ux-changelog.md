@@ -20,7 +20,21 @@ Entry format:
 
 ---
 
+## 2026-03-28
+
+### Added automated Windows smoke coverage for tester installs
+- Summary: added a GitHub Actions Windows smoke workflow that checks the Python 3.9 compatibility files from the tester crash and verifies the portable package can build and boot on a Windows runner.
+- Why: the new Windows install path needed real Windows validation before handing it to friend testers, especially after a Python-version-specific startup failure.
+- Validation: workflow definition added for `windows-latest` with a Python 3.9 compile check and a portable-package launch health check against Streamlit.
+- Files: `.github/workflows/windows-smoke.yml`, `docs/ui-ux-changelog.md`
+
 ## 2026-03-27
+
+### Added a portable Windows install path for testers
+- Summary: added a maintainer build script for a bundled Windows portable package, a manual GitHub workflow to produce the package artifact, and README guidance that now recommends the no-Python double-click install path first.
+- Why: friend-tester setup was too fragile and confusing when it depended on installing Python, creating a virtual environment, and launching Streamlit manually.
+- Validation: reviewed the generated packaging flow, added the Windows artifact workflow, and prepared targeted compatibility checks for the Python 3.9 fallback path.
+- Files: `scripts/build_windows_portable.ps1`, `.github/workflows/windows-portable.yml`, `docs/windows-portable-build.md`, `README.md`, `docs/ui-ux-changelog.md`
 
 ### Run-input save button no longer gets stuck disabled
 - Summary: Removed the disabled-state trap from the Pipeline run-input form so `Save Run Inputs` remains clickable after edits inside the Streamlit form.
