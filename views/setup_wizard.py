@@ -35,6 +35,26 @@ def _inject_wizard_css() -> None:
     st.markdown(
         """
         <style>
+            div[data-testid="stHeadingWithActionElements"] h1,
+            div[data-testid="stHeadingWithActionElements"] h2,
+            div[data-testid="stHeadingWithActionElements"] h3 {
+                color: rgba(255,255,255,0.98) !important;
+            }
+
+            div[data-testid="stMarkdownContainer"] p,
+            div[data-testid="stMarkdownContainer"] li,
+            div[data-testid="stMarkdownContainer"] strong,
+            div[data-testid="stCaptionContainer"] {
+                color: rgba(226,232,240,0.94) !important;
+            }
+
+            div[data-testid="stVerticalBlockBorderWrapper"] {
+                border-radius: 22px;
+                border: 1px solid rgba(255,255,255,0.08);
+                background: linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.98) 100%);
+                box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+            }
+
             .wizard-step-heading {
                 display: flex;
                 align-items: center;
@@ -174,27 +194,6 @@ def _render_progress(step_index: int) -> None:
     step_number = step_index + 1
     st.caption(f"Setup progress · Step {step_number} of {len(SETUP_WIZARD_STEPS)}")
     st.progress(step_number / len(SETUP_WIZARD_STEPS))
-
-
-def _render_shell_open() -> None:
-    st.markdown(
-        """
-        <div style="
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 22px;
-            background: linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.98) 100%);
-            box-shadow: 0 18px 48px rgba(0,0,0,0.24);
-            padding: 1.4rem 1.4rem 1.2rem 1.4rem;
-            margin-top: 0.4rem;
-            margin-bottom: 1.2rem;
-        ">
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _render_shell_close() -> None:
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _render_welcome_step() -> None:
@@ -682,22 +681,21 @@ def _render_ai_review_step() -> None:
 def render_setup_wizard() -> None:
     settings = load_settings()
     _initialize_wizard_state(settings)
+    _inject_wizard_css()
 
     step_index = _current_step_index()
 
-    _render_shell_open()
-    _render_progress(step_index)
+    with st.container(border=True):
+        _render_progress(step_index)
 
-    current_step = SETUP_WIZARD_STEPS[step_index]
-    if current_step == "Welcome":
-        _render_welcome_step()
-    elif current_step == "OpenAI API":
-        _render_openai_step()
-    elif current_step == "Profile Context":
-        _render_profile_step()
-    elif current_step == "Search Criteria":
-        _render_search_step()
-    else:
-        _render_ai_review_step()
-
-    _render_shell_close()
+        current_step = SETUP_WIZARD_STEPS[step_index]
+        if current_step == "Welcome":
+            _render_welcome_step()
+        elif current_step == "OpenAI API":
+            _render_openai_step()
+        elif current_step == "Profile Context":
+            _render_profile_step()
+        elif current_step == "Search Criteria":
+            _render_search_step()
+        else:
+            _render_ai_review_step()
