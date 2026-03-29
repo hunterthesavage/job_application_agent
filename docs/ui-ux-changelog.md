@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-28
 
+### Added a direct Windows release link and extraction checklist
+- Summary: updated the README to include the exact portable zip release link, clearer post-download steps, a folder-content check for `Launch Job Application Agent.bat` plus the `app` and `python` folders, and an explicit warning not to run the launcher from inside the zip preview.
+- Why: a tester hit a confusing Windows path error because the prior README still was not concrete enough about extracting the zip fully before launching.
+- Validation: reviewed the live release asset name and matched the README instructions to the actual packaged folder structure.
+- Files: `README.md`, `docs/ui-ux-changelog.md`
+
 ### Added a release-based Windows download path for testers
 - Summary: added a GitHub workflow that builds the portable Windows package and publishes `JobApplicationAgent-windows-portable.zip` as a release asset, then rewrote the README to send testers to Releases instead of Actions artifacts.
 - Why: Actions artifacts were too hidden and confusing for friend testers, even after the portable installer itself was working.
