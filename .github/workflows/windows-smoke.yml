@@ -1,6 +1,9 @@
 name: Windows Smoke Tests
 
 on:
+  push:
+    branches:
+      - codex/windows-smoke-tests
   workflow_dispatch:
 
 jobs:
