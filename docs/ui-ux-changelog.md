@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-28
 
+### Clarified Windows tester install directions in README
+- Summary: rewrote the Windows portable-install section so testers are explicitly told not to use the normal source zip, where to find the portable artifact, and exactly which launcher to double-click after extraction.
+- Why: the earlier README still left too much room for confusion even after the portable package work landed, especially for friend testers downloading from GitHub.
+- Validation: reviewed the updated README flow end to end against the GitHub artifact path and the packaged launcher name.
+- Files: `README.md`, `docs/ui-ux-changelog.md`
+
 ### Added automated Windows smoke coverage for tester installs
 - Summary: added a GitHub Actions Windows smoke workflow that checks the Python 3.9 compatibility files from the tester crash and verifies the portable package can build and boot on a Windows runner.
 - Why: the new Windows install path needed real Windows validation before handing it to friend testers, especially after a Python-version-specific startup failure.
