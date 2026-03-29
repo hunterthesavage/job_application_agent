@@ -20,6 +20,14 @@ Entry format:
 
 ---
 
+## 2026-03-29
+
+### Locked the Windows recovery package as the known-good baseline
+- Summary: updated the Windows docs to point at the exact GitHub release zip recovered from the working Windows machine, documented its size and SHA256, and clarified that this baseline uses the legacy `INSTALL JAA.bat` plus visible Command Prompt flow rather than the later shutdown experiments.
+- Why: Windows packaging changes had drifted away from the last package that actually worked in friend testing, so the repo needed a clearly documented fallback baseline before any more installer work continued.
+- Validation: verified the live release asset matches the recovered zip byte-for-byte at `142,376,536` bytes with SHA256 `b1058358dfce16c9c58a52ec5c32ae1a08f0caefa1da2633887365901d7ba2a8`, then aligned the docs to the exact package contents.
+- Files: `README.md`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+
 ## 2026-03-28
 
 ### Hid the packaged console and added cleaner app shutdown controls

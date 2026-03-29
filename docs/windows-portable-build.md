@@ -2,6 +2,23 @@
 
 This document is for maintainers who want to produce the easier Windows tester package.
 
+## Known Good Recovery Baseline
+
+The current public Windows release is a recovery baseline taken from the exact zip that was confirmed working on a Windows machine:
+
+- asset: `JobApplicationAgent-windows-portable.zip`
+- tag: `windows-portable-latest`
+- size: `142,376,536` bytes
+- SHA256: `b1058358dfce16c9c58a52ec5c32ae1a08f0caefa1da2633887365901d7ba2a8`
+
+Important:
+
+- this exact known-good package includes `INSTALL JAA.bat`
+- it does not include `STOP JAA.bat`
+- it does not include the later in-app shutdown experiment
+
+Until a replacement package is verified end to end, treat this asset as the Windows fallback baseline and keep new packaging work off `main`.
+
 ## What it creates
 
 The portable build packages:
@@ -78,4 +95,4 @@ The Release workflow publishes:
 - title: `Windows Portable Latest`
 - asset: `JobApplicationAgent-windows-portable.zip`
 
-That is the simplest download path to hand to non-technical testers.
+That is the simplest download path to hand to non-technical testers. Future experiments should happen on `codex/windows-packaging-lab` and only replace the release asset after a full Windows retest passes.

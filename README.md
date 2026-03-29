@@ -81,9 +81,15 @@ If that happens:
 
 ### Step 1) Download The Windows Package
 
-Download:
+Known Good Windows recovery package:
 
 - [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip)
+
+Recovery baseline details:
+
+- source: exact zip pulled from the Windows machine that was confirmed working
+- size: `142,376,536` bytes
+- SHA256: `b1058358dfce16c9c58a52ec5c32ae1a08f0caefa1da2633887365901d7ba2a8`
 
 Save it somewhere easy to find, like `Downloads`.
 
@@ -117,10 +123,10 @@ The app should open in your browser at:
 
 - [http://localhost:8505](http://localhost:8505)
 
-When you are done:
+When you are done with this known-good package:
 
-- click `Close Application` inside the app
-- or double-click `STOP JAA.bat` in the `JobApplicationAgent` folder
+- close the browser tab
+- then close the Command Prompt window that launched with the app
 
 ### Manual fallback setup
 
@@ -144,6 +150,10 @@ Maintainers can build the portable package with:
 More details:
 
 - `docs/windows-portable-build.md`
+
+### Windows packaging status
+
+The current GitHub release asset above is the exact known-good recovery package. Future Windows packaging changes are frozen on `main` and should be developed only on the separate `codex/windows-packaging-lab` branch until a new package is verified end to end against this baseline.
 
 ## First launch
 
