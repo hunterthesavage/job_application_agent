@@ -19,6 +19,39 @@ $pythonZipPath = Join-Path $distRoot $pythonZipName
 $portableZipPath = Join-Path $distRoot "$PackageName-windows-portable.zip"
 $buildPython = Get-Command python -ErrorAction Stop
 
+function Remove-IfExists {
+    param(
+        [string]$Path
+    )
+
+    if (Test-Path $Path) {
+        Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-TreeMatches {
+    param(
+        [string]$Root,
+        [string]$Filter,
+        [switch]$Directory
+    )
+
+    if (-not (Test-Path $Root)) {
+        return
+    }
+
+    $items = Get-ChildItem -Path $Root -Recurse -Force -Filter $Filter -ErrorAction SilentlyContinue
+    foreach ($item in $items) {
+        if ($Directory -and -not $item.PSIsContainer) {
+            continue
+        }
+        if (-not $Directory -and $item.PSIsContainer) {
+            continue
+        }
+        Remove-Item $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host "==> Cleaning previous portable build"
 if (Test-Path $packageRoot) {
     Remove-Item $packageRoot -Recurse -Force
@@ -55,6 +88,36 @@ Set-Content -Path $pthFile.FullName -Value $pthLines -Encoding ASCII
 Write-Host "==> Installing app dependencies into embedded runtime"
 & $buildPython.Source -m pip install --upgrade pip
 & $buildPython.Source -m pip install --target $sitePackages -r (Join-Path $repoRoot "requirements.txt")
+
+Write-Host "==> Pruning non-runtime packaging files"
+$prunePaths = @(
+    (Join-Path $pythonRoot "Lib/test"),
+    (Join-Path $pythonRoot "Lib/tkinter"),
+    (Join-Path $pythonRoot "Lib/idlelib"),
+    (Join-Path $pythonRoot "Lib/ensurepip"),
+    (Join-Path $sitePackages "share/jupyter"),
+    (Join-Path $sitePackages "share/man"),
+    (Join-Path $sitePackages "pip"),
+    (Join-Path $sitePackages "pip-*.dist-info"),
+    (Join-Path $sitePackages "setuptools"),
+    (Join-Path $sitePackages "setuptools-*.dist-info"),
+    (Join-Path $sitePackages "wheel"),
+    (Join-Path $sitePackages "wheel-*.dist-info")
+)
+
+foreach ($path in $prunePaths) {
+    Get-ChildItem -Path $path -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $path) {
+        Remove-IfExists -Path $path
+    }
+}
+
+Remove-TreeMatches -Root $pythonRoot -Filter "__pycache__" -Directory
+Remove-TreeMatches -Root $pythonRoot -Filter "*.pyc"
+Remove-TreeMatches -Root $pythonRoot -Filter "*.pyo"
+Remove-TreeMatches -Root $pythonRoot -Filter "*.js.map"
 
 $copyItems = @(
     "app.py",
