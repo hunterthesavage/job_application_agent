@@ -22,11 +22,23 @@ Entry format:
 
 ## 2026-03-29
 
+### Promoted the Windows test package to the primary README download
+- Summary: updated the Windows README section so the `Test Link` is now the recommended download for friend testing, while the older known-good recovery zip stays visible as the fallback option.
+- Why: the newer package has the cleaner setup and worked in current testing, so the README should point testers at the package we actually want them to try first without hiding the fallback path.
+- Validation: reviewed the Windows README flow to keep the screenshot placeholder order and install steps unchanged while swapping the primary/fallback download emphasis.
+- Files: `README.md`, `docs/ui-ux-changelog.md`
+
 ### Moved the close control into the hero and simplified OpenAI status colors
 - Summary: moved `Close Application` into the upper-right hero stack, changed it to a more explicit `✕ Close Application` control, and simplified the OpenAI badge so it shows green when active and red when inactive.
 - Why: the floating close button was too easy to mistake for a normal workflow action, and the prior OpenAI badge colors did not make the active/not-active state obvious enough during local UI review.
 - Validation: `python3 -m py_compile app.py ui/components.py ui/styles.py`
 - Files: `app.py`, `ui/components.py`, `ui/styles.py`, `docs/ui-ux-changelog.md`
+
+### Increased the visual separation between action buttons and info surfaces
+- Summary: gave primary and secondary Streamlit buttons stronger control styling with clearer borders, depth, and hover/focus states so they read more like actions instead of looking like the dark information cards and bubbles around them.
+- Why: local review showed the buttons were blending into passive UI surfaces, especially in the hero and navigation areas, which made the interface feel less legible and less intentionally interactive.
+- Validation: `python3 -m py_compile ui/styles.py`
+- Files: `ui/styles.py`, `docs/ui-ux-changelog.md`
 
 ### Replaced the close-action blank page with a branded shutdown screen
 - Summary: updated the browser-close handoff so the fallback page now shows a styled “You can close this tab now” shutdown message instead of dropping to a blank screen if the browser refuses to close automatically.

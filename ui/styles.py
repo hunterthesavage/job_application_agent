@@ -372,13 +372,68 @@ def inject_custom_css() -> None:
                 min-height: 48px;
                 font-weight: 760;
                 transition: all 0.18s ease;
-                box-shadow: none;
+                letter-spacing: 0.01em;
+                cursor: pointer;
             }
 
             div[data-testid="stButton"] > button:hover {
                 transform: translateY(-1px);
             }
 
+            div[data-testid="stButton"] > button[kind="secondary"] {
+                border: 1px solid rgba(148,163,184,0.26);
+                background:
+                    linear-gradient(180deg, rgba(24,31,46,0.98) 0%, rgba(13,18,30,0.99) 100%);
+                color: rgba(248,250,252,0.96);
+                box-shadow:
+                    0 10px 24px rgba(3,7,18,0.24),
+                    inset 0 1px 0 rgba(255,255,255,0.05),
+                    inset 0 -1px 0 rgba(0,0,0,0.18);
+            }
+
+            div[data-testid="stButton"] > button[kind="secondary"]:hover {
+                border-color: rgba(96,165,250,0.40);
+                background:
+                    linear-gradient(180deg, rgba(29,38,56,0.99) 0%, rgba(15,21,35,1.0) 100%);
+                box-shadow:
+                    0 14px 30px rgba(8,15,30,0.28),
+                    inset 0 1px 0 rgba(255,255,255,0.07);
+            }
+
+            div[data-testid="stButton"] > button[kind="secondary"]:focus:not(:active),
+            div[data-testid="stButton"] > button[kind="secondary"]:focus-visible {
+                border-color: rgba(147,197,253,0.68);
+                box-shadow:
+                    0 0 0 0.18rem rgba(59,130,246,0.16),
+                    0 14px 28px rgba(8,15,30,0.28);
+            }
+
+            div[data-testid="stButton"] > button[kind="primary"] {
+                border: 1px solid rgba(251,113,133,0.28);
+                background:
+                    linear-gradient(180deg, rgba(255,84,89,0.98) 0%, rgba(255,70,76,0.98) 100%);
+                color: rgba(255,255,255,0.99);
+                box-shadow:
+                    0 12px 28px rgba(190,24,93,0.22),
+                    inset 0 1px 0 rgba(255,255,255,0.10);
+            }
+
+            div[data-testid="stButton"] > button[kind="primary"]:hover {
+                border-color: rgba(253,164,175,0.44);
+                background:
+                    linear-gradient(180deg, rgba(255,102,106,0.99) 0%, rgba(255,77,83,0.99) 100%);
+                box-shadow:
+                    0 16px 34px rgba(190,24,93,0.24),
+                    inset 0 1px 0 rgba(255,255,255,0.14);
+            }
+
+            div[data-testid="stButton"] > button[kind="primary"]:focus:not(:active),
+            div[data-testid="stButton"] > button[kind="primary"]:focus-visible {
+                border-color: rgba(254,205,211,0.62);
+                box-shadow:
+                    0 0 0 0.18rem rgba(251,113,133,0.18),
+                    0 14px 30px rgba(190,24,93,0.22);
+            }
 
             div[data-testid="stButton"] > button[kind="tertiary"] {
                 border-radius: 14px;

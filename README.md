@@ -81,10 +81,13 @@ If that happens:
 
 ### Step 1) Download The Windows Package
 
-Known Good Windows recovery package:
+Recommended for this friend test:
 
-- [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip)
-- [Test Link](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-lab/JobApplicationAgent-windows-portable-lab.zip) - latest Windows lab package for current testing
+- [Test Link](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-lab/JobApplicationAgent-windows-portable-lab.zip) - cleaner Windows package for current friend testing
+
+Fallback if the test package has trouble on this machine:
+
+- [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip) - known-good Windows recovery package
 
 Recovery baseline details:
 
@@ -126,8 +129,8 @@ The app should open in your browser at:
 
 When you are done:
 
-- for the known-good package, close the browser tab and then close the Command Prompt window that launched with the app
 - for the current test package, click `Close Application` inside the app or double-click `STOP JAA.bat`
+- for the fallback known-good package, close the browser tab and then close the Command Prompt window that launched with the app
 
 ### Manual fallback setup
 
