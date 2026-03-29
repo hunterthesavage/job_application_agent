@@ -79,72 +79,71 @@ If that happens:
 
 # Windows Setup
 
-### Notes for Windows users
+### Step 1) Download The Windows Package
 
-- Windows support is still more lightly tested than Mac
-- for now, use **Python x64**, not **Python ARM64**
-- the most reliable first-run path is the Command Prompt flow below
-- after setup, `run_app_windows.bat` is the easiest way to reopen the app
+Download:
 
-### Step 1) Install Python x64
+- [JobApplicationAgent-windows-portable.zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip)
 
-```bat
-cd /d "%USERPROFILE%\Downloads"
-curl -L -o python-3.13.12-amd64.exe https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe
-```
+Save it somewhere easy to find, like `Downloads`.
 
-Then run:
+(PLACEHOLDER FOR SCREENSHOT)
 
-```bat
-start /wait python-3.13.12-amd64.exe
-```
+### Step 2) Extract The Zip
 
-NOTE: The above may install the wrong version needed. If so, use this exact installer instead:
-		
-- [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
+1. Open File Explorer.
+2. Find `JobApplicationAgent-windows-portable.zip`.
+3. Click the zip once to highlight it.
+4. Use one of these options:
+   - click `Extract all` in the File Explorer toolbar
+   - or right-click the zip and click `Extract All...`
+5. Click `Extract`.
 
-In the installer: Check `Add Python to PATH`
+(PLACEHOLDER FOR SCREENSHOT)
 
+### Step 3) Open The Extracted Folder
 
-Then:
-1. close Command Prompt
-2. open a new Command Prompt window
+Open the extracted `JobApplicationAgent` folder.
 
-### Step 2) Download the app in Command Prompt
+(PLACEHOLDER FOR SCREENSHOT)
 
-Download the latest app ZIP:
+### Step 4) Start The App
 
-```bat
-cd /d "%USERPROFILE%\Downloads"
-curl -L -o job_application_agent.zip https://github.com/hunterthesavage/job_application_agent/archive/refs/heads/main.zip
-tar -xf job_application_agent.zip
-cd /d "%USERPROFILE%\Downloads\job_application_agent-main"
-```
+1. Double-click `INSTALL JAA.bat`.
+2. If Windows SmartScreen appears, click `More info` and then `Run anyway`.
+3. Wait a few seconds for the browser to open.
 
-### Step 3) Create the virtual environment and install requirements
-
-Run:
-
-```bat
-py -3 -m venv .venv
-call .venv\Scripts\activate.bat
-python --version
-python -m pip install --upgrade pip
-
-python -m pip install -r requirements.txt
-```
-
-### Step 4) Launch the app
-
-Run:
-
-```bat
-python -m streamlit run app.py --server.headless true --server.port 8505
-```
-
-Then open:
+The app should open in your browser at:
 
 - [http://localhost:8505](http://localhost:8505)
+
+When you are done:
+
+- click `Close Application` inside the app
+- or double-click `STOP JAA.bat` in the `JobApplicationAgent` folder
+
+### Manual fallback setup
+
+If you are running directly from the repo instead of the portable package, use the existing Python-based setup:
+
+1. Install **Python x64 3.13**
+2. Download the repo zip
+3. Run `install_windows.bat`
+4. Launch with `run_app_windows.bat`
+
+Exact installer:
+
+- [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
+
+Maintainers can build the portable package with:
+
+```powershell
+.\scripts\build_windows_portable.ps1
+```
+
+More details:
+
+- `docs/windows-portable-build.md`
 
 ## First launch
 

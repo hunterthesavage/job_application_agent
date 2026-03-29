@@ -10,6 +10,9 @@ LATEST_PIPELINE_LOG_PATH = LOGS_DIR / "latest_pipeline_run.txt"
 
 DATABASE_FILENAME = "job_agent.db"
 DATABASE_PATH = DATA_DIR / DATABASE_FILENAME
+APP_SERVER_PID_FILE = DATA_DIR / "jaa_server.pid"
+APP_STDOUT_LOG_PATH = LOGS_DIR / "jaa_stdout.log"
+APP_STDERR_LOG_PATH = LOGS_DIR / "jaa_stderr.log"
 
 BACKUPS_DIR = DATA_DIR / "backups"
 OPENAI_API_KEY_FILE = DATA_DIR / "openai_api_key.txt"

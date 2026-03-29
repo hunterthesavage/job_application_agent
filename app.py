@@ -2,8 +2,10 @@ import subprocess
 import sys
 
 import streamlit as st
+from streamlit.components.v1 import html as components_html
 
 from config import APP_NAME, APP_VERSION
+from services.app_control import register_current_process, request_process_shutdown
 from services.settings import load_settings
 from services.status import get_system_status
 from services.ui_busy import app_is_busy, current_busy_label, get_action
@@ -263,7 +265,38 @@ def initialize_app_once() -> None:
     from services.storage import initialize_local_storage
 
     initialize_local_storage()
+    register_current_process()
     st.session_state["_app_initialized"] = True
+
+
+def render_close_application_button() -> bool:
+    _, action_col = st.columns([5, 1])
+    with action_col:
+        st.markdown("<div style='height: 1.65rem;'></div>", unsafe_allow_html=True)
+        return bool(
+            st.button(
+                "Close Application",
+                key="close_application_button",
+                use_container_width=True,
+            )
+        )
+
+
+def handle_close_application() -> None:
+    st.info("Closing Job Application Agent...")
+    components_html(
+        """
+        <script>
+        setTimeout(function () {
+          try { window.location.replace("about:blank"); } catch (e) {}
+          try { window.open("", "_self"); window.close(); } catch (e) {}
+        }, 150);
+        </script>
+        """,
+        height=0,
+    )
+    request_process_shutdown()
+    st.stop()
 
 
 def maybe_run_wizard_discovery_bootstrap() -> None:
@@ -333,6 +366,8 @@ def main() -> None:
 
     initialize_top_nav(default_value="New Roles")
     selected_view = render_top_nav()
+    if render_close_application_button():
+        handle_close_application()
 
     render_post_wizard_message()
 
