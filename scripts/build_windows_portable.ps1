@@ -116,6 +116,106 @@ Copy-OverlayFile -Source (Join-Path $repoRoot "app.py") -Destination (Join-Path 
 Copy-OverlayFile -Source (Join-Path $repoRoot "config.py") -Destination (Join-Path $appRoot "config.py")
 Copy-OverlayFile -Source (Join-Path $repoRoot "services/app_control.py") -Destination (Join-Path $appRoot "services/app_control.py")
 
+$installLauncher = @'
+@echo off
+setlocal
+
+set "ROOT_DIR=%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launch_jaa.ps1"
+if errorlevel 1 (
+    echo.
+    echo Job Application Agent failed to launch.
+    echo Check app\logs\jaa_stderr.log for details.
+    pause
+    exit /b 1
+)
+
+endlocal
+'@
+Set-Content -Path (Join-Path $packageRoot "INSTALL JAA.bat") -Value $installLauncher -Encoding ASCII
+
+$launchScript = @'
+$ErrorActionPreference = "Stop"
+
+$rootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$appRoot = Join-Path $rootDir "app"
+$pythonExe = Join-Path $rootDir "python\python.exe"
+$pidFile = Join-Path $appRoot "data\jaa_server.pid"
+$stdoutLog = Join-Path $appRoot "logs\jaa_stdout.log"
+$stderrLog = Join-Path $appRoot "logs\jaa_stderr.log"
+
+foreach ($path in @(
+    (Join-Path $appRoot "data"),
+    (Join-Path $appRoot "backups"),
+    (Join-Path $appRoot "logs"),
+    (Join-Path $appRoot ".streamlit")
+)) {
+    New-Item -ItemType Directory -Force -Path $path | Out-Null
+}
+
+if (-not (Test-Path $pythonExe)) {
+    throw "Bundled Python runtime was not found."
+}
+
+if (Test-Path $pidFile) {
+    $savedPid = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+    if ($savedPid -match '^\d+$') {
+        $existing = Get-Process -Id ([int]$savedPid) -ErrorAction SilentlyContinue
+        if ($existing) {
+            Start-Process "http://127.0.0.1:8505"
+            exit 0
+        }
+    }
+    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+}
+
+$arguments = @(
+    "-m",
+    "streamlit",
+    "run",
+    "app.py",
+    "--server.headless", "true",
+    "--server.address", "127.0.0.1",
+    "--server.port", "8505",
+    "--browser.gatherUsageStats", "false"
+)
+
+$proc = Start-Process `
+    -FilePath $pythonExe `
+    -ArgumentList $arguments `
+    -WorkingDirectory $appRoot `
+    -WindowStyle Hidden `
+    -RedirectStandardOutput $stdoutLog `
+    -RedirectStandardError $stderrLog `
+    -PassThru
+
+Set-Content -Path $pidFile -Value $proc.Id -Encoding ASCII
+
+$healthy = $false
+for ($i = 0; $i -lt 25; $i++) {
+    Start-Sleep -Seconds 1
+    if ($proc.HasExited) {
+        break
+    }
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8505/_stcore/health" -TimeoutSec 2
+        if ($response.StatusCode -eq 200) {
+            $healthy = $true
+            break
+        }
+    } catch {
+    }
+}
+
+if (-not $healthy -and $proc.HasExited) {
+    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+    throw "Job Application Agent exited before the local server became healthy."
+}
+
+Start-Process "http://127.0.0.1:8505"
+'@
+Set-Content -Path (Join-Path $packageRoot "launch_jaa.ps1") -Value $launchScript -Encoding ASCII
+
 $stopLauncher = @'
 @echo off
 setlocal
