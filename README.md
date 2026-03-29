@@ -96,10 +96,8 @@ Save it somewhere easy to find, like `Downloads`.
 3. Click the zip once to highlight it.
 4. Use one of these options:
    - click `Extract all` in the File Explorer toolbar
-   - or right-click the zip, click `Show more options`, then click `Extract All...`
+   - or right-click the zip and click `Extract All...`
 5. Click `Extract`.
-
-Do **not** run the installer from inside the zip preview window.
 
 (PLACEHOLDER FOR SCREENSHOT)
 
@@ -118,6 +116,11 @@ Open the extracted `JobApplicationAgent` folder.
 The app should open in your browser at:
 
 - [http://localhost:8505](http://localhost:8505)
+
+When you are done:
+
+- click `Close Application` inside the app
+- or double-click `STOP JAA.bat` in the `JobApplicationAgent` folder
 
 ### Manual fallback setup
 

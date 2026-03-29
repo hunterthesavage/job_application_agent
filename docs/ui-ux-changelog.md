@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-28
 
+### Hid the packaged console and added cleaner app shutdown controls
+- Summary: changed the Windows portable package to start the app through hidden PowerShell helpers, added `STOP JAA.bat`, bound the packaged server to `127.0.0.1`, disabled usage-stat prompts, and added a `Close Application` button in the main UI that shuts the local app down.
+- Why: friend testing showed that the visible command window sticking around after launch felt broken and that closing the browser tab alone did not clearly stop the app.
+- Validation: `python3 -m py_compile app.py config.py services/app_control.py tests/test_app_control.py`; `.venv/bin/python -m pytest -q tests/test_app_control.py`
+- Files: `app.py`, `config.py`, `services/app_control.py`, `tests/test_app_control.py`, `scripts/build_windows_portable.ps1`, `README.md`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+
 ### Corrected the Windows zip-extraction step for Windows 11
 - Summary: updated the README extraction instructions to match Windows 11 behavior by pointing testers to the File Explorer `Extract all` button or the `Show more options` menu path instead of assuming `Extract All...` appears in the first right-click menu.
 - Why: a tester screenshot showed that the previous wording did not match the actual Windows context menu, which made the install guide misleading at a critical step.
