@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codex/windows-smoke-tests
+      - codex/windows-packaging-lab
   workflow_dispatch:
 
 jobs:

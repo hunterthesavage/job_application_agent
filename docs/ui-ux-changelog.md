@@ -31,8 +31,8 @@ Entry format:
 ### Switched lab Windows packaging to patch the known-good baseline
 - Summary: changed the lab portable-package builder to start from the exact known-good Windows release zip, strip `._...` ghost files, overlay only the narrow shutdown files needed for the in-app close flow, add `STOP JAA.bat`, and prune safe non-runtime Python clutter instead of rebuilding the app from repo source.
 - Why: rebuilding the package from scratch introduced UI regressions, so future Windows packaging work needs to preserve the working app shell and only change the packaging layer on the lab branch.
-- Validation: verified the exact baseline zip contents, confirmed the ghost-file count and safe Python clutter targets locally, and updated the lab release workflow defaults so future packaging experiments publish to `windows-portable-lab` instead of the main recovery release.
-- Files: `scripts/build_windows_portable.ps1`, `app.py`, `config.py`, `services/app_control.py`, `.github/workflows/windows-portable-release.yml`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+- Validation: verified the exact baseline zip contents, confirmed the ghost-file count and safe Python clutter targets locally, updated the lab release workflow defaults so future packaging experiments publish to `windows-portable-lab`, and expanded the Windows smoke workflow so the lab branch now gets automated Windows validation too.
+- Files: `scripts/build_windows_portable.ps1`, `app.py`, `config.py`, `services/app_control.py`, `.github/workflows/windows-portable-release.yml`, `.github/workflows/windows-smoke.yml`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
 
 ## 2026-03-28
 
