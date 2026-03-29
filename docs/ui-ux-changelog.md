@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-29
 
+### Added a dedicated Windows test link next to the known-good package
+- Summary: updated the Windows README section to include a separate `Test Link` right next to the known-good package link, pointing at the current `windows-portable-lab` release asset.
+- Why: using a single stable link and a single current test link side by side makes it much easier to tell whether a Windows test is using the frozen recovery package or the latest lab package.
+- Validation: verified the live `windows-portable-lab` release asset URL and inserted it directly into the README next to the known-good download link.
+- Files: `README.md`, `docs/ui-ux-changelog.md`
+
 ### Locked the Windows recovery package as the known-good baseline
 - Summary: updated the Windows docs to point at the exact GitHub release zip recovered from the working Windows machine, documented its size and SHA256, and clarified that this baseline uses the legacy `INSTALL JAA.bat` plus visible Command Prompt flow rather than the later shutdown experiments.
 - Why: Windows packaging changes had drifted away from the last package that actually worked in friend testing, so the repo needed a clearly documented fallback baseline before any more installer work continued.
