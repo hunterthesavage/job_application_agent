@@ -39,15 +39,22 @@ Current release: **1.0.0**
 
 # macOS Setup
 
-### Step 1) Install App
+### Step 1) Open Terminal
 
-Open the `Terminal` app and copy and paste this whole command:
+1. Open **Finder**.
+2. Go to **Applications**.
+3. Open the **Utilities** folder.
+4. Double-click **Terminal**.
+
+### Step 2) Install App
+
+Copy and paste this whole command:
 
 ```bash
 cd ~ && ( [ -d job_application_agent/.git ] || git clone https://github.com/hunterthesavage/job_application_agent.git job_application_agent ) && cd ~/job_application_agent && chmod +x install_mac.sh run_app.sh install_mac.command run_app.command && ./install_mac.sh
 ```
 
-### Step 2) Launch App 
+### Step 3) Launch App 
 
 After setup is complete:
 
