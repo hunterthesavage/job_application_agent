@@ -47,34 +47,14 @@ Open the `Terminal` app and copy and paste this whole command:
 cd ~ && ( [ -d job_application_agent/.git ] || git clone https://github.com/hunterthesavage/job_application_agent.git job_application_agent ) && cd ~/job_application_agent && chmod +x install_mac.sh run_app.sh install_mac.command run_app.command && ./install_mac.sh
 ```
 
-What this does:
-- downloads the app into your home folder if it is not already there
-- moves into the correct project folder
-- fixes launcher permissions
-- installs the required packages
-- prepares the app to launch locally
-
 ### Step 2) Launch App 
 
-After setup is complete, either:
-
-- double-click `run_app.command`
-
-or run:
+After setup is complete:
 
 ```bash
 cd ~/job_application_agent
 ./run_app.sh
 ```
-
-### If `run_app.command` is blocked later
-
-Because this app is unsigned, macOS Gatekeeper may still warn the first time you open the launcher by double-clicking it.
-
-If that happens:
-1. In Finder, `Control`-click or right-click `run_app.command`
-2. Click `Open`
-3. Click `Open` again in the warning dialog
 
 
 # Windows Setup
