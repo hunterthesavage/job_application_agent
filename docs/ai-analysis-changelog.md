@@ -20,6 +20,14 @@ Entry format:
 
 ---
 
+## 2026-04-01
+
+### Added fake-profile calibration pack for cross-persona scoring checks
+- Summary: added four representative fake resume/profile packs with labeled case sets plus a runner that executes scoring calibration across all profiles and writes per-profile reports and a consolidated summary.
+- Why: discovery comparisons alone were not enough to judge whether the scoring layer understands different candidate personas, and we needed a reusable way to test analyst, product/program, GTM, and executive IT profiles against the same scoring pipeline.
+- Validation: `python3 -m py_compile scripts/run_fake_resume_calibration.py`; live run `python3 scripts/run_fake_resume_calibration.py --use-ai-scoring` wrote reports under `logs/scoring_calibration/20260401-120202_fake_resume_profiles`; AI scoring matched all 5 cases for `Executive IT Leader` and `Business & Data Analyst`, 4/5 for `Product & Program Generalist`, and 4/5 plus 1 adjacent for `GTM / Marketing Ops`.
+- Files: `scripts/run_fake_resume_calibration.py`, `scripts/fake_profiles/executive_it_leader.txt`, `scripts/fake_profiles/product_program_generalist.txt`, `scripts/fake_profiles/business_data_analyst.txt`, `scripts/fake_profiles/gtm_marketing_ops.txt`, `scripts/calibration_sets/fake_resume_executive_it_leader.jsonl`, `scripts/calibration_sets/fake_resume_product_program_generalist.jsonl`, `scripts/calibration_sets/fake_resume_business_data_analyst.jsonl`, `scripts/calibration_sets/fake_resume_gtm_marketing_ops.jsonl`, `docs/ai-analysis-changelog.md`
+
 ## 2026-03-28
 
 ### Aligned qualifier title overlap with search-safe title variants

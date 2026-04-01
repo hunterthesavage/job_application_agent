@@ -1,0 +1,28 @@
+High Priority Candidate Signals:
+
+Executive Summary:
+Business and data analyst with 9 years of experience turning operational questions into reporting, dashboards, process recommendations, and decision support. Strong in stakeholder discovery, requirements gathering, SQL-based analysis, KPI reporting, and bridging business needs with technical teams.
+
+Strengths to Highlight:
+- Business analysis
+- Data analysis and reporting
+- Requirements gathering
+- KPI design and dashboarding
+- SQL and Excel-based analysis
+- Process improvement
+
+Supporting Candidate Evidence:
+
+Resume Text:
+Senior Business Analyst, Peak Operations, 2021-2026
+- Owned process analysis, KPI reporting, and workflow documentation for shared operations teams.
+- Partnered with product managers, finance, and operations leaders to define requirements for reporting and automation work.
+- Built SQL-backed reporting and executive summaries for weekly performance reviews.
+
+Data Analyst, Everfield Health, 2018-2021
+- Developed dashboards and recurring analysis for patient operations and service metrics.
+- Cleaned and analyzed data sets in SQL and spreadsheet workflows.
+
+Reporting Analyst, Metro Services, 2016-2018
+- Produced recurring operational reports and supported ad hoc analysis for business leaders.
+

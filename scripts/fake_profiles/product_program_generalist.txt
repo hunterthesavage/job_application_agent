@@ -1,0 +1,28 @@
+High Priority Candidate Signals:
+
+Executive Summary:
+Product and program leader with 12 years of experience translating customer problems into shipped software, coordinating cross-functional delivery, and improving team execution across SaaS environments. Comfortable owning product roadmaps, discovery, launch planning, stakeholder communication, and program operations.
+
+Strengths to Highlight:
+- Product roadmap ownership
+- Program and delivery management
+- Cross-functional collaboration
+- Customer discovery and requirements
+- Agile planning and prioritization
+- SaaS operating environments
+
+Supporting Candidate Evidence:
+
+Resume Text:
+Senior Product Manager, Atlas Workflow, 2022-2026
+- Owned roadmap for workflow automation and analytics products used by mid-market operations teams.
+- Worked with design, engineering, and GTM teams to prioritize releases and customer-facing improvements.
+- Led quarterly planning, requirements definition, and launch coordination.
+
+Program Manager, Nimbus Cloud, 2018-2022
+- Coordinated cross-functional delivery across product, engineering, support, and operations.
+- Built release calendars, dependency tracking, and executive status reporting.
+
+Business Analyst, BrightPath Software, 2014-2018
+- Gathered requirements, mapped processes, and supported implementation projects for enterprise customers.
+

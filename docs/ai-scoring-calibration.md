@@ -12,6 +12,12 @@ The repo includes a small sample set here:
 
 - `scripts/calibration_sets/vp_it_sample.jsonl`
 
+It also includes a reusable fake-profile pack here:
+
+- `scripts/run_fake_resume_calibration.py`
+- `scripts/fake_profiles/`
+- `scripts/calibration_sets/fake_resume_*.jsonl`
+
 Each case includes:
 
 - `expected_label`: `yes`, `maybe`, or `no`
@@ -30,6 +36,12 @@ Qualifier + AI scoring:
 
 ```bash
 python3 scripts/run_scoring_calibration.py --use-ai-scoring
+```
+
+Fake-profile pack:
+
+```bash
+python3 scripts/run_fake_resume_calibration.py --use-ai-scoring
 ```
 
 Reports are written under:
