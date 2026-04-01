@@ -28,6 +28,12 @@ Entry format:
 - Validation: `python3 -m py_compile services/pipeline_runtime.py services/source_layer_shadow.py services/source_layer_status_smoke.py views/settings.py tests/test_pipeline_runtime.py tests/test_source_layer_status_smoke.py tests/test_source_layer_shadow.py`; `.venv/bin/python -m pytest -q tests/test_pipeline_runtime.py tests/test_source_layer_status_smoke.py tests/test_source_layer_shadow.py`; local debug comparisons showed `VP of IT` remote stayed `0` URLs in both modes while direct-source scanned `24` seeds, and `Director of IT` remote improved only from `0` legacy URLs to `1` direct-source-seeded URL (`Associate Director - Global Compliance Platform` at Amgen), which is still too weak to graduate beyond internal use.
 - Files: `services/pipeline_runtime.py`, `services/source_layer_shadow.py`, `services/source_layer_status_smoke.py`, `views/settings.py`, `tests/test_pipeline_runtime.py`, `tests/test_source_layer_status_smoke.py`, `tests/test_source_layer_shadow.py`, `docs/discovery-tech-changelog.md`
 
+### Added a repeatable title-matrix comparison runner
+- Summary: added a source-layer title matrix runner that executes paired `legacy` vs `next_gen` debug runs across a default top-10 title set and writes markdown, JSON, and CSV summaries into `logs/discovery_debug_suites`.
+- Why: we needed a broader representative comparison than only executive tech titles so we can judge whether direct-source seeding helps across common roles like Business Analyst and Project Manager, not just the searches you personally care about.
+- Validation: `python3 -m py_compile scripts/run_source_layer_title_matrix.py`
+- Files: `scripts/run_source_layer_title_matrix.py`, `docs/discovery-tech-changelog.md`
+
 ## 2026-03-28
 
 ### Preferred validated seed pool now leads next-gen shadow selection
