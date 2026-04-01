@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-04-01
 
+### Documented the V1 search decision and recommendation
+- Summary: added a plain-language V1 search decision document that explains why legacy remains the production engine, why direct-source stays internal-only, and what discovery work should happen next.
+- Why: after the title-matrix and real-job profile scoring passes, we had enough evidence to stop treating source-layer mode as an open product question and needed one clear decision document to align future work.
+- Validation: reviewed against the live comparison outputs in `logs/discovery_debug/*matrix*` and `logs/scoring_calibration/20260401-122246_real_job_profiles/report.md`; recommendation matches the current measured outcome that legacy remains more dependable and usually higher-fit.
+- Files: `docs/v1-search-decision.md`, `docs/discovery-tech-changelog.md`
+
 ### Reframed next-gen as a bounded direct-source seeding experiment
 - Summary: tightened `next_gen` into a smaller direct-source seed lane by capping seed selection at 12 endpoints, lowering per-company seeded URL cap to 2, updating runtime/shadow/status messaging to say `direct-source`, and making the source-layer smoke parser understand both old `Next-gen ...` notes and new `Direct-source ...` notes.
 - Why: the old `next_gen` name was obscuring what the mode actually does, and the wider seed batches were slow without showing enough lift. We needed clearer internal diagnostics plus a cheaper experiment before deciding whether this path is worth more V1 time.
