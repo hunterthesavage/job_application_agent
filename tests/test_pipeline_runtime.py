@@ -242,13 +242,13 @@ def test_discover_job_links_includes_shadow_summary_when_enabled(monkeypatch):
     monkeypatch.setattr(
         runtime,
         "run_shadow_endpoint_selection",
-        lambda settings: {"output": "Next-gen source layer shadow summary:\n- Active imported endpoints: 12"},
+        lambda settings: {"output": "Direct-source seed shadow summary:\n- Active imported endpoints: 12"},
     )
 
     result = runtime.discover_job_links(use_ai_title_expansion=True)
 
     assert result["source_layer_mode"] == "shadow"
-    assert "Next-gen source layer shadow summary" in result["output"]
+    assert "Direct-source seed shadow summary" in result["output"]
 
 
 def test_ingest_pasted_urls_passes_ai_scoring_flag(tmp_path, monkeypatch):
@@ -367,7 +367,7 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
     assert "- Mode: legacy" in result["output"]
     assert "- Shadow active endpoints: 473" in result["output"]
     assert "- Shadow selected endpoints: 20" in result["output"]
-    assert "- Next-gen seeded accepted jobs: 0" in result["output"]
+    assert "- Direct-source seeded accepted jobs: 0" in result["output"]
     assert captured["source_layer_run"]["mode"] == "legacy"
     assert captured["source_layer_run"]["discovered_urls"] == 1
     assert captured["source_layer_run"]["accepted_jobs"] == 0
@@ -410,7 +410,7 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
         "discover_job_links",
         lambda **kwargs: {
             "status": "completed",
-            "output": "Discovery output\n\nNext-gen source layer mode requested. Legacy discovery remains primary for this run, and supported source-layer seed URLs will be added when available.",
+            "output": "Discovery output\n\nDirect-source seeding mode requested. Legacy discovery remains primary for this run, and supported direct-source seed URLs will be added when available.",
             "urls": [],
             "providers": {"greenhouse": 0, "lever": 0, "search": 0},
             "drop_summary": {},
@@ -426,18 +426,18 @@ def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeyp
     result = runtime.discover_and_ingest()
 
     assert "Source layer mode: next_gen" in result["output"]
-    assert "Legacy discovery remains primary for this run" in result["output"]
+    assert "Direct-source seeding mode requested" in result["output"]
     assert "Source Layer Run Snapshot:" in result["output"]
     assert "- Mode: next_gen" in result["output"]
-    assert "- Next-gen supported seeds scanned: 0" in result["output"]
-    assert "- Next-gen unsupported seeds skipped: 0" in result["output"]
-    assert "- Next-gen seeded URLs: 2" in result["output"]
-    assert "- Next-gen seeded accepted jobs: 0" in result["output"]
+    assert "- Direct-source seeds scanned: 0" in result["output"]
+    assert "- Direct-source unsupported seeds skipped: 0" in result["output"]
+    assert "- Direct-source seeded URLs: 2" in result["output"]
+    assert "- Direct-source seeded accepted jobs: 0" in result["output"]
     assert captured["source_layer_run"]["mode"] == "next_gen"
     assert captured["source_layer_run"]["discovered_urls"] == 0
     assert captured["source_layer_run"]["accepted_jobs"] == 0
     assert captured["source_layer_run"]["selected_endpoints"] == 20
-    assert "Next-gen seeded URLs: 2." in captured["source_layer_run"]["notes"]
+    assert "Direct-source seeded URLs: 2." in captured["source_layer_run"]["notes"]
 
 
 def test_discover_job_links_next_gen_merges_supported_seed_urls(monkeypatch):
@@ -464,7 +464,7 @@ def test_discover_job_links_next_gen_merges_supported_seed_urls(monkeypatch):
         runtime,
         "run_shadow_endpoint_selection",
         lambda settings=None: {
-            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 2",
+            "output": "Direct-source seed shadow summary:\n- Selected shadow candidates: 2",
             "selected_endpoint_count": 2,
             "selected_company_names": ["Rover", "Checkr"],
             "selected_ats_counts": {"lever": 1, "greenhouse": 1},
@@ -508,8 +508,8 @@ def test_discover_job_links_next_gen_merges_supported_seed_urls(monkeypatch):
     assert result["next_gen_supported_seeds_scanned"] == 2
     assert result["next_gen_unsupported_seeds_skipped"] == 0
     assert result["urls"][:2] == result["next_gen_seed_urls"]
-    assert "Next-gen seed discovery summary:" in result["output"]
-    assert "Next-gen seeds added 2 URL(s) ahead of legacy results for this run." in result["output"]
+    assert "Direct-source seed discovery summary:" in result["output"]
+    assert "Direct-source seeds added 2 URL(s) ahead of legacy results for this run." in result["output"]
 
 
 def test_discover_job_links_next_gen_supports_workday_seeds(monkeypatch):
@@ -534,7 +534,7 @@ def test_discover_job_links_next_gen_supports_workday_seeds(monkeypatch):
         runtime,
         "run_shadow_endpoint_selection",
         lambda settings=None: {
-            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 1",
+            "output": "Direct-source seed shadow summary:\n- Selected shadow candidates: 1",
             "selected_endpoint_count": 1,
             "selected_company_names": ["Centene"],
             "selected_ats_counts": {"workday": 1},
@@ -560,8 +560,8 @@ def test_discover_job_links_next_gen_supports_workday_seeds(monkeypatch):
     ]
     assert result["next_gen_supported_seeds_scanned"] == 1
     assert result["next_gen_unsupported_seeds_skipped"] == 0
-    assert "Checking next-gen Workday seed: Centene" in result["output"]
-    assert "Next-gen Workday URLs found: 1" in result["output"]
+    assert "Checking direct-source Workday seed: Centene" in result["output"]
+    assert "Direct-source Workday URLs found: 1" in result["output"]
 
 
 def test_discover_job_links_next_gen_supports_successfactors_seeds(monkeypatch):
@@ -594,7 +594,7 @@ def test_discover_job_links_next_gen_supports_successfactors_seeds(monkeypatch):
         runtime,
         "run_shadow_endpoint_selection",
         lambda settings=None: {
-            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 1",
+            "output": "Direct-source seed shadow summary:\n- Selected shadow candidates: 1",
             "selected_endpoint_count": 1,
             "selected_company_names": ["Paramount"],
             "selected_ats_counts": {"sap successfactors": 1},
@@ -624,12 +624,11 @@ def test_discover_job_links_next_gen_supports_successfactors_seeds(monkeypatch):
     assert result["next_gen_seed_urls"] == [
         "https://careers.paramount.com/job/Remote/Business-Analyst/123/",
         "https://careers.paramount.com/job/Dallas/Business-Analyst/124/",
-        "https://careers.paramount.com/job/Dallas/Business-Analyst/125/",
     ]
     assert result["next_gen_supported_seeds_scanned"] == 1
     assert result["next_gen_unsupported_seeds_skipped"] == 0
-    assert "Checking next-gen SuccessFactors seed: Paramount" in result["output"]
-    assert "Next-gen SuccessFactors URLs found: 5 | kept: 3" in result["output"]
+    assert "Checking direct-source SuccessFactors seed: Paramount" in result["output"]
+    assert "Direct-source SuccessFactors URLs found: 5 | kept: 2" in result["output"]
 
 
 def test_discover_job_links_next_gen_supports_icims_seeds(monkeypatch):
@@ -662,7 +661,7 @@ def test_discover_job_links_next_gen_supports_icims_seeds(monkeypatch):
         runtime,
         "run_shadow_endpoint_selection",
         lambda settings=None: {
-            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 1",
+            "output": "Direct-source seed shadow summary:\n- Selected shadow candidates: 1",
             "selected_endpoint_count": 1,
             "selected_company_names": ["Schwab"],
             "selected_ats_counts": {"icims": 1},
@@ -694,8 +693,8 @@ def test_discover_job_links_next_gen_supports_icims_seeds(monkeypatch):
     ]
     assert result["next_gen_supported_seeds_scanned"] == 1
     assert result["next_gen_unsupported_seeds_skipped"] == 0
-    assert "Checking next-gen iCIMS seed: Schwab" in result["output"]
-    assert "Next-gen iCIMS URLs found: 4 | kept: 2" in result["output"]
+    assert "Checking direct-source iCIMS seed: Schwab" in result["output"]
+    assert "Direct-source iCIMS URLs found: 4 | kept: 2" in result["output"]
 
 
 def test_discover_job_links_next_gen_supports_taleo_oracle_seeds(monkeypatch):
@@ -728,7 +727,7 @@ def test_discover_job_links_next_gen_supports_taleo_oracle_seeds(monkeypatch):
         runtime,
         "run_shadow_endpoint_selection",
         lambda settings=None: {
-            "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 1",
+            "output": "Direct-source seed shadow summary:\n- Selected shadow candidates: 1",
             "selected_endpoint_count": 1,
             "selected_company_names": ["Weyerhaeuser"],
             "selected_ats_counts": {"taleo / oracle recruiting": 1},
@@ -758,8 +757,8 @@ def test_discover_job_links_next_gen_supports_taleo_oracle_seeds(monkeypatch):
     ]
     assert result["next_gen_supported_seeds_scanned"] == 1
     assert result["next_gen_unsupported_seeds_skipped"] == 0
-    assert "Checking next-gen Taleo seed: Weyerhaeuser" in result["output"]
-    assert "Next-gen Taleo URLs found: 2 | kept: 2" in result["output"]
+    assert "Checking direct-source Taleo seed: Weyerhaeuser" in result["output"]
+    assert "Direct-source Taleo URLs found: 2 | kept: 2" in result["output"]
 
 
 def test_discover_job_links_next_gen_fallback_scans_second_shadow_batch(monkeypatch):
@@ -800,7 +799,7 @@ def test_discover_job_links_next_gen_fallback_scans_second_shadow_batch(monkeypa
         if offset == 0:
             if calls["shadow_excludes"][-1]:
                 return {
-                    "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 25",
+                    "output": "Direct-source seed shadow summary:\n- Selected shadow candidates: 25",
                     "active_endpoint_count": 50,
                     "selected_endpoint_count": 25,
                     "selected_candidates": [
@@ -808,7 +807,7 @@ def test_discover_job_links_next_gen_fallback_scans_second_shadow_batch(monkeypa
                     ],
                 }
             return {
-                "output": "Next-gen source layer shadow summary:\n- Selected shadow candidates: 25",
+                "output": "Direct-source seed shadow summary:\n- Selected shadow candidates: 25",
                 "active_endpoint_count": 50,
                 "selected_endpoint_count": 25,
                 "selected_candidates": [
@@ -834,7 +833,7 @@ def test_discover_job_links_next_gen_fallback_scans_second_shadow_batch(monkeypa
     assert calls["seed_batches"] == ["First Batch", "Second Batch"]
     assert result["next_gen_seed_urls"] == ["https://jobs.example/seeded-second-batch"]
     assert result["next_gen_supported_seeds_scanned"] == 50
-    assert "Next-gen seed fallback triggered." in result["output"]
+    assert "Direct-source seed fallback triggered." in result["output"]
 
 
 def test_filter_next_gen_seed_urls_prefers_relevant_matches():
@@ -859,10 +858,9 @@ def test_filter_next_gen_seed_urls_prefers_relevant_matches():
     assert kept == [
         "https://careers.example.com/job/Remote/Vice-President-of-IT/1/",
         "https://careers.example.com/job/Dallas/Vice-President-of-IT/2/",
-        "https://careers.example.com/job/Dallas/Vice-President-of-IT/3/",
     ]
-    assert title_skips == 1
-    assert location_skips == 1
+    assert title_skips == 0
+    assert location_skips == 0
 
 
 def test_cheap_seed_location_prefilter_rejects_explicit_foreign_remote_hint():
@@ -1618,7 +1616,7 @@ def test_build_jobs_from_urls_tracks_next_gen_seed_contribution(monkeypatch):
     assert result["seeded_accepted_jobs"] == 1
     assert result["legacy_accepted_jobs"] == 1
     assert result["seeded_accepted_companies"] == ["SeedCo"]
-    assert "Next-gen contribution summary:" in result["output"]
+    assert "Direct-source contribution summary:" in result["output"]
     assert "- Seeded URLs accepted: 1" in result["output"]
 
 

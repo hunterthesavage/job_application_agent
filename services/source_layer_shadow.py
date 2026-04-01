@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from services.db import db_connection
 
 SHADOW_SELECTION_CAP = 25
+DIRECT_SOURCE_SELECTION_CAP = 12
 SUPPORTED_NEXT_GEN_SEED_VENDORS = {
     "greenhouse",
     "lever",
@@ -455,7 +456,11 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
     settings = settings or {}
     source_layer_mode = _safe_text(settings.get("_source_layer_mode", "legacy")).lower() or "legacy"
     selection_offset = _parse_int_setting(settings.get("_shadow_selection_offset", 0), 0)
-    selection_cap = _parse_int_setting(settings.get("_shadow_selection_cap", SHADOW_SELECTION_CAP), SHADOW_SELECTION_CAP) or SHADOW_SELECTION_CAP
+    default_selection_cap = DIRECT_SOURCE_SELECTION_CAP if source_layer_mode == "next_gen" else SHADOW_SELECTION_CAP
+    selection_cap = _parse_int_setting(
+        settings.get("_shadow_selection_cap", default_selection_cap),
+        default_selection_cap,
+    ) or default_selection_cap
     excluded_endpoint_urls = {
         _safe_text(url)
         for url in _parse_multivalue_setting(settings.get("_shadow_exclude_endpoint_urls", ""))
@@ -599,7 +604,7 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
     ]
 
     lines = [
-        "Next-gen source layer shadow summary:",
+        "Direct-source seed shadow summary:",
         f"- Active imported endpoints: {len(rows)}",
         f"- Approved endpoints: {approved_count}",
         f"- Candidate endpoints: {candidate_count}",
@@ -617,14 +622,14 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
                 _safe_text(row["endpoint_url"]),
             )
         )
-        lines.append(f"- Next-gen seed-supporting candidates: {supported_selected}")
-        lines.append(f"- Preferred next-gen seed pool: {preferred_next_gen_seed_count}")
+        lines.append(f"- Direct-source seed-supporting candidates: {supported_selected}")
+        lines.append(f"- Preferred direct-source seed pool: {preferred_next_gen_seed_count}")
         lines.append(
-            f"- Preferred next-gen candidates selected: {sum(1 for row in selected_rows if _is_preferred_next_gen_seed_row(row))}"
+            f"- Preferred direct-source candidates selected: {sum(1 for row in selected_rows if _is_preferred_next_gen_seed_row(row))}"
         )
         if senior_technology_bias:
-            lines.append("- Next-gen ranking bias: senior technology leadership")
-            lines.append("- Next-gen ATS mix profile: diversified senior tech")
+            lines.append("- Direct-source ranking bias: senior technology leadership")
+            lines.append("- Direct-source ATS mix profile: diversified senior tech")
     if selected_companies:
         lines.append(f"- Selected companies: {', '.join(selected_companies)}")
     else:

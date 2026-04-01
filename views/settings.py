@@ -811,18 +811,24 @@ def _render_status_source_layer() -> None:
         text = str(value or "").strip()
         if not text:
             return "Unknown"
+        aliases = {
+            "next_gen": "Direct Source",
+            "direct_source_seed_experiment": "Direct Source Seed Experiment",
+        }
+        if text in aliases:
+            return aliases[text]
         return text.replace("_", " ").title()
 
     st.markdown("### Source Layer")
     st.caption(
         "This is an internal read-only view of the current source-layer state. "
-        "Legacy remains the current source of truth, shadow reflects locally populated endpoint inventory, and next_gen currently layers supported seed URLs on top of legacy discovery."
+        "Legacy remains the current source of truth, shadow reflects locally populated endpoint inventory, and next_gen currently layers supported direct-source seeds on top of legacy discovery."
     )
 
     st.markdown("#### Internal Source Layer Mode")
     st.caption(
         "This controls the app's internal source-layer mode for testing. "
-        "Visible discovery behavior still stays legacy-first unless the current source-layer plumbing adds comparison output or supported next_gen seeds."
+        "Visible discovery behavior still stays legacy-first unless the current source-layer plumbing adds comparison output or supported direct-source seeds."
     )
 
     if "settings_source_layer_mode_value" not in st.session_state:
@@ -831,7 +837,7 @@ def _render_status_source_layer() -> None:
     mode_help = {
         "legacy": "Current source of truth only.",
         "shadow": "Keep legacy visible, but include shadow comparison diagnostics.",
-        "next_gen": "Keep legacy discovery primary, but add supported source-layer seed URLs when available.",
+        "next_gen": "Keep legacy discovery primary, but add supported direct-source seed URLs when available.",
     }
 
     selected_mode = st.radio(
@@ -928,7 +934,7 @@ def _render_status_source_layer() -> None:
     with action_col_2:
         st.caption(
             "Use this to refresh local shadow source-layer tables from the current legacy export. "
-            "This does not change visible app behavior; it only refreshes the local inventory used by shadow diagnostics and next_gen seeds."
+            "This does not change visible app behavior; it only refreshes the local inventory used by shadow diagnostics and direct-source seeds."
         )
 
     c1, c2, c3, c4 = st.columns(4)
@@ -941,9 +947,9 @@ def _render_status_source_layer() -> None:
     st.write(f"- Legacy status: {_humanize(legacy.get('status', 'unknown'))}")
     st.write(f"- Shadow active endpoints: {int(shadow.get('active_endpoint_count', 0) or 0)}")
     st.write(f"- Shadow approved endpoints: {int(shadow.get('approved_endpoint_count', 0) or 0)}")
-    st.write(f"- Next-gen status: {_humanize(next_gen.get('status', 'unknown'))}")
+    st.write(f"- Direct-source status: {_humanize(next_gen.get('status', 'unknown'))}")
     if str(next_gen.get("note", "") or "").strip():
-        st.write(f"- Next-gen note: {str(next_gen.get('note', '')).strip()}")
+        st.write(f"- Direct-source note: {str(next_gen.get('note', '')).strip()}")
 
     if latest_run:
         st.markdown("#### Latest Source Layer Run")
@@ -956,21 +962,21 @@ def _render_status_source_layer() -> None:
         st.write(f"- Accepted jobs: {int(latest_run.get('accepted_jobs', 0) or 0)}")
         if latest_run_mode == "next_gen":
             st.write(
-                f"- Next-gen supported seeds scanned: {int(latest_run.get('next_gen_supported_seeds_scanned', 0) or 0)}"
+                f"- Direct-source seeds scanned: {int(latest_run.get('next_gen_supported_seeds_scanned', 0) or 0)}"
             )
             st.write(
-                f"- Next-gen unsupported seeds skipped: {int(latest_run.get('next_gen_unsupported_seeds_skipped', 0) or 0)}"
+                f"- Direct-source unsupported seeds skipped: {int(latest_run.get('next_gen_unsupported_seeds_skipped', 0) or 0)}"
             )
-            st.write(f"- Next-gen seeded URLs: {int(latest_run.get('next_gen_seeded_urls', 0) or 0)}")
+            st.write(f"- Direct-source seeded URLs: {int(latest_run.get('next_gen_seeded_urls', 0) or 0)}")
             st.write(
-                f"- Next-gen seeded accepted jobs: {int(latest_run.get('next_gen_seeded_accepted_jobs', 0) or 0)}"
+                f"- Direct-source seeded accepted jobs: {int(latest_run.get('next_gen_seeded_accepted_jobs', 0) or 0)}"
             )
             seeded_companies = str(latest_run.get("seeded_accepted_companies", "") or "").strip()
             if seeded_companies:
                 st.write(f"- Seeded accepted companies: {seeded_companies}")
             seed_failures = str(latest_run.get("next_gen_seed_failures", "") or "").strip()
             if seed_failures:
-                st.write(f"- Next-gen seed failures: {seed_failures}")
+                st.write(f"- Direct-source seed failures: {seed_failures}")
         first_pipeline_error = str(latest_run.get("first_pipeline_error", "") or "").strip()
         if first_pipeline_error:
             st.write(f"- First pipeline error: {first_pipeline_error}")

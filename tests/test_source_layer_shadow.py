@@ -190,7 +190,7 @@ def test_run_shadow_endpoint_selection_prefers_supported_seed_vendors_for_next_g
 
     selected_vendors = [candidate["ats_vendor"] for candidate in result["selected_candidates"]]
     assert selected_vendors[:2] == ["lever", "greenhouse"]
-    assert "Next-gen seed-supporting candidates: 2" in result["output"]
+    assert "Direct-source seed-supporting candidates: 2" in result["output"]
 
 
 def test_run_shadow_endpoint_selection_prefers_high_confidence_validated_seed_pool(temp_db_path):
@@ -300,7 +300,7 @@ def test_run_shadow_endpoint_selection_prefers_high_confidence_validated_seed_po
     selected_companies = [candidate["company_name"] for candidate in result["selected_candidates"]]
     assert selected_companies == ["High Confidence Seed", "Another High Confidence Seed"]
     assert result["preferred_next_gen_seed_count"] == 2
-    assert "Preferred next-gen seed pool: 2" in result["output"]
+    assert "Preferred direct-source seed pool: 2" in result["output"]
 
 
 def test_run_shadow_endpoint_selection_prefers_seedable_taleo_endpoint_shapes(temp_db_path):
@@ -382,7 +382,7 @@ def test_run_shadow_endpoint_selection_prefers_seedable_taleo_endpoint_shapes(te
     )
 
     assert result["selected_candidates"][0]["company_name"] == "Supported Taleo"
-    assert "Next-gen seed-supporting candidates: 1" in result["output"]
+    assert "Direct-source seed-supporting candidates: 1" in result["output"]
 
 
 def test_run_shadow_endpoint_selection_biases_workday_and_icims_for_senior_tech_search(temp_db_path):
@@ -457,7 +457,7 @@ def test_run_shadow_endpoint_selection_biases_workday_and_icims_for_senior_tech_
 
     selected_companies = [candidate["company_name"] for candidate in result["selected_candidates"][:3]]
     assert selected_companies[:2] == ["Workday Example", "iCIMS Example"]
-    assert "Next-gen ranking bias: senior technology leadership" in result["output"]
+    assert "Direct-source ranking bias: senior technology leadership" in result["output"]
 
 
 def test_run_shadow_endpoint_selection_diversifies_senior_tech_mix_across_ats_families(temp_db_path):
@@ -563,7 +563,7 @@ def test_run_shadow_endpoint_selection_diversifies_senior_tech_mix_across_ats_fa
     assert "icims" in selected_vendors
     assert "sap successfactors" in selected_vendors
     assert "taleo / oracle recruiting" in selected_vendors
-    assert "Next-gen ATS mix profile: diversified senior tech" in result["output"]
+    assert "Direct-source ATS mix profile: diversified senior tech" in result["output"]
 
 
 def test_run_shadow_endpoint_selection_prefers_higher_quality_seed_shapes(temp_db_path):

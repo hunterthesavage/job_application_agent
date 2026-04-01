@@ -59,8 +59,8 @@ def test_build_source_layer_status_summary(temp_db_path):
     assert summary["shadow"]["company_count"] == 1
     assert summary["shadow"]["active_endpoint_count"] == 1
     assert summary["shadow"]["approved_endpoint_count"] == 1
-    assert summary["next_gen"]["status"] == "seed_experiment"
-    assert "seed URLs" in summary["next_gen"]["note"]
+    assert summary["next_gen"]["status"] == "direct_source_seed_experiment"
+    assert "direct-source seed URLs" in summary["next_gen"]["note"]
     assert summary["latest_run"]["mode"] == "import"
 
 
@@ -77,8 +77,8 @@ def test_format_source_layer_status_summary():
                 "approved_endpoint_count": 1,
             },
             "next_gen": {
-                "status": "seed_experiment",
-                "note": "Legacy discovery stays primary, and supported source-layer seed URLs are added when available.",
+                "status": "direct_source_seed_experiment",
+                "note": "Legacy discovery stays primary, and supported direct-source seed URLs are added when available.",
             },
             "latest_run": {
                 "mode": "import",
@@ -96,7 +96,7 @@ def test_format_source_layer_status_summary():
 
     assert "legacy.status: current_source_of_truth" in output
     assert "shadow.endpoint_count: 2" in output
-    assert "next_gen.status: seed_experiment" in output
+    assert "next_gen.status: direct_source_seed_experiment" in output
     assert "next_gen.note: Legacy discovery stays primary" in output
     assert "latest_run.mode: import" in output
 
@@ -127,7 +127,7 @@ def test_build_source_layer_status_summary_extracts_next_gen_contribution(temp_d
                 19,
                 10,
                 0,
-                'Pipeline discovery run. Provider mix: greenhouse 2, lever 3, search 15. Next-gen supported seeds scanned: 9. Next-gen unsupported seeds skipped: 16. Next-gen seeded URLs: 5. Next-gen seeded accepted jobs: 4. Seeded accepted companies: Avantor, Franklin Resources.'
+                'Pipeline discovery run. Provider mix: greenhouse 2, lever 3, search 15. Direct-source seeds scanned: 9. Direct-source unsupported seeds skipped: 16. Direct-source seeded URLs: 5. Direct-source seeded accepted jobs: 4. Seeded accepted companies: Avantor, Franklin Resources.'
             )
             """
         )

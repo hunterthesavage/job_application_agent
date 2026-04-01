@@ -20,6 +20,14 @@ Entry format:
 
 ---
 
+## 2026-04-01
+
+### Reframed next-gen as a bounded direct-source seeding experiment
+- Summary: tightened `next_gen` into a smaller direct-source seed lane by capping seed selection at 12 endpoints, lowering per-company seeded URL cap to 2, updating runtime/shadow/status messaging to say `direct-source`, and making the source-layer smoke parser understand both old `Next-gen ...` notes and new `Direct-source ...` notes.
+- Why: the old `next_gen` name was obscuring what the mode actually does, and the wider seed batches were slow without showing enough lift. We needed clearer internal diagnostics plus a cheaper experiment before deciding whether this path is worth more V1 time.
+- Validation: `python3 -m py_compile services/pipeline_runtime.py services/source_layer_shadow.py services/source_layer_status_smoke.py views/settings.py tests/test_pipeline_runtime.py tests/test_source_layer_status_smoke.py tests/test_source_layer_shadow.py`; `.venv/bin/python -m pytest -q tests/test_pipeline_runtime.py tests/test_source_layer_status_smoke.py tests/test_source_layer_shadow.py`; local debug comparisons showed `VP of IT` remote stayed `0` URLs in both modes while direct-source scanned `24` seeds, and `Director of IT` remote improved only from `0` legacy URLs to `1` direct-source-seeded URL (`Associate Director - Global Compliance Platform` at Amgen), which is still too weak to graduate beyond internal use.
+- Files: `services/pipeline_runtime.py`, `services/source_layer_shadow.py`, `services/source_layer_status_smoke.py`, `views/settings.py`, `tests/test_pipeline_runtime.py`, `tests/test_source_layer_status_smoke.py`, `tests/test_source_layer_shadow.py`, `docs/discovery-tech-changelog.md`
+
 ## 2026-03-28
 
 ### Preferred validated seed pool now leads next-gen shadow selection

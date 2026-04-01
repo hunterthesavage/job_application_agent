@@ -36,7 +36,7 @@ from services.search_plan import build_search_title_variants
 from services.settings import load_settings
 from services.source_layer_import import record_source_layer_run
 from services.source_layer import get_source_layer_mode
-from services.source_layer_shadow import run_shadow_endpoint_selection
+from services.source_layer_shadow import DIRECT_SOURCE_SELECTION_CAP, run_shadow_endpoint_selection
 from services.source_layer_status_smoke import build_source_layer_status_summary
 from services.source_trust import enrich_job_payload
 from services.job_qualifier import qualify_job
@@ -49,7 +49,7 @@ AUTO_ACCEPT_SCORE = 45
 MAX_URLS_PER_RUN = 25  # temporary fast-test cap; set to 0 for unlimited
 TRANSIENT_FETCH_RETRY_ATTEMPTS = 2
 TRANSIENT_FETCH_RETRY_DELAY_SECONDS = 0.35
-NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY = 3
+NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY = 2
 WORKDAY_SEED_PAGE_SIZE = 20
 WORKDAY_SEED_MAX_PAGES = 5
 SEED_FOREIGN_REMOTE_MARKERS = {
@@ -1425,7 +1425,7 @@ def _build_jobs_from_urls(
 
     if seeded_job_url_set:
         output_lines.append("")
-        output_lines.append("Next-gen contribution summary:")
+        output_lines.append("Direct-source contribution summary:")
         output_lines.append(f"- Seeded URLs discovered: {len(seeded_job_url_set)}")
         output_lines.append(f"- Seeded URLs accepted: {seeded_accepted_jobs}")
         output_lines.append(f"- Legacy URLs accepted: {legacy_accepted_jobs}")
@@ -1587,10 +1587,10 @@ def _format_source_layer_run_snapshot(
             f"- Shadow active endpoints: {int(shadow_status.get('active_endpoint_count', 0) or 0)}",
             f"- Shadow approved endpoints: {int(shadow_status.get('approved_endpoint_count', 0) or 0)}",
             f"- Shadow selected endpoints: {int(shadow_result.get('selected_endpoint_count', 0) or 0)}",
-            f"- Next-gen supported seeds scanned: {int(discovery_result.get('next_gen_supported_seeds_scanned', 0) or 0)}",
-            f"- Next-gen unsupported seeds skipped: {int(discovery_result.get('next_gen_unsupported_seeds_skipped', 0) or 0)}",
-            f"- Next-gen seeded URLs: {len(discovery_result.get('next_gen_seed_urls', []) or [])}",
-            f"- Next-gen seeded accepted jobs: {int(ingest_result.get('seeded_accepted_jobs', 0) or 0)}",
+            f"- Direct-source seeds scanned: {int(discovery_result.get('next_gen_supported_seeds_scanned', 0) or 0)}",
+            f"- Direct-source unsupported seeds skipped: {int(discovery_result.get('next_gen_unsupported_seeds_skipped', 0) or 0)}",
+            f"- Direct-source seeded URLs: {len(discovery_result.get('next_gen_seed_urls', []) or [])}",
+            f"- Direct-source seeded accepted jobs: {int(ingest_result.get('seeded_accepted_jobs', 0) or 0)}",
             f"- Provider mix: {provider_mix}",
             f"- Top shadow ATS families: {top_ats or 'none yet'}",
             f"- Top shadow companies: {selected_companies or 'none yet'}",
@@ -1626,15 +1626,15 @@ def _record_pipeline_source_layer_run(
     unsupported_seeds_skipped = int(discovery_result.get("next_gen_unsupported_seeds_skipped", 0) or 0)
     if supported_seeds_scanned or unsupported_seeds_skipped:
         notes += (
-            f" Next-gen supported seeds scanned: {supported_seeds_scanned}."
-            f" Next-gen unsupported seeds skipped: {unsupported_seeds_skipped}."
+            f" Direct-source seeds scanned: {supported_seeds_scanned}."
+            f" Direct-source unsupported seeds skipped: {unsupported_seeds_skipped}."
         )
     seeded_urls = len(discovery_result.get("next_gen_seed_urls", []) or [])
     if seeded_urls:
-        notes += f" Next-gen seeded URLs: {seeded_urls}."
+        notes += f" Direct-source seeded URLs: {seeded_urls}."
     seeded_accepted_jobs = int(ingest_result.get("seeded_accepted_jobs", 0) or 0)
     if seeded_accepted_jobs:
-        notes += f" Next-gen seeded accepted jobs: {seeded_accepted_jobs}."
+        notes += f" Direct-source seeded accepted jobs: {seeded_accepted_jobs}."
     seeded_accepted_companies = ", ".join(
         str(name)
         for name in (ingest_result.get("seeded_accepted_companies", []) or [])
@@ -1643,7 +1643,7 @@ def _record_pipeline_source_layer_run(
         notes += f" Seeded accepted companies: {seeded_accepted_companies}."
     seed_failures = discovery_result.get("next_gen_seed_failures", []) or []
     if isinstance(seed_failures, list) and seed_failures:
-        notes += f" Next-gen seed failures: {' | '.join(str(item) for item in seed_failures[:3])}."
+        notes += f" Direct-source seed failures: {' | '.join(str(item) for item in seed_failures[:3])}."
     first_error_message = safe_text(ingest_result.get("first_error_message", ""))
     if first_error_message:
         notes += f" First pipeline error: {first_error_message}."
@@ -1665,7 +1665,7 @@ def _discover_urls_from_next_gen_seeds(
 ) -> tuple[list[str], list[str], int, int, list[str]]:
     selected_candidates = shadow_result.get("selected_candidates", []) if isinstance(shadow_result, dict) else []
     if not isinstance(selected_candidates, list):
-        return [], ["- Next-gen seed discovery: no selected candidates available."], 0, 0, []
+        return [], ["- Direct-source seed discovery: no selected candidates available."], 0, 0, []
 
     discovered: list[str] = []
     log_lines: list[str] = []
@@ -1684,29 +1684,29 @@ def _discover_urls_from_next_gen_seeds(
 
         if ats_vendor == "greenhouse":
             scanned_count += 1
-            log_lines.append(f"Checking next-gen Greenhouse seed: {company_name} | {endpoint_url}")
+            log_lines.append(f"Checking direct-source Greenhouse seed: {company_name} | {endpoint_url}")
             try:
                 urls = discover_module.discover_greenhouse_jobs(endpoint_url, settings)
                 discovered.extend(urls)
-                log_lines.append(f"Next-gen Greenhouse URLs found: {len(urls)}")
+                log_lines.append(f"Direct-source Greenhouse URLs found: {len(urls)}")
             except Exception as exc:
-                failure = f"Next-gen Greenhouse seed failed: {company_name} | {exc}"
+                failure = f"Direct-source Greenhouse seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
         elif ats_vendor == "lever":
             scanned_count += 1
-            log_lines.append(f"Checking next-gen Lever seed: {company_name} | {endpoint_url}")
+            log_lines.append(f"Checking direct-source Lever seed: {company_name} | {endpoint_url}")
             try:
                 urls = discover_module.discover_lever_jobs(endpoint_url, settings)
                 discovered.extend(urls)
-                log_lines.append(f"Next-gen Lever URLs found: {len(urls)}")
+                log_lines.append(f"Direct-source Lever URLs found: {len(urls)}")
             except Exception as exc:
-                failure = f"Next-gen Lever seed failed: {company_name} | {exc}"
+                failure = f"Direct-source Lever seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
         elif ats_vendor == "workday":
             scanned_count += 1
-            log_lines.append(f"Checking next-gen Workday seed: {company_name} | {endpoint_url}")
+            log_lines.append(f"Checking direct-source Workday seed: {company_name} | {endpoint_url}")
             try:
                 urls = _discover_workday_jobs(endpoint_url, settings)
                 filtered_urls, title_skips, location_skips = _filter_next_gen_seed_urls(
@@ -1716,13 +1716,13 @@ def _discover_urls_from_next_gen_seeds(
                 )
                 discovered.extend(filtered_urls)
                 log_lines.append(
-                    "Next-gen Workday URLs found: "
+                    "Direct-source Workday URLs found: "
                     f"{len(urls)} | kept: {len(filtered_urls)} "
                     f"(title skips: {title_skips}, location skips: {location_skips}, "
                     f"company cap: {NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY})"
                 )
             except Exception as exc:
-                failure = f"Next-gen Workday seed failed: {company_name} | {exc}"
+                failure = f"Direct-source Workday seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
         elif ats_vendor == "sap successfactors":
@@ -1730,7 +1730,7 @@ def _discover_urls_from_next_gen_seeds(
                 unsupported_count += 1
                 continue
             scanned_count += 1
-            log_lines.append(f"Checking next-gen SuccessFactors seed: {company_name} | {endpoint_url}")
+            log_lines.append(f"Checking direct-source SuccessFactors seed: {company_name} | {endpoint_url}")
             try:
                 urls = _discover_successfactors_jobs(endpoint_url, settings)
                 filtered_urls, title_skips, location_skips = _filter_next_gen_seed_urls(
@@ -1740,18 +1740,18 @@ def _discover_urls_from_next_gen_seeds(
                 )
                 discovered.extend(filtered_urls)
                 log_lines.append(
-                    "Next-gen SuccessFactors URLs found: "
+                    "Direct-source SuccessFactors URLs found: "
                     f"{len(urls)} | kept: {len(filtered_urls)} "
                     f"(title skips: {title_skips}, location skips: {location_skips}, "
                     f"company cap: {NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY})"
                 )
             except Exception as exc:
-                failure = f"Next-gen SuccessFactors seed failed: {company_name} | {exc}"
+                failure = f"Direct-source SuccessFactors seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
         elif ats_vendor == "icims":
             scanned_count += 1
-            log_lines.append(f"Checking next-gen iCIMS seed: {company_name} | {endpoint_url}")
+            log_lines.append(f"Checking direct-source iCIMS seed: {company_name} | {endpoint_url}")
             try:
                 urls = _discover_icims_jobs(endpoint_url, settings)
                 filtered_urls, title_skips, location_skips = _filter_next_gen_seed_urls(
@@ -1761,13 +1761,13 @@ def _discover_urls_from_next_gen_seeds(
                 )
                 discovered.extend(filtered_urls)
                 log_lines.append(
-                    "Next-gen iCIMS URLs found: "
+                    "Direct-source iCIMS URLs found: "
                     f"{len(urls)} | kept: {len(filtered_urls)} "
                     f"(title skips: {title_skips}, location skips: {location_skips}, "
                     f"company cap: {NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY})"
                 )
             except Exception as exc:
-                failure = f"Next-gen iCIMS seed failed: {company_name} | {exc}"
+                failure = f"Direct-source iCIMS seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
         elif ats_vendor == "taleo / oracle recruiting":
@@ -1775,18 +1775,18 @@ def _discover_urls_from_next_gen_seeds(
                 unsupported_count += 1
                 continue
             scanned_count += 1
-            log_lines.append(f"Checking next-gen Taleo seed: {company_name} | {endpoint_url}")
+            log_lines.append(f"Checking direct-source Taleo seed: {company_name} | {endpoint_url}")
             try:
                 urls = _discover_taleo_jobs(endpoint_url, settings)
                 kept_urls = urls[:NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY]
                 discovered.extend(kept_urls)
                 log_lines.append(
-                    "Next-gen Taleo URLs found: "
+                    "Direct-source Taleo URLs found: "
                     f"{len(urls)} | kept: {len(kept_urls)} "
                     f"(company cap: {NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY})"
                 )
             except Exception as exc:
-                failure = f"Next-gen Taleo seed failed: {company_name} | {exc}"
+                failure = f"Direct-source Taleo seed failed: {company_name} | {exc}"
                 log_lines.append(failure)
                 failure_lines.append(failure)
         else:
@@ -1796,11 +1796,11 @@ def _discover_urls_from_next_gen_seeds(
     if scanned_count or unsupported_count:
         log_lines.insert(
             0,
-            "Next-gen seed discovery summary:"
+            "Direct-source seed discovery summary:"
             f" scanned {scanned_count} supported seed(s), skipped {unsupported_count} unsupported seed(s).",
         )
     else:
-        log_lines.append("- Next-gen seed discovery: no supported seed endpoints were available.")
+        log_lines.append("- Direct-source seed discovery: no supported seed endpoints were available.")
 
     return discovered, log_lines, scanned_count, unsupported_count, failure_lines
 
@@ -2270,8 +2270,8 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
     elif source_layer_mode == "next_gen":
         shadow_result = run_shadow_endpoint_selection(source_layer_settings)
         output_parts.append(
-            "Next-gen source layer mode requested. "
-            "Legacy discovery remains primary for this run, and supported source-layer seed URLs will be added when available."
+            "Direct-source seeding mode requested. "
+            "Legacy discovery remains primary for this run, and supported direct-source seed URLs will be added when available."
         )
         shadow_output = safe_text(shadow_result.get("output", ""))
         if shadow_output:
@@ -2286,9 +2286,9 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
         if not seeded_urls:
             active_count = int(shadow_result.get("active_endpoint_count", 0) or 0)
             selected_count = int(shadow_result.get("selected_endpoint_count", 0) or 0)
-            if active_count > selected_count >= SHADOW_SELECTION_CAP:
+            if active_count > selected_count >= DIRECT_SOURCE_SELECTION_CAP:
                 output_parts.append(
-                    "Next-gen seed fallback triggered. First seed batch produced no kept URLs, so the next shadow batch will be scanned."
+                    "Direct-source seed fallback triggered. First seed batch produced no kept URLs, so the next shadow batch will be scanned."
                 )
                 first_batch_endpoint_urls = [
                     safe_text(candidate.get("endpoint_url", ""))
@@ -2297,7 +2297,7 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
                 ]
                 fallback_settings = {
                     **source_layer_settings,
-                    "_shadow_selection_cap": SHADOW_SELECTION_CAP,
+                    "_shadow_selection_cap": DIRECT_SOURCE_SELECTION_CAP,
                     "_shadow_exclude_endpoint_urls": "\n".join(first_batch_endpoint_urls),
                 }
                 fallback_shadow_result = run_shadow_endpoint_selection(fallback_settings)
@@ -2321,7 +2321,7 @@ def discover_job_links(*, use_ai_title_expansion: bool = True) -> dict[str, Any]
             discovery_result["all_urls"] = merged_urls
             discovery_result["next_gen_seed_urls"] = _normalize_job_posting_urls(seeded_urls)
             output_parts.append(
-                f"Next-gen seeds added {len(discovery_result['next_gen_seed_urls'])} URL(s) ahead of legacy results for this run."
+                f"Direct-source seeds added {len(discovery_result['next_gen_seed_urls'])} URL(s) ahead of legacy results for this run."
             )
         else:
             discovery_result["next_gen_seed_urls"] = []

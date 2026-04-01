@@ -12,11 +12,27 @@ def _extract_note_int(notes: str, label: str) -> int:
     return int(match.group(1))
 
 
+def _extract_note_int_any(notes: str, *labels: str) -> int:
+    for label in labels:
+        value = _extract_note_int(notes, label)
+        if value:
+            return value
+    return 0
+
+
 def _extract_note_text(notes: str, label: str) -> str:
     match = re.search(rf"{re.escape(label)}:\s*(.*?)(?:\.|$)", str(notes or ""))
     if not match:
         return ""
     return str(match.group(1) or "").strip()
+
+
+def _extract_note_text_any(notes: str, *labels: str) -> str:
+    for label in labels:
+        value = _extract_note_text(notes, label)
+        if value:
+            return value
+    return ""
 
 
 def build_source_layer_status_summary() -> dict:
@@ -62,21 +78,33 @@ def build_source_layer_status_summary() -> dict:
             "accepted_jobs": int(latest_run["accepted_jobs"] or 0),
             "errors": int(latest_run["errors"] or 0),
             "notes": latest_run_notes,
-            "next_gen_supported_seeds_scanned": _extract_note_int(
-                latest_run_notes, "Next-gen supported seeds scanned"
+            "next_gen_supported_seeds_scanned": _extract_note_int_any(
+                latest_run_notes,
+                "Direct-source seeds scanned",
+                "Next-gen supported seeds scanned",
             ),
-            "next_gen_unsupported_seeds_skipped": _extract_note_int(
-                latest_run_notes, "Next-gen unsupported seeds skipped"
+            "next_gen_unsupported_seeds_skipped": _extract_note_int_any(
+                latest_run_notes,
+                "Direct-source unsupported seeds skipped",
+                "Next-gen unsupported seeds skipped",
             ),
-            "next_gen_seeded_urls": _extract_note_int(latest_run_notes, "Next-gen seeded URLs"),
-            "next_gen_seeded_accepted_jobs": _extract_note_int(
-                latest_run_notes, "Next-gen seeded accepted jobs"
+            "next_gen_seeded_urls": _extract_note_int_any(
+                latest_run_notes,
+                "Direct-source seeded URLs",
+                "Next-gen seeded URLs",
+            ),
+            "next_gen_seeded_accepted_jobs": _extract_note_int_any(
+                latest_run_notes,
+                "Direct-source seeded accepted jobs",
+                "Next-gen seeded accepted jobs",
             ),
             "seeded_accepted_companies": _extract_note_text(
                 latest_run_notes, "Seeded accepted companies"
             ),
-            "next_gen_seed_failures": _extract_note_text(
-                latest_run_notes, "Next-gen seed failures"
+            "next_gen_seed_failures": _extract_note_text_any(
+                latest_run_notes,
+                "Direct-source seed failures",
+                "Next-gen seed failures",
             ),
             "first_pipeline_error": _extract_note_text(
                 latest_run_notes, "First pipeline error"
@@ -96,8 +124,8 @@ def build_source_layer_status_summary() -> dict:
             "approved_endpoint_count": approved_endpoint_count,
         },
         "next_gen": {
-            "status": "seed_experiment",
-            "note": "Legacy discovery stays primary, and supported source-layer seed URLs are added when available.",
+            "status": "direct_source_seed_experiment",
+            "note": "Legacy discovery stays primary, and supported direct-source seed URLs are added when available.",
         },
         "latest_run": latest_run_summary,
     }
