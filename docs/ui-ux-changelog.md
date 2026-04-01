@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-29
 
+### Simplified V1 search controls while keeping Source Layer available for testing
+- Summary: renamed the public Pipeline search strategies to `Standard` and `Broader Search`, added a light-results nudge back to Run Jobs when broader search may help, and hid the internal `Source Layer` Settings subtab behind a new `Show Internal Search Tools` toggle.
+- Why: V1 needs a cleaner search surface for normal users, but you still need a deliberate way to expose Source Layer diagnostics when testing discovery behavior.
+- Validation: `python3 -m py_compile views/pipeline.py views/settings.py services/settings.py src/discover_job_urls.py`
+- Files: `views/pipeline.py`, `views/settings.py`, `services/settings.py`, `src/discover_job_urls.py`, `docs/ui-ux-changelog.md`
+
 ### Promoted the newer Windows package to the primary live download
 - Summary: updated the Windows docs so the newer portable package is treated as the current live Windows install, while the older known-good recovery zip remains linked as the fallback option.
 - Why: the newer package is now the preferred friend-test path, and continuing to describe it as a test package creates confusion once it becomes the package we actually want people to use first.

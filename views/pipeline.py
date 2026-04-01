@@ -63,8 +63,8 @@ PIPELINE_NAV_OPTIONS = [
 
 PIPELINE_TITLE_SUGGESTION_MAX = 10
 SEARCH_STRATEGY_OPTIONS = {
-    "Balanced": "balanced",
-    "Broad Recall": "broad_recall",
+    "Standard": "balanced",
+    "Broader Search": "broad_recall",
 }
 
 
@@ -1487,7 +1487,7 @@ def _render_run_inputs() -> None:
     if "pipeline_search_strategy_value" not in st.session_state:
         current_strategy_label = next(
             (label for label, value in SEARCH_STRATEGY_OPTIONS.items() if value == current_search_strategy),
-            "Balanced",
+            "Standard",
         )
         st.session_state["pipeline_search_strategy_value"] = current_strategy_label
     if "pipeline_title_suggestions" not in st.session_state:
@@ -1552,7 +1552,7 @@ def _render_run_inputs() -> None:
             "Search Strategy",
             options=list(SEARCH_STRATEGY_OPTIONS.keys()),
             key="pipeline_search_strategy_value",
-            help="Balanced keeps the current exact-title behavior. Broad Recall adds a wider decomposed-title ATS search tier for sparse searches.",
+            help="Standard is the normal search path. Broader Search casts a wider ATS net for sparse or tougher searches.",
         )
 
         st.caption("Minimum Compensation is not shown here yet because it is not currently a primary live run control in this workflow.")
@@ -1568,7 +1568,7 @@ def _render_run_inputs() -> None:
             ("true" if bool(st.session_state.get("pipeline_remote_only_value", current_remote_only)) else "false")
             != str(settings.get("remote_only", "true")),
             SEARCH_STRATEGY_OPTIONS.get(
-                str(st.session_state.get("pipeline_search_strategy_value", "Balanced")),
+                str(st.session_state.get("pipeline_search_strategy_value", "Standard")),
                 "balanced",
             ) != current_search_strategy,
         ]
@@ -1596,7 +1596,7 @@ def _render_run_inputs() -> None:
                 "exclude_keywords": st.session_state.get("pipeline_exclude_keywords_value", current_exclude_keywords),
                 "remote_only": "true" if bool(st.session_state.get("pipeline_remote_only_value", current_remote_only)) else "false",
                 "search_strategy": SEARCH_STRATEGY_OPTIONS.get(
-                    str(st.session_state.get("pipeline_search_strategy_value", "Balanced")),
+                    str(st.session_state.get("pipeline_search_strategy_value", "Standard")),
                     "balanced",
                 ),
             }
@@ -1983,6 +1983,7 @@ def _render_results_summary_card() -> None:
     net_new = int((details or {}).get("net_new_count", (latest_run or {}).get("inserted_count", 0) or 0) or 0)
     errors = int((latest_run or {}).get("error_count", 0) or 0)
     total_seen = int((latest_run or {}).get("total_seen", 0) or 0)
+    current_search_strategy = str(load_settings().get("search_strategy", "balanced") or "balanced").strip().lower()
 
     _render_section_shell(
         "Latest result",
@@ -2001,6 +2002,22 @@ def _render_results_summary_card() -> None:
 
     if next_step_message:
         st.info(f"Next step: {next_step_message}")
+
+    should_nudge_broader_search = (
+        current_search_strategy != "broad_recall"
+        and errors == 0
+        and (net_new == 0 or total_seen <= 5)
+    )
+    if should_nudge_broader_search:
+        st.info(
+            "Results looked light. Try Broader Search in Run Jobs if this role is sparse, senior, or harder to source."
+        )
+        if st.button(
+            "Go to Run Jobs",
+            key="pipeline_results_try_broader_search",
+            use_container_width=True,
+        ):
+            _navigate_pipeline_section("Run Jobs")
 
     _render_more_results_expander()
 

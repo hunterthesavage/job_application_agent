@@ -486,7 +486,7 @@ def build_search_plan(settings: dict[str, str]) -> list[str]:
 
     plan_lines.append(f"Remote only: {'true' if plan.remote_only else 'false'}")
     plan_lines.append(
-        f"Search strategy: {'Broad Recall' if plan.search_strategy == 'broad_recall' else 'Balanced'}"
+        f"Search strategy: {'Broader Search' if plan.search_strategy == 'broad_recall' else 'Standard'}"
     )
     plan_lines.append(f"Generated queries: {len(plan.queries)}")
 

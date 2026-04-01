@@ -43,11 +43,11 @@ SETTINGS_NAV_OPTIONS = [
     "System Status",
 ]
 
-STATUS_NAV_OPTIONS = [
-    "Overview",
-    "Source Layer",
-    "Backlog",
-]
+def _get_status_nav_options(*, show_internal_search_tools: bool) -> list[str]:
+    options = ["Overview", "Backlog"]
+    if show_internal_search_tools:
+        options.insert(1, "Source Layer")
+    return options
 
 
 
@@ -174,6 +174,16 @@ def str_to_bool(value: str, default: bool = False) -> bool:
     if value is None:
         return default
     return str(value).strip().lower() in {"true", "1", "yes", "y", "on"}
+
+
+def _save_internal_search_tools_visibility() -> None:
+    show_internal = bool(st.session_state.get("settings_show_internal_search_tools_value", False))
+    save_settings({"show_internal_search_tools": "true" if show_internal else "false"})
+    st.session_state["settings_internal_search_tools_notice"] = (
+        "Internal search tools are visible now."
+        if show_internal
+        else "Internal search tools are hidden now."
+    )
 
 
 def pick_folder_dialog(initial_path: str) -> str:
@@ -973,15 +983,32 @@ def _render_status_source_layer() -> None:
 
 def render_system_status_tab() -> None:
     _inject_settings_css()
-    initialize_nav_state("settings_status_subnav_selection", "Overview")
+    settings = load_settings()
+    show_internal_search_tools = str_to_bool(settings.get("show_internal_search_tools", "false"))
+    status_nav_options = _get_status_nav_options(show_internal_search_tools=show_internal_search_tools)
+    initialize_nav_state("settings_status_subnav_selection", status_nav_options[0])
 
     st.markdown("### System Status")
     st.caption("Use this area for maintenance, local app health, and launch tracking.")
     st.caption(f"{APP_NAME} version {APP_VERSION}")
     st.caption(f"Database path: {DATABASE_PATH}")
 
+    if "settings_show_internal_search_tools_value" not in st.session_state:
+        st.session_state["settings_show_internal_search_tools_value"] = show_internal_search_tools
+
+    st.toggle(
+        "Show Internal Search Tools",
+        key="settings_show_internal_search_tools_value",
+        help="Internal-only testing toggle. Turn this on when you want Source Layer diagnostics visible in Settings.",
+        on_change=_save_internal_search_tools_visibility,
+    )
+
+    internal_tools_notice = st.session_state.pop("settings_internal_search_tools_notice", "")
+    if internal_tools_notice:
+        st.caption(internal_tools_notice)
+
     selected_status_section = render_button_nav(
-        options=STATUS_NAV_OPTIONS,
+        options=status_nav_options,
         state_key="settings_status_subnav_selection",
         key_prefix="settings_status_subnav",
         selected_button_type="tertiary",
