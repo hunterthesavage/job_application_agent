@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-04-01
 
+### Added a prioritized legacy search quality worklist and cleaned generic company placeholders
+- Summary: added a plain-language legacy search quality worklist for the next V1 discovery cycle and taught company extraction to ignore generic placeholder labels like `page_title` when a better fallback brand is available.
+- Why: we had enough evidence to stop debating the engine choice and needed a concrete improvement order for legacy, while also fixing a visible metadata trust issue surfaced by the matrix comparisons.
+- Validation: `python3 -m py_compile src/validate_job_url.py tests/test_smoke_regression.py`; `.venv/bin/python -m pytest -q tests/test_smoke_regression.py`; new regression covers fallback from `page_title` to `Figma`.
+- Files: `docs/legacy-search-quality-worklist.md`, `src/validate_job_url.py`, `tests/test_smoke_regression.py`, `docs/discovery-tech-changelog.md`
+
 ### Documented the V1 search decision and recommendation
 - Summary: added a plain-language V1 search decision document that explains why legacy remains the production engine, why direct-source stays internal-only, and what discovery work should happen next.
 - Why: after the title-matrix and real-job profile scoring passes, we had enough evidence to stop treating source-layer mode as an open product question and needed one clear decision document to align future work.

@@ -300,9 +300,9 @@ def initialize_filter_state_from_settings(settings: dict) -> None:
     if "filter_source_trust" not in st.session_state:
         st.session_state["filter_source_trust"] = "All"
 
-    default_sort = str(settings.get("default_new_roles_sort", "Newest First") or "Newest First").strip()
+    default_sort = str(settings.get("default_new_roles_sort", "Highest Fit Score") or "Highest Fit Score").strip()
     if default_sort not in NEW_ROLES_SORT_OPTIONS:
-        default_sort = "Newest First"
+        default_sort = "Highest Fit Score"
 
     if "new_roles_sort" not in st.session_state:
         st.session_state["new_roles_sort"] = default_sort

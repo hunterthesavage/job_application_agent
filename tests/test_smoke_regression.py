@@ -111,3 +111,12 @@ def test_choose_best_company_name_prefers_workday_tenant_brand_over_legal_entity
         url="https://harriscomputer.wd3.myworkdayjobs.com/en-US/1/job/SVP-Technology---Engineering_R0040737",
     )
     assert chosen == "Harris Computer"
+
+
+def test_choose_best_company_name_ignores_generic_page_title_label() -> None:
+    chosen = validator.choose_best_company_name(
+        extracted_company="page_title",
+        fallback_company="Figma",
+        url="https://boards.greenhouse.io/figma/jobs/5830640004",
+    )
+    assert chosen == "Figma"

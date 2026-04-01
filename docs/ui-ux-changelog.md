@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-29
 
+### Made fit-first review ordering the default for new queues
+- Summary: changed the default `New Roles` review sort from `Newest First` to `Highest Fit Score` and aligned the Settings defaults UI with that fit-first behavior.
+- Why: current V1 search quality is better judged by surfacing the strongest-fit jobs first, and recency-first ordering was burying better matches that were already in the queue.
+- Validation: `python3 -m py_compile services/settings.py views/settings.py views/new_roles.py`
+- Files: `services/settings.py`, `views/settings.py`, `views/new_roles.py`, `docs/ui-ux-changelog.md`
+
 ### Simplified V1 search controls while keeping Source Layer available for testing
 - Summary: renamed the public Pipeline search strategies to `Standard` and `Broader Search`, added a light-results nudge back to Run Jobs when broader search may help, and hid the internal `Source Layer` Settings subtab behind a new `Show Internal Search Tools` toggle.
 - Why: V1 needs a cleaner search surface for normal users, but you still need a deliberate way to expose Source Layer diagnostics when testing discovery behavior.

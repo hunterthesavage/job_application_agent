@@ -1110,9 +1110,9 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
     if current_page_size not in PAGE_SIZE_OPTIONS:
         current_page_size = "10"
 
-    current_new_roles_sort = str(settings.get("default_new_roles_sort", "Newest First"))
+    current_new_roles_sort = str(settings.get("default_new_roles_sort", "Highest Fit Score"))
     if current_new_roles_sort not in NEW_ROLES_SORT_OPTIONS:
-        current_new_roles_sort = "Newest First"
+        current_new_roles_sort = "Highest Fit Score"
 
     saved_levels = parse_preferred_job_levels(settings.get("preferred_job_levels", ""))
 
@@ -1163,7 +1163,7 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
         [
             str(st.session_state.get("settings_default_min_fit_score_value", current_fit)) != str(settings.get("default_min_fit_score", "Any")),
             str(st.session_state.get("settings_default_jobs_per_page_value", current_page_size)) != str(settings.get("default_jobs_per_page", "10")),
-            str(st.session_state.get("settings_default_new_roles_sort_value", current_new_roles_sort)) != str(settings.get("default_new_roles_sort", "Newest First")),
+            str(st.session_state.get("settings_default_new_roles_sort_value", current_new_roles_sort)) != str(settings.get("default_new_roles_sort", "Highest Fit Score")),
             serialize_preferred_job_levels(st.session_state.get("settings_preferred_job_levels_value", saved_levels)) != str(settings.get("preferred_job_levels", "")),
         ]
     )

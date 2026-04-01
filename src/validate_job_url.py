@@ -430,6 +430,8 @@ def _looks_generic_company_label(value: str) -> bool:
         "smartrecruiters",
         "lever",
         "ashby",
+        "page_title",
+        "page title",
     }
     if lowered in generic_values:
         return True
