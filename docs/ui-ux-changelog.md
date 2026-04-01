@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-29
 
+### Reframed the internal backlog view around Now, Next, and Later
+- Summary: replaced the old High/Medium/Low backlog presentation with `Now`, `Next`, `Later`, and `Done / Stale` sections so the internal backlog view matches the current launch strategy and ranking model.
+- Why: the old priority buckets were not reflecting the real ROI order anymore, and we needed one clearer source of truth for what to work on immediately versus what can safely wait.
+- Validation: `python3 -m py_compile views/settings.py services/backlog.py`; reviewed the Backlog section copy and section ordering in Settings.
+- Files: `views/settings.py`, `services/backlog.py`, `docs/backlog.md`, `docs/ui-ux-changelog.md`
+
 ### Made fit-first review ordering the default for new queues
 - Summary: changed the default `New Roles` review sort from `Newest First` to `Highest Fit Score` and aligned the Settings defaults UI with that fit-first behavior.
 - Why: current V1 search quality is better judged by surfacing the strongest-fit jobs first, and recency-first ordering was burying better matches that were already in the queue.

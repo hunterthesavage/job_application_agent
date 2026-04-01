@@ -733,11 +733,11 @@ def _render_status_overview() -> None:
     _render_reset_app_section()
 
 
-def _render_backlog_priority_card(priority: str, count: int, copy: str) -> str:
-    priority_class = priority.strip().lower()
+def _render_backlog_lane_card(lane: str, count: int, copy: str) -> str:
+    priority_class = lane.strip().lower().replace(" ", "-")
     return (
         f'<div class="settings-backlog-card {priority_class}">'
-        f'<div class="settings-backlog-kicker">{html.escape(priority)} priority</div>'
+        f'<div class="settings-backlog-kicker">{html.escape(lane)}</div>'
         f'<div class="settings-backlog-count">{count}</div>'
         f'<div class="settings-backlog-copy">{html.escape(copy)}</div>'
         '</div>'
@@ -747,48 +747,55 @@ def _render_backlog_priority_card(priority: str, count: int, copy: str) -> str:
 def _render_status_backlog() -> None:
     summary = get_backlog_summary()
     counts = summary.get("counts", {}) or {}
-    items_by_priority = summary.get("items_by_priority", {}) or {}
+    items_by_lane = summary.get("items_by_lane", {}) or {}
+    done_or_stale = summary.get("done_or_stale", []) or []
     recently_completed = summary.get("recently_completed", []) or []
     percent = int(summary.get("soft_launch_percent", 0) or 0)
 
     st.markdown("### Backlog")
-    st.caption("This is the current launch-focused backlog based on what has already shipped, what still needs validation, and what can safely wait.")
+    st.caption("This is the current launch-focused backlog based on what needs to move now, what is next, what can wait, and what is already settled or stale.")
 
     progress_left, progress_right = st.columns([1.15, 2.2])
     with progress_left:
         st.metric("Soft Launch Progress", f"{percent}%")
     with progress_right:
         st.info(
-            "The goal is to finish validation and launch hardening first. "
-            "High-priority items should move before new feature expansion."
+            "The goal is to finish validation, launch hardening, and legacy quality improvements first. "
+            "New infrastructure or discovery expansion should wait unless it clearly helps the shipped V1 path."
         )
 
     card_markup = (
         '<div class="settings-backlog-grid">'
-        + _render_backlog_priority_card(
-            "High",
-            int(counts.get("High", 0) or 0),
-            "Launch blockers or validation gaps that should move before broader sharing.",
+        + _render_backlog_lane_card(
+            "Now",
+            int(counts.get("Now", 0) or 0),
+            "Highest-ROI launch and quality work that should move before broader scope.",
         )
-        + _render_backlog_priority_card(
-            "Medium",
-            int(counts.get("Medium", 0) or 0),
-            "Important usability and architecture cleanup that improves trust but does not block testing today.",
+        + _render_backlog_lane_card(
+            "Next",
+            int(counts.get("Next", 0) or 0),
+            "Important follow-up work once the immediate validation and blocker loop is under control.",
         )
-        + _render_backlog_priority_card(
-            "Low",
-            int(counts.get("Low", 0) or 0),
-            "Useful cleanup and longer-horizon work that can wait until after soft launch feedback.",
+        + _render_backlog_lane_card(
+            "Later",
+            int(counts.get("Later", 0) or 0),
+            "Useful expansion and cleanup work that can wait until after the core path is validated.",
         )
         + '</div>'
     )
     st.markdown(card_markup, unsafe_allow_html=True)
 
-    for priority in ("High", "Medium", "Low"):
-        items = items_by_priority.get(priority, []) or []
-        with st.expander(f"{priority} Priority ({len(items)})", expanded=(priority == "High")):
+    for lane in ("Now", "Next", "Later"):
+        items = items_by_lane.get(lane, []) or []
+        with st.expander(f"{lane} ({len(items)})", expanded=(lane == "Now")):
             for item in items:
                 st.markdown(f"**{item.get('title', 'Backlog item')}**")
+                st.write(str(item.get("detail", "") or ""))
+
+    if done_or_stale:
+        with st.expander(f"Done / Stale ({len(done_or_stale)})", expanded=False):
+            for item in done_or_stale:
+                st.markdown(f"**{item.get('title', 'Closed item')}**")
                 st.write(str(item.get("detail", "") or ""))
 
     if recently_completed:
