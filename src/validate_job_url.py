@@ -442,7 +442,15 @@ def _looks_generic_company_label(value: str) -> bool:
     if any(token in lowered for token in ["remote", "work from anywhere", "united states"]):
         return True
 
-    if any(token in lowered for token in ["analyst", "engineer", "manager", "director", "vice president", "svp"]):
+    generic_role_patterns = [
+        r"\banalyst\b",
+        r"\bengineer\b",
+        r"\bmanager\b",
+        r"\bdirector\b",
+        r"\bvice president\b",
+        r"\bsvp\b",
+    ]
+    if any(re.search(pattern, lowered) for pattern in generic_role_patterns):
         return True
 
     return False
@@ -496,11 +504,48 @@ def extract_company_from_meta(soup: BeautifulSoup) -> str:
 
     if soup.title and soup.title.string:
         title_text = safe_text(soup.title.string)
+        job_application_match = re.search(
+            r"Job Application for .+? at (?P<company>.+)$",
+            title_text,
+            re.IGNORECASE,
+        )
+        if job_application_match:
+            cleaned = _clean_company_candidate(job_application_match.group("company"))
+            if cleaned and not _looks_generic_company_label(cleaned):
+                return cleaned
+
         parts = [part.strip() for part in re.split(r"\s[-|]\s", title_text) if part.strip()]
         for part in reversed(parts):
             cleaned = _clean_company_candidate(part)
             if cleaned and not _looks_generic_company_label(cleaned):
                 return cleaned
+
+    return ""
+
+
+def extract_location_from_meta(soup: BeautifulSoup) -> str:
+    meta_candidates = [
+        soup.find("meta", attrs={"name": "keywords"}),
+        soup.find("meta", attrs={"property": "og:description"}),
+        soup.find("meta", attrs={"name": "description"}),
+    ]
+
+    patterns = [
+        r"\b([A-Z][a-zA-Z .'-]+),\s*([A-Z]{2})\b",
+        r"\b(Remote(?:,\s*United States)?)\b",
+    ]
+
+    for tag in meta_candidates:
+        content = safe_text(tag.get("content")) if tag else ""
+        if not content:
+            continue
+        for pattern in patterns:
+            match = re.search(pattern, content)
+            if not match:
+                continue
+            candidate = clean_location_candidate(match.group(0))
+            if looks_like_location(candidate):
+                return candidate
 
     return ""
 
@@ -540,6 +585,9 @@ def parse_greenhouse_page(url: str) -> tuple[str, str, str, str, str]:
 
     if not location:
         location = extract_location_from_label_patterns(soup)
+
+    if not location:
+        location = extract_location_from_meta(soup)
 
     if not title and soup.title and soup.title.string:
         title = soup.title.string.strip()
@@ -590,6 +638,9 @@ def parse_page(url: str) -> tuple[str, str, str, str, str]:
 
     if not location:
         location = extract_location_from_label_patterns(soup)
+
+    if not location:
+        location = extract_location_from_meta(soup)
 
     company = extract_company_from_json_ld(soup)
     if not company:
@@ -724,6 +775,15 @@ def extract_compensation(text: str) -> tuple[str, str]:
         raw = match.group(0).strip()
         return raw, evaluate_compensation_status(raw)
 
+    match = re.search(
+        r"Salary Range:\s*\$?\d[\d,]*(?:\.\d+)?\s*(?:-|to)\s*\$?\d[\d,]*(?:\.\d+)?",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        raw = match.group(0).split(":", 1)[-1].strip()
+        return raw, evaluate_compensation_status(raw)
+
     return "", "Not Disclosed"
 
 
@@ -742,7 +802,7 @@ def parse_salary_number(value: str) -> int | None:
 
 
 def evaluate_compensation_status(comp_text: str) -> str:
-    numbers = re.findall(r"\$\d[\d,]*K?", comp_text, re.IGNORECASE)
+    numbers = re.findall(r"\$?\d[\d,]*(?:\.\d+)?K?", comp_text, re.IGNORECASE)
     parsed = [parse_salary_number(n) for n in numbers]
     parsed = [n for n in parsed if n is not None]
 

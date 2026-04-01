@@ -95,6 +95,36 @@ def test_extract_company_from_json_ld_prefers_hiring_organization_name() -> None
     assert validator.extract_company_from_json_ld(soup) == "Xapo Bank"
 
 
+def test_extract_company_from_meta_parses_greenhouse_title_pattern() -> None:
+    soup = BeautifulSoup(
+        """
+        <html>
+          <head>
+            <title>Job Application for Chief Technology Officer at Medical Informatics Engineering/Enterprise Health</title>
+          </head>
+        </html>
+        """,
+        "lxml",
+    )
+
+    assert validator.extract_company_from_meta(soup) == "Medical Informatics Engineering"
+
+
+def test_extract_location_from_meta_finds_city_state_in_keywords() -> None:
+    soup = BeautifulSoup(
+        """
+        <html>
+          <head>
+            <meta name="keywords" content="Western Digital Vice President IT, Digital Employee Experience (DEX) San Jose, CA jobs careers" />
+          </head>
+        </html>
+        """,
+        "lxml",
+    )
+
+    assert validator.extract_location_from_meta(soup) == "San Jose, CA"
+
+
 def test_choose_best_company_name_cleans_title_like_company_candidate() -> None:
     chosen = validator.choose_best_company_name(
         extracted_company="Work from Anywhere) at Xapo Bank",
@@ -120,3 +150,11 @@ def test_choose_best_company_name_ignores_generic_page_title_label() -> None:
         url="https://boards.greenhouse.io/figma/jobs/5830640004",
     )
     assert chosen == "Figma"
+
+
+def test_extract_compensation_handles_salary_range_without_dollar_signs() -> None:
+    raw, status = validator.extract_compensation(
+        "Compensation & Benefits Details Salary Range: 262,700.00-350,200.00"
+    )
+    assert raw == "262,700.00-350,200.00"
+    assert status == "Qualified"

@@ -89,18 +89,27 @@ Why:
 - Severity: High
 - What happened: some jobs are marked or surfaced as `Remote` even though the actual job posting is not truly remote.
 - Expected behavior: non-remote or location-restricted jobs should fail the remote-only path and should not appear as remote matches.
-- Example: capture the job URL when you see the next instance.
+- Example: `https://jobs.smartrecruiters.com/WesternDigital/744000117377961-vice-president-it-digital-employee-experience-dex-` was parsed as `Remote` even though the page location is `San Jose, CA` and the role is hybrid.
 - Likely owner area: `services/location_matching.py`, `services/pipeline_runtime.py`, `src/validate_job_url.py`
-- Status: New
+- Status: Fixed
 
 ### Company name and title parsing still have visible misses
 - Area: Parsing
 - Severity: High
 - What happened: some jobs still show the wrong company name or a weak/inaccurate title.
 - Expected behavior: job cards should show trustworthy company and title values pulled from the posting or corrected conservatively.
-- Example: capture the job URL when you see the next instance.
+- Example: `https://job-boards.greenhouse.io/medicalinformaticsengineering/jobs/4195360009` fell back to a slug-like company name instead of the visible company branding from the page title.
 - Likely owner area: `src/validate_job_url.py`, `services/ai_job_scrub.py`
-- Status: New
+- Status: Fixed
+
+### Compensation extraction is missing visible salary ranges
+- Area: Parsing
+- Severity: High
+- What happened: some jobs show `Compensation not disclosed` even when the page includes a visible salary range.
+- Expected behavior: visible salary ranges should be parsed into `compensation_raw` and available to downstream filtering and review.
+- Example: `https://jobs.smartrecruiters.com/WesternDigital/744000117377961-vice-president-it-digital-employee-experience-dex-` includes `Salary Range: 262,700.00-350,200.00` on the page, but was parsed as `Not Disclosed`.
+- Likely owner area: `src/validate_job_url.py`
+- Status: Fixed
 
 ## Recommendation
 

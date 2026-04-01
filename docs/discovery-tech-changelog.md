@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-04-01
 
+### Fixed remote/location, salary, and company parsing misses from live QA examples
+- Summary: added metadata-based location extraction, broadened salary-range parsing to support visible numeric ranges without dollar signs, and improved company-name extraction for Greenhouse title patterns while avoiding false generic-label rejection for real company names like `Medical Informatics Engineering`.
+- Why: live QA found a SmartRecruiters role being marked `Remote` even though the posting location was `San Jose, CA`, the same posting was missing its visible salary range, and a Greenhouse posting was falling back to a slug-like company name even though the page title exposed the company clearly.
+- Validation: `python3 -m py_compile src/validate_job_url.py tests/test_smoke_regression.py`; `.venv/bin/python -m pytest -q tests/test_smoke_regression.py`; live `create_job_record()` checks now parse `San Jose, CA` plus `262,700.00-350,200.00` for the Western Digital SmartRecruiters role and `Medical Informatics Engineering` for the Medical Informatics Engineering Greenhouse role.
+- Files: `src/validate_job_url.py`, `tests/test_smoke_regression.py`, `docs/qa-findings.md`, `docs/discovery-tech-changelog.md`
+
 ### Added a prioritized legacy search quality worklist and cleaned generic company placeholders
 - Summary: added a plain-language legacy search quality worklist for the next V1 discovery cycle and taught company extraction to ignore generic placeholder labels like `page_title` when a better fallback brand is available.
 - Why: we had enough evidence to stop debating the engine choice and needed a concrete improvement order for legacy, while also fixing a visible metadata trust issue surfaced by the matrix comparisons.
