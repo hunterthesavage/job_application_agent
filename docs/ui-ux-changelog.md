@@ -28,6 +28,12 @@ Entry format:
 - Validation: `python3 -m py_compile views/pipeline.py views/settings.py services/settings.py src/discover_job_urls.py`
 - Files: `views/pipeline.py`, `views/settings.py`, `services/settings.py`, `src/discover_job_urls.py`, `docs/ui-ux-changelog.md`
 
+### Made Broader Search the default V1 path and moved Backlog behind the internal reveal
+- Summary: switched the default stored search strategy to `broad_recall`, reordered the Pipeline search choices so `Broader Search` appears first, updated the helper copy to position it as the recommended default, and hid `Backlog` behind the same internal reveal toggle as `Source Layer`.
+- Why: test runs showed `Broader Search` was giving better recall without obvious junk, so treating it as the normal V1 path is clearer than presenting it like an exceptional mode. The public Settings surface also stays cleaner when backlog stays internal-only.
+- Validation: `python3 -m py_compile views/pipeline.py views/settings.py services/settings.py src/discover_job_urls.py`
+- Files: `views/pipeline.py`, `views/settings.py`, `services/settings.py`, `docs/ui-ux-changelog.md`
+
 ### Promoted the newer Windows package to the primary live download
 - Summary: updated the Windows docs so the newer portable package is treated as the current live Windows install, while the older known-good recovery zip remains linked as the fallback option.
 - Why: the newer package is now the preferred friend-test path, and continuing to describe it as a test package creates confusion once it becomes the package we actually want people to use first.

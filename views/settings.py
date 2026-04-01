@@ -44,9 +44,9 @@ SETTINGS_NAV_OPTIONS = [
 ]
 
 def _get_status_nav_options(*, show_internal_search_tools: bool) -> list[str]:
-    options = ["Overview", "Backlog"]
+    options = ["Overview"]
     if show_internal_search_tools:
-        options.insert(1, "Source Layer")
+        options.extend(["Source Layer", "Backlog"])
     return options
 
 
@@ -999,7 +999,7 @@ def render_system_status_tab() -> None:
     st.toggle(
         "Show Internal Search Tools",
         key="settings_show_internal_search_tools_value",
-        help="Internal-only testing toggle. Turn this on when you want Source Layer diagnostics visible in Settings.",
+        help="Internal-only testing toggle. Turn this on when you want Source Layer diagnostics and backlog views visible in Settings.",
         on_change=_save_internal_search_tools_visibility,
     )
 

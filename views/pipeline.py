@@ -63,8 +63,8 @@ PIPELINE_NAV_OPTIONS = [
 
 PIPELINE_TITLE_SUGGESTION_MAX = 10
 SEARCH_STRATEGY_OPTIONS = {
-    "Standard": "balanced",
     "Broader Search": "broad_recall",
+    "Standard": "balanced",
 }
 
 
@@ -1466,7 +1466,7 @@ def _render_run_inputs() -> None:
     current_include_keywords = str(settings.get("include_keywords", "") or "")
     current_exclude_keywords = str(settings.get("exclude_keywords", "") or "")
     current_remote_only = _str_to_bool(settings.get("remote_only", "true"), default=True)
-    current_search_strategy = str(settings.get("search_strategy", "balanced") or "balanced")
+    current_search_strategy = str(settings.get("search_strategy", "broad_recall") or "broad_recall")
 
     pending_target_titles = st.session_state.pop("pipeline_pending_target_titles_value", None)
     if pending_target_titles is not None:
@@ -1487,7 +1487,7 @@ def _render_run_inputs() -> None:
     if "pipeline_search_strategy_value" not in st.session_state:
         current_strategy_label = next(
             (label for label, value in SEARCH_STRATEGY_OPTIONS.items() if value == current_search_strategy),
-            "Standard",
+            "Broader Search",
         )
         st.session_state["pipeline_search_strategy_value"] = current_strategy_label
     if "pipeline_title_suggestions" not in st.session_state:
@@ -1552,7 +1552,7 @@ def _render_run_inputs() -> None:
             "Search Strategy",
             options=list(SEARCH_STRATEGY_OPTIONS.keys()),
             key="pipeline_search_strategy_value",
-            help="Standard is the normal search path. Broader Search casts a wider ATS net for sparse or tougher searches.",
+            help="Broader Search is the recommended default for V1. Standard keeps the search tighter when you want a narrower pass.",
         )
 
         st.caption("Minimum Compensation is not shown here yet because it is not currently a primary live run control in this workflow.")
@@ -1568,8 +1568,8 @@ def _render_run_inputs() -> None:
             ("true" if bool(st.session_state.get("pipeline_remote_only_value", current_remote_only)) else "false")
             != str(settings.get("remote_only", "true")),
             SEARCH_STRATEGY_OPTIONS.get(
-                str(st.session_state.get("pipeline_search_strategy_value", "Standard")),
-                "balanced",
+                str(st.session_state.get("pipeline_search_strategy_value", "Broader Search")),
+                "broad_recall",
             ) != current_search_strategy,
         ]
     )
@@ -1596,8 +1596,8 @@ def _render_run_inputs() -> None:
                 "exclude_keywords": st.session_state.get("pipeline_exclude_keywords_value", current_exclude_keywords),
                 "remote_only": "true" if bool(st.session_state.get("pipeline_remote_only_value", current_remote_only)) else "false",
                 "search_strategy": SEARCH_STRATEGY_OPTIONS.get(
-                    str(st.session_state.get("pipeline_search_strategy_value", "Standard")),
-                    "balanced",
+                    str(st.session_state.get("pipeline_search_strategy_value", "Broader Search")),
+                    "broad_recall",
                 ),
             }
         )
@@ -1983,7 +1983,7 @@ def _render_results_summary_card() -> None:
     net_new = int((details or {}).get("net_new_count", (latest_run or {}).get("inserted_count", 0) or 0) or 0)
     errors = int((latest_run or {}).get("error_count", 0) or 0)
     total_seen = int((latest_run or {}).get("total_seen", 0) or 0)
-    current_search_strategy = str(load_settings().get("search_strategy", "balanced") or "balanced").strip().lower()
+    current_search_strategy = str(load_settings().get("search_strategy", "broad_recall") or "broad_recall").strip().lower()
 
     _render_section_shell(
         "Latest result",
