@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-04-01
 
+### Added real-job profile scoring bridge for discovery mode comparisons
+- Summary: added a runner that takes real discovered job URLs from discovery debug reports, parses them into job payloads, scores them against the fake profile pack, and writes markdown/JSON/CSV summaries for side-by-side legacy vs direct-source comparisons.
+- Why: raw URL counts were not enough to judge whether discovery modes were surfacing better jobs, and we needed a way to connect real discovered jobs to persona-fit scoring before recommending the next search strategy move.
+- Validation: `python3 -m py_compile scripts/run_real_job_profile_scoring.py`; live run `python3 scripts/run_real_job_profile_scoring.py --report-dir logs/discovery_debug/20260401-114141_matrix-business-analyst-legacy --report-dir logs/discovery_debug/20260401-114309_matrix-business-analyst-next-gen --report-dir logs/discovery_debug/20260401-114439_matrix-project-manager-legacy --report-dir logs/discovery_debug/20260401-114605_matrix-project-manager-next-gen --report-dir logs/discovery_debug/20260401-114754_matrix-product-manager-legacy --report-dir logs/discovery_debug/20260401-114920_matrix-product-manager-next-gen --report-dir logs/discovery_debug/20260401-115051_matrix-data-analyst-legacy --report-dir logs/discovery_debug/20260401-115154_matrix-data-analyst-next-gen --max-urls 1` wrote reports under `logs/scoring_calibration/20260401-122246_real_job_profiles` and showed legacy top jobs outscoring direct-source top jobs on `Business Analyst`, `Product Manager`, and `Data Analyst`, while `Project Manager` remained weak in both modes.
+- Files: `scripts/run_real_job_profile_scoring.py`, `docs/ai-analysis-changelog.md`, `docs/ai-scoring-calibration.md`
+
 ### Added fake-profile calibration pack for cross-persona scoring checks
 - Summary: added four representative fake resume/profile packs with labeled case sets plus a runner that executes scoring calibration across all profiles and writes per-profile reports and a consolidated summary.
 - Why: discovery comparisons alone were not enough to judge whether the scoring layer understands different candidate personas, and we needed a reusable way to test analyst, product/program, GTM, and executive IT profiles against the same scoring pipeline.

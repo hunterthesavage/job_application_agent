@@ -44,10 +44,20 @@ Fake-profile pack:
 python3 scripts/run_fake_resume_calibration.py --use-ai-scoring
 ```
 
+Real discovered jobs from discovery reports:
+
+```bash
+python3 scripts/run_real_job_profile_scoring.py --report-dir logs/discovery_debug/<report-dir> --max-urls 2
+```
+
 Reports are written under:
 
 - `logs/scoring_calibration/<timestamp>_<case-file>/report.md`
 - `logs/scoring_calibration/<timestamp>_<case-file>/report.json`
+
+The real-job profile scoring runner also writes:
+
+- `logs/scoring_calibration/<timestamp>_real_job_profiles/summary.csv`
 
 ## How to use it
 
@@ -64,3 +74,4 @@ Reports are written under:
 - add a larger `VP of IT` set using real jobs from recent discovery runs
 - add a second set for adjacent searches such as `VP Infrastructure`
 - track exact matches, adjacent matches, and far misses over time
+- use `run_real_job_profile_scoring.py` on paired legacy vs direct-source discovery reports to compare not just URL counts, but persona-fit quality of the top discovered jobs
