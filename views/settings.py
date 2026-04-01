@@ -1,4 +1,5 @@
 import html
+from datetime import time as dt_time
 from pathlib import Path
 import os
 import subprocess
@@ -6,9 +7,21 @@ import subprocess
 import streamlit as st
 
 from config import APP_NAME, APP_VERSION, BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
+from services.auto_run import (
+    AUTO_RUN_FREQUENCY_OPTIONS,
+    WEEKDAY_OPTIONS,
+    configure_auto_run_schedule,
+    format_auto_run_summary,
+    get_auto_run_runtime_status,
+    parse_auto_run_days,
+    parse_auto_run_time,
+    parse_auto_run_time_value,
+    serialize_auto_run_days,
+)
 from services.backlog import get_backlog_summary
 from services.backup import backup_database, get_latest_backup, restore_latest_backup
 from services.health import run_health_check
+from services.job_store import count_jobs_for_rescoring
 from services.job_levels import (
     JOB_LEVEL_OPTIONS,
     parse_preferred_job_levels,
@@ -23,6 +36,7 @@ from services.openai_key import (
     mask_openai_api_key,
     save_openai_api_key,
 )
+from services.pipeline_runtime import rescore_existing_jobs
 from services.profile_context_templates import generate_profile_context_from_resume
 from services.source_layer import (
     SOURCE_LAYER_MODE_ENV_VAR,
@@ -33,6 +47,7 @@ from services.source_layer_shadow_populate import populate_shadow_from_legacy_ex
 from services.settings import DEFAULT_SETTINGS, get_default_cover_letter_output_folder, load_settings, save_settings
 from services.source_layer_status_smoke import build_source_layer_status_summary
 from services.status import get_system_status
+from services.ui_busy import app_is_busy, queue_action
 from ui.navigation import initialize_nav_state, render_button_nav
 
 
@@ -328,6 +343,21 @@ def initialize_settings_state(settings: dict[str, str]) -> None:
 
     if "settings_openai_api_key_value" not in st.session_state:
         st.session_state["settings_openai_api_key_value"] = load_saved_openai_api_key()
+    if "settings_auto_run_enabled_value" not in st.session_state:
+        st.session_state["settings_auto_run_enabled_value"] = str_to_bool(settings.get("auto_run_enabled", "false"))
+    if "settings_auto_run_frequency_value" not in st.session_state:
+        current_frequency = str(settings.get("auto_run_frequency", "off") or "off")
+        current_frequency_label = next(
+            (label for label, value in AUTO_RUN_FREQUENCY_OPTIONS.items() if value == current_frequency and value != "off"),
+            "Daily",
+        )
+        st.session_state["settings_auto_run_frequency_value"] = current_frequency_label
+    if "settings_auto_run_time_value" not in st.session_state:
+        st.session_state["settings_auto_run_time_value"] = parse_auto_run_time_value(settings.get("auto_run_time", "08:00"))
+    if "settings_auto_run_days_value" not in st.session_state:
+        st.session_state["settings_auto_run_days_value"] = parse_auto_run_days(
+            settings.get("auto_run_days", "mon,tue,wed,thu,fri")
+        )
 
 
 def apply_configuration_defaults_to_session(
@@ -624,7 +654,7 @@ def _render_maintenance_notice() -> None:
     )
 
 
-def _render_status_overview() -> None:
+def _render_status_overview(*, show_internal_search_tools: bool = False) -> None:
     status = get_system_status()
 
     c1, c2, c3, c4 = st.columns(4)
@@ -729,6 +759,123 @@ def _render_status_overview() -> None:
     if isinstance(last_health_check_result, dict):
         st.markdown("---")
         _render_health_check_result(last_health_check_result)
+
+    if show_internal_search_tools:
+        st.markdown("---")
+        st.markdown("#### Internal Maintenance")
+        st.caption("Use this hidden internal area when you want to run secondary discovery/import actions or refresh existing jobs with the latest parser, AI scoring, and scrub rules.")
+
+        internal_busy = app_is_busy()
+        saved_job_links_exist = Path(JOB_URLS_FILE).exists()
+
+        action_left, action_right = st.columns(2)
+        with action_left:
+            if st.button(
+                "Find Job Links Only",
+                use_container_width=True,
+                type="secondary",
+                disabled=internal_busy,
+                key="settings_discover_only",
+            ):
+                queue_action(
+                    "pipeline",
+                    "discover_only",
+                    payload={"use_ai_title_expansion": True},
+                    label="Find Job Links Only",
+                )
+                st.session_state["top_nav_selection"] = "Pipeline"
+                st.session_state["pipeline_subnav_selection"] = "Run Jobs"
+                st.rerun()
+        with action_right:
+            if st.button(
+                "Add Saved Job Links",
+                use_container_width=True,
+                type="secondary",
+                disabled=internal_busy or (not saved_job_links_exist),
+                key="settings_ingest_saved",
+                help=(
+                    "Saved job links file found and ready to import."
+                    if saved_job_links_exist
+                    else "No saved job links file exists yet. Run discovery first or paste job links."
+                ),
+            ):
+                queue_action(
+                    "pipeline",
+                    "ingest_saved",
+                    payload={"use_ai_scoring": True},
+                    label="Add Saved Job Links",
+                )
+                st.session_state["top_nav_selection"] = "Pipeline"
+                st.session_state["pipeline_subnav_selection"] = "Run Jobs"
+                st.rerun()
+
+        rescore_left, rescore_right = st.columns(2)
+        with rescore_left:
+            selected_rescore_label = st.selectbox(
+                "Rescore Range",
+                options=[label for label, _ in RESCORE_LIMIT_OPTIONS],
+                index=1,
+                key="settings_rescore_limit",
+                help="Use a smaller batch for faster maintenance runs. Choose All only when you want to refresh the full backlog.",
+            )
+        selected_rescore_limit = dict(RESCORE_LIMIT_OPTIONS).get(selected_rescore_label, 50)
+
+        with rescore_right:
+            selected_stale_label = st.selectbox(
+                "Rescore Age",
+                options=[label for label, _ in RESCORE_STALE_OPTIONS],
+                index=1,
+                key="settings_rescore_stale_age",
+                help="Use this to avoid spending AI calls on jobs that were refreshed recently.",
+            )
+        selected_stale_days = dict(RESCORE_STALE_OPTIONS).get(selected_stale_label, 7)
+
+        ai_ready_for_rescore = has_openai_api_key()
+        matching_jobs = count_jobs_for_rescoring(stale_days=selected_stale_days or None)
+        selected_jobs = matching_jobs if selected_rescore_limit == 0 else min(matching_jobs, selected_rescore_limit)
+        st.caption(
+            f"Current rescore policy matches {matching_jobs} jobs. "
+            f"This run will process {selected_jobs}."
+        )
+        if not ai_ready_for_rescore:
+            st.caption("Add an OpenAI API key in Settings -> OpenAI API to enable batch rescoring.")
+
+        if st.button(
+            "Rescore Existing Jobs",
+            use_container_width=False,
+            type="secondary",
+            disabled=not ai_ready_for_rescore,
+            key="settings_rescore_existing_jobs",
+            help=(
+                "Refresh existing jobs with current AI scoring and scrub rules."
+                if ai_ready_for_rescore
+                else "No OpenAI API key is configured. Add one in Settings > OpenAI API."
+            ),
+        ):
+            try:
+                with st.spinner("Refreshing and rescoring existing jobs..."):
+                    result = rescore_existing_jobs(
+                        limit=selected_rescore_limit,
+                        stale_days=selected_stale_days,
+                    )
+                rescored_count = int(result.get("rescored_count", 0) or 0)
+                errors = int(result.get("errors", 0) or 0)
+                st.session_state["settings_maintenance_notice"] = {
+                    "kind": "success" if rescored_count > 0 else "warning",
+                    "message": (
+                        f"Refreshed and rescored {rescored_count} existing jobs."
+                        if rescored_count > 0
+                        else "No existing jobs were available to refresh and rescore."
+                    ),
+                    "details": f"Errors: {errors}",
+                }
+            except Exception as exc:
+                st.session_state["settings_maintenance_notice"] = {
+                    "kind": "error",
+                    "message": "Existing job refresh failed.",
+                    "details": str(exc),
+                }
+            st.rerun()
 
     _render_reset_app_section()
 
@@ -1033,7 +1180,7 @@ def render_system_status_tab() -> None:
     elif selected_status_section == "Source Layer":
         _render_status_source_layer()
     else:
-        _render_status_overview()
+        _render_status_overview(show_internal_search_tools=show_internal_search_tools)
 
 
 def render_configuration_tab(settings: dict[str, str]) -> None:
@@ -1155,6 +1302,152 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             key="settings_default_new_roles_sort_value",
             help="Controls the default sort used when you open New Roles.",
         )
+
+    st.markdown("---")
+    st.markdown("### Automatic Job Runs")
+    st.caption(
+        "Use one schedule for the same Run Jobs flow the app uses manually. When this is on, the app can discover new jobs, refresh stale existing jobs, and re-run AI scoring in the background."
+    )
+
+    current_auto_run_enabled = str_to_bool(settings.get("auto_run_enabled", "false"))
+    current_auto_run_frequency = str(settings.get("auto_run_frequency", "off") or "off")
+    current_auto_run_time = str(settings.get("auto_run_time", "08:00") or "08:00")
+    current_auto_run_days = parse_auto_run_days(settings.get("auto_run_days", "mon,tue,wed,thu,fri"))
+
+    auto_run_notice = st.session_state.pop("settings_auto_run_notice", None)
+    if auto_run_notice:
+        kind = str(auto_run_notice.get("kind", "info")).strip().lower()
+        message = str(auto_run_notice.get("message", "")).strip()
+        if message:
+            if kind == "success":
+                st.success(message)
+            elif kind == "warning":
+                st.warning(message)
+            else:
+                st.info(message)
+
+    frequency_options = [label for label, value in AUTO_RUN_FREQUENCY_OPTIONS.items() if value != "off"]
+    weekday_labels = {value: label for label, value in WEEKDAY_OPTIONS}
+
+    if bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)):
+        current_frequency_selection = str(st.session_state.get("settings_auto_run_frequency_value", "Daily"))
+        if current_frequency_selection not in frequency_options:
+            st.session_state["settings_auto_run_frequency_value"] = "Daily"
+
+    schedule_left, schedule_right = st.columns([1.15, 1])
+    with schedule_left:
+        st.toggle(
+            "Enable Automatic Job Runs",
+            key="settings_auto_run_enabled_value",
+            help="When on, the app installs a background scheduler on this machine and runs the full Run Jobs flow at the time you choose below.",
+        )
+
+        st.selectbox(
+            "Automatic Run Frequency",
+            options=frequency_options,
+            key="settings_auto_run_frequency_value",
+            disabled=not bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)),
+        )
+
+        st.time_input(
+            "Automatic Run Time",
+            key="settings_auto_run_time_value",
+            disabled=not bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)),
+            help="Local machine time. The background run uses this machine's time zone.",
+        )
+
+        selected_frequency_value = AUTO_RUN_FREQUENCY_OPTIONS.get(
+            str(st.session_state.get("settings_auto_run_frequency_value", "Off")),
+            "off",
+        )
+        if selected_frequency_value == "custom_weekly":
+            st.multiselect(
+                "Run On These Days",
+                options=[label for label, _ in WEEKDAY_OPTIONS],
+                default=[weekday_labels.get(day, day.title()) for day in current_auto_run_days],
+                key="settings_auto_run_days_label_value",
+                help="Choose one or more days for the weekly schedule.",
+            )
+            selected_auto_run_days = [
+                value
+                for label, value in WEEKDAY_OPTIONS
+                if label in st.session_state.get("settings_auto_run_days_label_value", [])
+            ]
+        elif selected_frequency_value == "weekdays":
+            selected_auto_run_days = ["mon", "tue", "wed", "thu", "fri"]
+            st.caption("Weekdays means Monday through Friday.")
+        else:
+            selected_auto_run_days = current_auto_run_days or ["mon", "tue", "wed", "thu", "fri"]
+
+    with schedule_right:
+        selected_time_value = st.session_state.get("settings_auto_run_time_value", parse_auto_run_time_value(current_auto_run_time))
+        selected_time_text = (
+            selected_time_value.strftime("%H:%M")
+            if isinstance(selected_time_value, dt_time)
+            else parse_auto_run_time(current_auto_run_time)[2]
+        )
+        selected_enabled = bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled))
+        selected_frequency = AUTO_RUN_FREQUENCY_OPTIONS.get(
+            str(st.session_state.get("settings_auto_run_frequency_value", "Daily")),
+            "daily",
+        )
+        staged_schedule = {
+            "auto_run_enabled": "true" if selected_enabled else "false",
+            "auto_run_frequency": selected_frequency if selected_enabled else "off",
+            "auto_run_time": selected_time_text,
+            "auto_run_days": serialize_auto_run_days(selected_auto_run_days),
+        }
+        runtime_status = get_auto_run_runtime_status(settings)
+        if str(settings.get("auto_run_last_summary", "") or "").strip():
+            st.info(str(settings.get("auto_run_last_summary", "") or "").strip())
+        if str(settings.get("auto_run_last_started_at", "") or "").strip():
+            st.caption(f"Last automatic run started: {settings.get('auto_run_last_started_at', '')}")
+        if str(settings.get("auto_run_last_finished_at", "") or "").strip():
+            st.caption(f"Last automatic run finished: {settings.get('auto_run_last_finished_at', '')}")
+        if str(settings.get("auto_run_last_status", "") or "").strip():
+            st.caption(f"Last automatic run status: {settings.get('auto_run_last_status', '')}")
+        if (not runtime_status["scheduler_supported"]) and selected_enabled:
+            st.warning(f"Automatic job runs are not supported on {runtime_status['platform']} yet.")
+
+    current_frequency_label = next(
+        (label for label, value in AUTO_RUN_FREQUENCY_OPTIONS.items() if value == current_auto_run_frequency and value != "off"),
+        "Daily",
+    )
+    current_time_text = parse_auto_run_time(current_auto_run_time)[2]
+    selected_time_text_for_compare = (
+        st.session_state.get("settings_auto_run_time_value", parse_auto_run_time_value(current_auto_run_time)).strftime("%H:%M")
+        if isinstance(st.session_state.get("settings_auto_run_time_value", parse_auto_run_time_value(current_auto_run_time)), dt_time)
+        else current_time_text
+    )
+    schedule_has_changes = any(
+        [
+            bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)) != current_auto_run_enabled,
+            str(st.session_state.get("settings_auto_run_frequency_value", current_frequency_label)) != current_frequency_label,
+            selected_time_text_for_compare != current_time_text,
+            serialize_auto_run_days(selected_auto_run_days) != serialize_auto_run_days(current_auto_run_days),
+        ]
+    )
+
+    if st.button(
+        "Save Automatic Run Schedule",
+        type="primary",
+        use_container_width=False,
+        disabled=not schedule_has_changes,
+        key="settings_save_auto_run_schedule",
+    ):
+        saved_settings = save_settings(staged_schedule)
+        schedule_result = configure_auto_run_schedule(saved_settings)
+        if schedule_result.get("ok"):
+            st.session_state["settings_auto_run_notice"] = {
+                "kind": "success",
+                "message": schedule_result.get("detail", "Automatic job run schedule saved."),
+            }
+        else:
+            st.session_state["settings_auto_run_notice"] = {
+                "kind": "warning",
+                "message": schedule_result.get("detail", "Automatic job run schedule was saved, but the local scheduler could not be updated."),
+            }
+        st.rerun()
 
     st.markdown("---")
     st.markdown("### AI Scoring Preferences")

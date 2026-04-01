@@ -79,3 +79,35 @@ def test_build_search_plan_expands_shorthand_title_into_search_safe_variant():
     assert any('"information technology"' in query for query in broad_tier["queries"])
     assert not any(' "it" ' in query for query in broad_tier["queries"])
     assert all('("vice president" OR "vp")' not in query for query in broad_tier["queries"])
+
+
+def test_parse_title_entries_preserves_legacy_vp_it_phrase():
+    from services.search_plan import parse_title_entries
+
+    parsed = parse_title_entries(
+        "Vice President of IT, VP of Information Technology, Vice President, IT Operations, Technology"
+    )
+
+    assert "Vice President, IT Operations" in parsed
+    assert "Vice President, Technology" in parsed
+    assert "Vice President" not in parsed
+    assert "Technology" not in parsed
+
+
+def test_build_search_plan_respects_include_remote_false_with_locations():
+    from services.search_plan import build_search_plan
+
+    plan = build_search_plan(
+        settings={
+            "target_titles": "Vice President of Information Technology",
+            "preferred_locations": "Dallas, TX\nFort Worth, TX",
+            "include_remote": "false",
+            "remote_only": "false",
+            "search_strategy": "broad_recall",
+        },
+        use_ai_expansion=False,
+    )
+
+    assert plan.include_remote is False
+    assert all("remote" not in query.lower() for query in plan.queries)
+    assert any("Dallas, TX" in note or "Fort Worth, TX" in note for note in plan.notes)

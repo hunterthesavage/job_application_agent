@@ -22,6 +22,18 @@ Entry format:
 
 ## 2026-04-01
 
+### Folded existing-job refresh and rescore into the main Run Jobs pipeline
+- Summary: added job refresh metadata columns, created a bounded existing-job maintenance selector for stale or suspicious records, and wired `discover_and_ingest()` so every normal run now also refreshes and optionally AI-rescores existing jobs when needed.
+- Why: parser and scoring fixes were only reaching jobs that happened to be rediscovered, while stale existing records needed a separate manual rescore step. The new architecture makes the daily run itself responsible for keeping existing jobs trustworthy.
+- Validation: `python3 -m py_compile services/db.py services/job_store.py services/pipeline_runtime.py`; `.venv/bin/python -m pytest -q tests/test_job_store.py tests/test_rescore_existing_jobs.py tests/test_pipeline_runtime.py`
+- Files: `services/db.py`, `services/job_store.py`, `services/pipeline_runtime.py`, `tests/test_job_store.py`, `tests/test_pipeline_runtime.py`, `docs/discovery-tech-changelog.md`
+
+### Fixed title fragmentation and remote fallback in legacy discovery
+- Summary: discovery and scoring now parse target titles as line-based entries, use a safer legacy comma parser for older saved title strings, and only allow remote jobs through when `Include Remote` is enabled instead of silently adding remote beside named cities.
+- Why: VP/IT searches were accepting clearly wrong roles because generic fragments like `Technology` were being searched and scored as standalone targets, while location handling was effectively behaving like `Dallas + Remote` even when the user had not explicitly asked for remote.
+- Validation: `python3 -m py_compile services/search_plan.py services/job_qualifier.py services/location_matching.py services/pipeline_runtime.py src/discover_job_urls.py src/validate_job_url.py src/validate_job_url_sqlite.py src/ingest_from_urls_file.py`; `.venv/bin/python -m pytest -q tests/test_search_plan.py tests/test_job_qualifier.py tests/test_pipeline_runtime.py`
+- Files: `services/search_plan.py`, `services/job_qualifier.py`, `services/location_matching.py`, `services/pipeline_runtime.py`, `src/discover_job_urls.py`, `src/validate_job_url.py`, `src/validate_job_url_sqlite.py`, `src/ingest_from_urls_file.py`, `tests/test_search_plan.py`, `tests/test_job_qualifier.py`, `tests/test_pipeline_runtime.py`
+
 ### Fixed remote/location, salary, and company parsing misses from live QA examples
 - Summary: added metadata-based location extraction, broadened salary-range parsing to support visible numeric ranges without dollar signs, and improved company-name extraction for Greenhouse title patterns while avoiding false generic-label rejection for real company names like `Medical Informatics Engineering`.
 - Why: live QA found a SmartRecruiters role being marked `Remote` even though the posting location was `San Jose, CA`, the same posting was missing its visible salary range, and a Greenhouse posting was falling back to a slug-like company name even though the page title exposed the company clearly.

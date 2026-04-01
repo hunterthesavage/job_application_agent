@@ -1,6 +1,7 @@
 import sys
 
 from config import JOB_URLS_FILE
+from services.search_plan import parse_preferred_locations, parse_title_entries, resolve_include_remote
 from src.validate_job_url_sqlite import load_job_urls_from_file
 from services.ingestion import ingest_job_records
 from services.settings import load_settings
@@ -43,19 +44,23 @@ def passes_settings_filters(job, settings: dict[str, str]) -> bool:
         ]
     ).lower()
 
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
-    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "true")).lower() == "true"
+    include_remote = resolve_include_remote(settings)
 
     if target_titles and not text_contains_any(title, target_titles):
         return False
 
     if preferred_locations and not text_contains_any(location, preferred_locations):
-        if not (remote_only and "remote" in location.lower()):
+        if not ((remote_only or include_remote) and "remote" in location.lower()):
             return False
 
     if remote_only and "remote" not in location.lower():
+        return False
+
+    if not include_remote and not remote_only and "remote" in location.lower():
         return False
 
     if exclude_keywords and any(keyword.lower() in searchable for keyword in exclude_keywords):

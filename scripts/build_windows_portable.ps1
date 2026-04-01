@@ -115,8 +115,18 @@ Write-Host "==> Overlaying current app updates"
 Copy-OverlayFile -Source (Join-Path $repoRoot "app.py") -Destination (Join-Path $appRoot "app.py")
 Copy-OverlayFile -Source (Join-Path $repoRoot "config.py") -Destination (Join-Path $appRoot "config.py")
 Copy-OverlayFile -Source (Join-Path $repoRoot "services/app_control.py") -Destination (Join-Path $appRoot "services/app_control.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "services/auto_run.py") -Destination (Join-Path $appRoot "services/auto_run.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "services/db.py") -Destination (Join-Path $appRoot "services/db.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "services/job_store.py") -Destination (Join-Path $appRoot "services/job_store.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "services/pipeline_runtime.py") -Destination (Join-Path $appRoot "services/pipeline_runtime.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "services/settings.py") -Destination (Join-Path $appRoot "services/settings.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "services/ui_busy.py") -Destination (Join-Path $appRoot "services/ui_busy.py")
 Copy-OverlayFile -Source (Join-Path $repoRoot "ui/components.py") -Destination (Join-Path $appRoot "ui/components.py")
 Copy-OverlayFile -Source (Join-Path $repoRoot "ui/styles.py") -Destination (Join-Path $appRoot "ui/styles.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "views/pipeline.py") -Destination (Join-Path $appRoot "views/pipeline.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "views/settings.py") -Destination (Join-Path $appRoot "views/settings.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "views/setup_wizard.py") -Destination (Join-Path $appRoot "views/setup_wizard.py")
+Copy-OverlayFile -Source (Join-Path $repoRoot "scripts/run_scheduled_jobs.py") -Destination (Join-Path $appRoot "scripts/run_scheduled_jobs.py")
 
 New-Item -ItemType Directory -Force -Path (Join-Path $appRoot ".streamlit") | Out-Null
 $streamlitConfig = @'

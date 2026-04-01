@@ -67,6 +67,105 @@ def parse_csv_text(value: str) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
+TITLE_PARTS_REQUIRING_CONTINUATION = {
+    "vice president",
+    "senior vice president",
+    "executive vice president",
+    "assistant vice president",
+    "associate vice president",
+    "vp",
+    "svp",
+    "evp",
+    "avp",
+    "director",
+    "senior director",
+    "managing director",
+    "head",
+    "chief",
+}
+
+
+def _should_merge_legacy_title_parts(current: str, following: str) -> bool:
+    current_norm = normalize_text(current)
+    following_norm = normalize_text(following)
+    if not current_norm or not following_norm:
+        return False
+
+    if current_norm in TITLE_PARTS_REQUIRING_CONTINUATION:
+        return True
+
+    if current_norm.endswith((" vice president", " director", " head", " chief")):
+        return True
+
+    if current_norm in {"vice president of", "head of", "director of"}:
+        return True
+
+    return False
+
+
+def _extract_legacy_continuation_prefix(value: str) -> str:
+    text = safe_text(value)
+    if not text:
+        return ""
+    prefix = text.split(",", 1)[0].strip()
+    normalized = normalize_text(prefix)
+    if normalized in TITLE_PARTS_REQUIRING_CONTINUATION or normalized.endswith(
+        (" vice president", " director", " head", " chief")
+    ):
+        return prefix
+    return ""
+
+
+def _looks_like_legacy_title_specialization(value: str) -> bool:
+    normalized = normalize_text(value)
+    if not normalized:
+        return False
+    if normalized in TITLE_PARTS_REQUIRING_CONTINUATION:
+        return False
+    words = normalized.split()
+    return 1 <= len(words) <= 4
+
+
+def _parse_legacy_comma_titles(text: str) -> list[str]:
+    parts = [part.strip() for part in text.split(",") if part.strip()]
+    if len(parts) <= 1:
+        return parts
+
+    merged: list[str] = []
+    active_prefix = ""
+    index = 0
+    while index < len(parts):
+        current = parts[index]
+        if index + 1 < len(parts) and _should_merge_legacy_title_parts(current, parts[index + 1]):
+            merged_value = f"{current}, {parts[index + 1]}"
+            merged.append(merged_value)
+            active_prefix = _extract_legacy_continuation_prefix(merged_value)
+            index += 2
+            continue
+        if active_prefix and _looks_like_legacy_title_specialization(current):
+            merged.append(f"{active_prefix}, {current}")
+            index += 1
+            continue
+        merged.append(current)
+        active_prefix = ""
+        index += 1
+    return merged
+
+
+def parse_title_entries(value: str) -> list[str]:
+    text = safe_text(value)
+    if not text:
+        return []
+
+    if "\n" in text:
+        return [part.strip() for part in text.splitlines() if part.strip()]
+
+    if ";" in text:
+        return [part.strip() for part in text.split(";") if part.strip()]
+
+    return _parse_legacy_comma_titles(text)
+
+
 def parse_preferred_locations(value: str) -> list[str]:
     text = safe_text(value)
     if not text:
@@ -79,6 +178,17 @@ def parse_preferred_locations(value: str) -> list[str]:
         return [part.strip() for part in text.split(";") if part.strip()]
 
     return [text] if text else []
+
+
+def resolve_include_remote(settings: dict[str, Any]) -> bool:
+    include_remote = safe_text(settings.get("include_remote", ""))
+    if include_remote:
+        return include_remote.lower() == "true"
+
+    if safe_text(settings.get("remote_only", "false")).lower() == "true":
+        return True
+
+    return True
 
 
 def dedupe_preserve_order(items: list[str]) -> list[str]:
@@ -107,6 +217,7 @@ class SearchPlanInput:
     include_keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
     remote_only: bool = False
+    include_remote: bool = True
     search_strategy: str = "balanced"
     profile_summary: str = ""
     resume_text: str = ""
@@ -114,11 +225,12 @@ class SearchPlanInput:
     @classmethod
     def from_settings(cls, settings: dict[str, Any]) -> "SearchPlanInput":
         return cls(
-            target_titles=dedupe_preserve_order(parse_csv_text(settings.get("target_titles", ""))),
+            target_titles=dedupe_preserve_order(parse_title_entries(settings.get("target_titles", ""))),
             preferred_locations=dedupe_preserve_order(parse_preferred_locations(settings.get("preferred_locations", ""))),
             include_keywords=dedupe_preserve_order(parse_csv_text(settings.get("include_keywords", ""))),
             exclude_keywords=dedupe_preserve_order(parse_csv_text(settings.get("exclude_keywords", ""))),
             remote_only=safe_text(settings.get("remote_only", "false")).lower() == "true",
+            include_remote=resolve_include_remote(settings),
             search_strategy=_normalize_search_strategy(settings.get("search_strategy", "balanced")),
             profile_summary=safe_text(settings.get("profile_summary", "")),
             resume_text=safe_text(settings.get("resume_text", "")),
@@ -136,6 +248,7 @@ class SearchPlan:
     include_keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
     remote_only: bool = False
+    include_remote: bool = True
     search_strategy: str = "balanced"
     query_tiers: list[dict[str, Any]] = field(default_factory=list)
     queries: list[str] = field(default_factory=list)
@@ -401,7 +514,12 @@ def build_search_title_variants(titles: list[str], max_variants: int = 10) -> li
     return _build_title_variants(dedupe_preserve_order(titles), max_variants=max_variants)
 
 
-def _build_location_variants(preferred_locations: list[str], remote_only: bool, max_variants: int = 6) -> list[str]:
+def _build_location_variants(
+    preferred_locations: list[str],
+    remote_only: bool,
+    include_remote: bool,
+    max_variants: int = 6,
+) -> list[str]:
     variants: list[str] = []
 
     if remote_only:
@@ -419,7 +537,8 @@ def _build_location_variants(preferred_locations: list[str], remote_only: bool, 
         if no_commas and normalize_text(no_commas) != normalize_text(clean_location):
             variants.append(no_commas)
 
-    variants.append("remote")
+    if include_remote:
+        variants.append("remote")
     return dedupe_preserve_order(variants)[:max_variants]
 
 
@@ -609,6 +728,7 @@ def build_search_plan(
     location_variants = _build_location_variants(
         preferred_locations=plan_input.preferred_locations,
         remote_only=plan_input.remote_only,
+        include_remote=plan_input.include_remote,
         max_variants=budgets.get("location_variants", 3),
     )
 
@@ -621,14 +741,21 @@ def build_search_plan(
         f"total_queries<={budgets.get('total_queries', 0)}"
     )
 
-    if plan_input.preferred_locations and not plan_input.remote_only:
+    if plan_input.preferred_locations and not plan_input.remote_only and plan_input.include_remote:
         notes.append(
             "Effective location policy: "
             + " | ".join(plan_input.preferred_locations[:3])
             + " + Remote"
         )
+    elif plan_input.preferred_locations and not plan_input.remote_only:
+        notes.append(
+            "Effective location policy: "
+            + " | ".join(plan_input.preferred_locations[:3])
+        )
     elif plan_input.remote_only:
         notes.append("Effective location policy: Remote only")
+    elif plan_input.include_remote:
+        notes.append("Effective location policy: Remote included")
 
     query_tiers = _build_query_tiers(
         title_variants=title_variants,
@@ -654,6 +781,7 @@ def build_search_plan(
         include_keywords=plan_input.include_keywords,
         exclude_keywords=plan_input.exclude_keywords,
         remote_only=plan_input.remote_only,
+        include_remote=plan_input.include_remote,
         search_strategy=plan_input.search_strategy,
         query_tiers=query_tiers,
         queries=queries,

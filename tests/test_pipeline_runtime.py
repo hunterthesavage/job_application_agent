@@ -374,11 +374,87 @@ def test_discover_and_ingest_passes_ai_flags(monkeypatch):
     assert captured["source_layer_run"]["selected_endpoints"] == 0
 
 
+def test_discover_and_ingest_runs_existing_job_maintenance(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    captured = {}
+    monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "legacy")
+    monkeypatch.setattr(
+        runtime,
+        "discover_job_links",
+        lambda use_ai_title_expansion=True: {
+            "status": "completed",
+            "output": "Discovery output",
+            "urls": ["https://example.com/jobs/1"],
+            "providers": {"greenhouse": 0, "lever": 0, "search": 1},
+            "drop_summary": {},
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_build_jobs_from_urls",
+        lambda *args, **kwargs: {
+            "status": "completed",
+            "output": "Ingest output",
+            "summary": {
+                "run_id": 42,
+                "inserted_count": 1,
+                "updated_count": 0,
+                "skipped_removed_count": 0,
+            },
+            "accepted_jobs": 1,
+            "seen_urls": 1,
+            "skipped_count": 0,
+            "skipped_duplicate_batch_count": 0,
+            "error_count": 0,
+            "build_seconds": 0.0,
+            "ingest_seconds": 0.0,
+            "skip_summary": {},
+        },
+    )
+    monkeypatch.setattr(runtime, "_record_pipeline_source_layer_run", lambda **kwargs: None)
+    monkeypatch.setattr(runtime, "_format_source_layer_run_snapshot", lambda **kwargs: "Snapshot")
+
+    def fake_refresh_existing_jobs_if_needed(**kwargs):
+        captured["maintenance_kwargs"] = kwargs
+        return {
+            "status": "completed",
+            "output": "Existing-job maintenance summary:\n- Existing jobs refreshed: 3",
+            "refreshed_count": 3,
+            "rescored_count": 2,
+            "changed_count": 2,
+        }
+
+    monkeypatch.setattr(runtime, "refresh_existing_jobs_if_needed", fake_refresh_existing_jobs_if_needed)
+    monkeypatch.setattr(
+        runtime,
+        "update_ingestion_run_details",
+        lambda run_id, extra_details: captured.setdefault("updated_run_details", []).append((run_id, extra_details)),
+    )
+
+    result = runtime.discover_and_ingest(use_ai_scoring=True)
+
+    assert result["maintenance"]["refreshed_count"] == 3
+    assert captured["maintenance_kwargs"]["exclude_run_id"] == 42
+    assert captured["maintenance_kwargs"]["use_ai_scoring"] is True
+    assert captured["updated_run_details"][0][1]["maintenance_refreshed_count"] == 3
+
+
 def test_discover_and_ingest_reports_next_gen_mode_but_falls_back_safely(monkeypatch):
     import services.pipeline_runtime as runtime
 
     monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "next_gen")
     captured = {}
+    monkeypatch.setattr(
+        runtime,
+        "refresh_existing_jobs_if_needed",
+        lambda **kwargs: {
+            "output": "Existing-job maintenance summary:\n- Existing jobs selected: 0",
+            "refreshed_count": 0,
+            "rescored_count": 0,
+            "changed_count": 0,
+        },
+    )
     monkeypatch.setattr(
         runtime,
         "build_source_layer_status_summary",

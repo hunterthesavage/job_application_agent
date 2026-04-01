@@ -113,6 +113,10 @@ def create_schema() -> None:
                 cover_letter_path TEXT NOT NULL DEFAULT '',
                 seen_count INTEGER NOT NULL DEFAULT 0,
                 last_seen_run_id INTEGER NOT NULL DEFAULT 0,
+                last_page_refresh_at TEXT NOT NULL DEFAULT '',
+                last_score_refresh_at TEXT NOT NULL DEFAULT '',
+                last_refresh_status TEXT NOT NULL DEFAULT '',
+                parser_version TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -248,6 +252,10 @@ def ensure_schema_compatibility() -> None:
         "source_detail": "ALTER TABLE jobs ADD COLUMN source_detail TEXT NOT NULL DEFAULT ''",
         "seen_count": "ALTER TABLE jobs ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 0",
         "last_seen_run_id": "ALTER TABLE jobs ADD COLUMN last_seen_run_id INTEGER NOT NULL DEFAULT 0",
+        "last_page_refresh_at": "ALTER TABLE jobs ADD COLUMN last_page_refresh_at TEXT NOT NULL DEFAULT ''",
+        "last_score_refresh_at": "ALTER TABLE jobs ADD COLUMN last_score_refresh_at TEXT NOT NULL DEFAULT ''",
+        "last_refresh_status": "ALTER TABLE jobs ADD COLUMN last_refresh_status TEXT NOT NULL DEFAULT ''",
+        "parser_version": "ALTER TABLE jobs ADD COLUMN parser_version TEXT NOT NULL DEFAULT ''",
     }
 
     with db_connection() as conn:
@@ -274,6 +282,7 @@ def initialize_database() -> Path:
     seed_schema_migration("001_initial_foundation")
     seed_schema_migration("002_jobs_source_metadata_columns")
     seed_schema_migration("003_source_layer_foundation")
+    seed_schema_migration("004_jobs_refresh_metadata_columns")
     return DATABASE_PATH
 
 

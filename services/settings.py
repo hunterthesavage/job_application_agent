@@ -29,6 +29,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "preferred_locations": "",
     "include_keywords": "",
     "exclude_keywords": "",
+    "include_remote": "true",
     "remote_only": "false",
     "search_strategy": "broad_recall",
     "minimum_compensation": "",
@@ -40,6 +41,15 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "openai_api_key_validated_hash": "",
     "source_layer_mode": "legacy",
     "show_internal_search_tools": "false",
+    "auto_run_enabled": "false",
+    "auto_run_frequency": "off",
+    "auto_run_time": "08:00",
+    "auto_run_days": "mon,tue,wed,thu,fri",
+    "auto_run_last_started_at": "",
+    "auto_run_last_finished_at": "",
+    "auto_run_last_status": "",
+    "auto_run_last_summary": "",
+    "auto_run_last_log_path": "",
 }
 
 

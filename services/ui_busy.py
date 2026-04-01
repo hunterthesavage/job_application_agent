@@ -4,7 +4,8 @@ import streamlit as st
 
 
 ACTION_LABELS = {
-    "discover_and_ingest": "Find and Add Jobs",
+    "discover_and_ingest": "Run Jobs",
+    "save_run_inputs": "Save Run Inputs",
     "discover_only": "Find Job Links Only",
     "ingest_saved": "Add Saved Job Links",
     "ingest_pasted": "Add Pasted Job Links",

@@ -17,7 +17,7 @@ from services.job_levels import (
     serialize_preferred_job_levels,
 )
 from services.openai_key import has_openai_api_key
-from services.openai_title_suggestions import suggest_titles_with_openai
+from services.openai_title_suggestions import suggest_run_input_refinements_with_openai
 from services.readiness import get_readiness_summary
 from services.pipeline_runtime import (
     build_search_preview,
@@ -27,7 +27,6 @@ from services.pipeline_runtime import (
     ingest_urls_from_file,
     rescore_existing_jobs,
 )
-from services.job_store import count_jobs_for_rescoring
 from services.settings import load_settings, save_settings
 from services.ui_busy import (
     app_is_busy,
@@ -86,65 +85,121 @@ def _append_comma_separated(existing: str, additions: list[str]) -> str:
 
 
 def _clear_pipeline_title_suggestions() -> None:
-    st.session_state["pipeline_title_suggestions"] = []
     st.session_state["pipeline_title_suggestions_notes"] = ""
-    for key in list(st.session_state.keys()):
-        if key.startswith("pipeline_title_checkbox_"):
-            del st.session_state[key]
+    st.session_state["pipeline_run_input_summary"] = {}
 
 
-def _generate_pipeline_title_suggestions(*, target_titles: str, include_keywords: str) -> None:
+def _normalize_title_lines(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if "\n" in text:
+        parts = text.splitlines()
+    elif ";" in text:
+        parts = text.split(";")
+    else:
+        parts = text.split(",")
+
+    results: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        clean = " ".join(str(part or "").strip().split())
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(clean)
+    return results
+
+
+def _normalize_location_lines(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if "\n" in text:
+        parts = text.splitlines()
+    elif ";" in text:
+        parts = text.split(";")
+    else:
+        parts = [text]
+
+    results: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        clean = " ".join(str(part or "").strip().split())
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(clean)
+    return results
+
+
+def _refine_pipeline_run_inputs(
+    *,
+    target_titles: str,
+    preferred_locations: str,
+    include_keywords: str,
+    include_remote: bool,
+) -> tuple[str, str, str, str, dict[str, list[str]]]:
     st.session_state["pipeline_title_suggestion_message"] = ""
     _clear_pipeline_title_suggestions()
 
     titles_clean = str(target_titles or "").strip()
-    if not titles_clean:
-        st.session_state["pipeline_title_suggestion_message"] = "Add at least one target title to get AI title suggestions."
-        return
+    locations_clean = str(preferred_locations or "").strip()
 
-    if not has_openai_api_key():
-        st.session_state["pipeline_title_suggestion_message"] = "No OpenAI key is configured, so there are no AI title suggestions yet."
-        return
+    if not titles_clean:
+        return target_titles, preferred_locations, "", "", {"titles": [], "locations": []}
 
     settings = load_settings()
-    result = suggest_titles_with_openai(
+    result = suggest_run_input_refinements_with_openai(
         current_titles=titles_clean,
+        preferred_locations=locations_clean,
         profile_summary=str(settings.get("profile_summary", "") or ""),
         resume_text=str(settings.get("resume_text", "") or ""),
         include_keywords=str(include_keywords or "").strip(),
+        include_remote=include_remote,
         max_titles=PIPELINE_TITLE_SUGGESTION_MAX,
     )
 
+    suggested_title_values = _normalize_title_lines("\n".join(str(title or "") for title in (result.get("titles", []) or [])))
+    fallback_title_values = _normalize_title_lines(target_titles)
+    final_title_values = suggested_title_values or fallback_title_values
+    refined_titles = "\n".join(final_title_values)
+
+    suggested_locations = result.get("locations", []) or []
+    suggested_location_values = _normalize_location_lines("\n".join(str(location or "") for location in suggested_locations))
+    fallback_location_values = _normalize_location_lines(preferred_locations)
+    final_location_values = suggested_location_values or fallback_location_values
+    refined_locations = "\n".join(final_location_values)
+
     if result.get("ok"):
-        suggestions = result.get("titles", []) or []
-        st.session_state["pipeline_title_suggestions"] = suggestions
+        title_additions = [title for title in (result.get("titles", []) or []) if title.strip()]
+        location_additions = [location for location in suggested_locations if str(location or "").strip()]
         st.session_state["pipeline_title_suggestions_notes"] = str(result.get("notes", "") or "")
-        if suggestions:
-            st.session_state["pipeline_title_suggestion_message"] = (
-                "Run inputs saved. Review the suggested title variants below and de-select anything you do not want to use."
-            )
+        st.session_state["pipeline_run_input_summary"] = {
+            "titles": final_title_values,
+            "locations": final_location_values,
+        }
+        if title_additions or location_additions:
+            message = "Run inputs saved. AI cleaned up the fields and appended likely title/location variants directly into them."
         else:
-            st.session_state["pipeline_title_suggestion_message"] = (
-                "Run inputs saved. No additional AI title suggestions were returned."
-            )
-        return
+            message = "Run inputs saved. No additional AI input refinements were returned."
+        return refined_titles, refined_locations, message, str(result.get("notes", "") or ""), {
+            "titles": final_title_values,
+            "locations": final_location_values,
+        }
 
     error_text = str(result.get("error", "") or "").strip()
     if error_text:
-        st.session_state["pipeline_title_suggestion_message"] = (
-            f"Run inputs saved. Could not generate AI title suggestions. {error_text}"
-        )
+        message = f"Run inputs saved. Could not refine titles or locations with AI. {error_text}"
     else:
-        st.session_state["pipeline_title_suggestion_message"] = (
-            "Run inputs saved. Could not generate AI title suggestions."
-        )
-
-
-def _render_ai_button_chip() -> None:
-    st.markdown(
-        '<div class="ai-button-chip-wrap"><span class="ai-button-chip" title="Uses OpenAI">AI</span></div>',
-        unsafe_allow_html=True,
-    )
+        message = "Run inputs saved. Could not refine titles or locations with AI."
+    return target_titles, preferred_locations, message, "", {"titles": fallback_title_values, "locations": fallback_location_values}
 
 
 def _inject_pipeline_css() -> None:
@@ -447,6 +502,51 @@ def _inject_pipeline_css() -> None:
                 margin-bottom: 0.75rem;
             }
 
+            .pipeline-ai-updates-box {
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 18px;
+                background: linear-gradient(180deg, rgba(17,24,39,0.94) 0%, rgba(11,16,26,0.98) 100%);
+                padding: 0.95rem 1rem;
+                max-height: 21rem;
+                overflow-y: auto;
+                box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+            }
+
+            .pipeline-ai-updates-title {
+                font-size: 1rem;
+                font-weight: 780;
+                color: rgba(255,255,255,0.96);
+                margin-bottom: 0.45rem;
+            }
+
+            .pipeline-ai-updates-copy {
+                font-size: 0.9rem;
+                line-height: 1.45;
+                color: rgba(255,255,255,0.74);
+                margin-bottom: 0.55rem;
+            }
+
+            .pipeline-ai-updates-label {
+                font-size: 0.8rem;
+                font-weight: 760;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                color: rgba(191,219,254,0.86);
+                margin-top: 0.75rem;
+                margin-bottom: 0.35rem;
+            }
+
+            .pipeline-ai-updates-list {
+                margin: 0;
+                padding-left: 1.15rem;
+                color: rgba(255,255,255,0.88);
+            }
+
+            .pipeline-ai-updates-list li {
+                margin-bottom: 0.26rem;
+                line-height: 1.35;
+            }
+
             .pipeline-diagnostic-line {
                 padding: 0.55rem 0.75rem;
                 border-radius: 14px;
@@ -514,6 +614,13 @@ def _str_to_bool(value: str, default: bool = False) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "y", "on"}
 
 
+def _render_pipeline_ai_chip() -> None:
+    st.markdown(
+        '<div class="ai-button-chip-wrap"><span class="ai-button-chip" title="Uses OpenAI">AI</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _humanize_pipeline_status(value: str) -> str:
     mapping = {
         "idle": "Idle",
@@ -536,6 +643,11 @@ def _set_flash(level: str, message: str) -> None:
     st.session_state["pipeline_flash_message"] = message
 
 
+def _set_run_input_notice(level: str, message: str) -> None:
+    st.session_state["pipeline_run_input_notice_level"] = level
+    st.session_state["pipeline_run_input_notice_message"] = message
+
+
 def _render_flash() -> None:
     message = st.session_state.pop("pipeline_flash_message", "")
     level = st.session_state.pop("pipeline_flash_level", "success")
@@ -549,6 +661,69 @@ def _render_flash() -> None:
         st.warning(message)
     else:
         st.success(message)
+
+
+def _save_run_inputs_action(payload: dict[str, Any]) -> tuple[str, str]:
+    saved_target_titles = str(payload.get("target_titles", "") or "")
+    saved_locations = str(payload.get("preferred_locations", "") or "")
+    saved_include_keywords = str(payload.get("include_keywords", "") or "")
+    saved_include_remote = bool(payload.get("include_remote", True))
+    saved_job_levels = payload.get("preferred_job_levels", []) or []
+    saved_exclude_keywords = str(payload.get("exclude_keywords", "") or "")
+    saved_search_strategy = str(payload.get("search_strategy", "Broader Search") or "Broader Search")
+
+    final_target_titles = saved_target_titles
+    final_locations = saved_locations
+    final_message = "Run inputs saved."
+    final_notes = ""
+    final_summary: dict[str, list[str]] = {"titles": [], "locations": _normalize_location_lines(saved_locations)}
+
+    if has_openai_api_key():
+        (
+            final_target_titles,
+            final_locations,
+            final_message,
+            final_notes,
+            final_summary,
+        ) = _refine_pipeline_run_inputs(
+            target_titles=saved_target_titles,
+            preferred_locations=saved_locations,
+            include_keywords=saved_include_keywords,
+            include_remote=saved_include_remote,
+        )
+
+    save_settings(
+        {
+            "target_titles": final_target_titles,
+            "preferred_locations": final_locations,
+            "preferred_job_levels": serialize_preferred_job_levels(saved_job_levels),
+            "include_keywords": saved_include_keywords,
+            "exclude_keywords": saved_exclude_keywords,
+            "include_remote": "true" if saved_include_remote else "false",
+            "remote_only": "false",
+            "search_strategy": SEARCH_STRATEGY_OPTIONS.get(saved_search_strategy, "broad_recall"),
+        }
+    )
+    st.session_state["pipeline_pending_target_titles_value"] = final_target_titles
+    st.session_state["pipeline_pending_preferred_locations_value"] = final_locations
+    st.session_state["pipeline_title_suggestion_message"] = final_message
+    st.session_state["pipeline_title_suggestions_notes"] = final_notes
+    st.session_state["pipeline_run_input_summary"] = final_summary
+
+    title_count = len(final_summary.get("titles", []) or [])
+    location_count = len(final_summary.get("locations", []) or [])
+    changed_parts: list[str] = []
+    if title_count:
+        changed_parts.append(f"{title_count} title updates")
+    if location_count:
+        changed_parts.append(f"{location_count} location lines saved")
+
+    if changed_parts:
+        flash_message = f"✓ Save Run Inputs complete: {', '.join(changed_parts)}"
+    else:
+        flash_message = "✓ Save Run Inputs complete"
+
+    return "success", flash_message
 
 
 def _navigate_pipeline_section(section: str) -> None:
@@ -667,6 +842,7 @@ def _is_first_run_pipeline_state() -> bool:
 def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
     discovery = result.get("discovery", {}) or {}
     ingest = result.get("ingest", {}) or {}
+    maintenance = result.get("maintenance", {}) if isinstance(result.get("maintenance", {}), dict) else {}
 
     seen_urls = int(ingest.get("seen_urls", discovery.get("url_count", 0)) or 0)
     accepted_jobs = int(ingest.get("accepted_jobs", 0) or 0)
@@ -679,6 +855,8 @@ def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
     net_new_count = int(summary.get("net_new_count", inserted_count) or 0)
     rediscovered_count = int(summary.get("rediscovered_count", 0) or 0)
     duplicate_in_run_count = int(summary.get("duplicate_in_run_count", 0) or 0)
+    maintenance_changed_count = int(maintenance.get("changed_count", 0) or 0)
+    maintenance_refreshed_count = int(maintenance.get("refreshed_count", 0) or 0)
 
     changed_count = inserted_count + updated_count
 
@@ -695,10 +873,17 @@ def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
                 parts.append(f"{inserted_count} added")
             if updated_count > 0:
                 parts.append(f"{updated_count} updated")
-        return "success", f"✓ Job run complete: {', '.join(parts)}"
+        if maintenance_changed_count > 0:
+            parts.append(f"{maintenance_changed_count} existing refreshed")
+        return "success", f"✓ Run Jobs complete: {', '.join(parts)}"
+
+    if maintenance_changed_count > 0 or maintenance_refreshed_count > 0:
+        if maintenance_changed_count > 0:
+            return "success", f"✓ Run Jobs complete: {maintenance_changed_count} existing jobs improved"
+        return "success", f"✓ Run Jobs complete: {maintenance_refreshed_count} existing jobs refreshed"
 
     if seen_urls == 0:
-        return "warning", "No job URLs were discovered. Try the fallback search links below or broaden your criteria."
+        return "warning", "No job URLs were discovered and no existing jobs needed maintenance. Try the fallback search links below or broaden your criteria."
 
     if accepted_jobs == 0 and skipped_count > 0:
         return "warning", f"{seen_urls} URLs were found, but none matched your current run inputs."
@@ -788,7 +973,7 @@ def _build_rescore_flash(result: dict) -> tuple[str, str]:
     return "warning", "Rescore completed, but no jobs were updated."
 
 
-def _wizard_first_run_has_results(result: dict) -> bool:
+def _run_jobs_has_reviewable_results(result: dict) -> bool:
     summary = result.get("ingest", {}).get("summary", {}) if isinstance(result.get("ingest", {}), dict) else {}
     inserted_count = int(summary.get("inserted_count", 0) or 0)
     updated_count = int(summary.get("updated_count", 0) or 0)
@@ -799,15 +984,15 @@ def _wizard_first_run_has_results(result: dict) -> bool:
     return any(value > 0 for value in [changed_count, net_new_count, rediscovered_count])
 
 
-def _maybe_route_after_wizard_first_run(result: dict) -> None:
-    if not st.session_state.pop("_wizard_first_discovery_redirect", False):
-        return
-
+def _maybe_route_after_run_jobs(result: dict) -> None:
+    wizard_redirect = bool(st.session_state.pop("_wizard_first_discovery_redirect", False))
     st.session_state.pop("_wizard_first_discovery_loading", None)
 
-    if _wizard_first_run_has_results(result):
+    if _run_jobs_has_reviewable_results(result):
         st.session_state["top_nav_selection"] = "New Roles"
-    else:
+        return
+
+    if wizard_redirect:
         st.session_state["top_nav_selection"] = "Pipeline"
         st.session_state["pipeline_subnav_selection"] = "Overview"
         st.session_state["_post_wizard_run_message"] = {
@@ -832,7 +1017,7 @@ def _process_pending_action_before_render() -> None:
                 use_ai_scoring=bool(payload.get("use_ai_scoring", True)),
             )
             st.session_state["pipeline_last_result"] = result
-            _maybe_route_after_wizard_first_run(result)
+            _maybe_route_after_run_jobs(result)
             _persist_pipeline_output(result)
             level, message = _build_discover_and_ingest_flash(result)
             _set_flash(level, message)
@@ -875,6 +1060,14 @@ def _process_pending_action_before_render() -> None:
             _persist_pipeline_output(result)
             level, message = _build_discover_only_flash(result)
             _set_flash(level, message)
+
+        elif action_type == "save_run_inputs":
+            level, message = _save_run_inputs_action(payload)
+            _set_flash(level, message)
+            _set_run_input_notice(
+                level,
+                str(st.session_state.get("pipeline_title_suggestion_message", "") or "Run inputs saved."),
+            )
 
         elif action_type == "rescore_existing_jobs":
             result = rescore_existing_jobs(
@@ -1465,12 +1658,16 @@ def _render_run_inputs() -> None:
     current_preferred_job_levels = parse_preferred_job_levels(settings.get("preferred_job_levels", ""))
     current_include_keywords = str(settings.get("include_keywords", "") or "")
     current_exclude_keywords = str(settings.get("exclude_keywords", "") or "")
-    current_remote_only = _str_to_bool(settings.get("remote_only", "true"), default=True)
+    current_include_remote = _str_to_bool(settings.get("include_remote", "true"), default=True)
     current_search_strategy = str(settings.get("search_strategy", "broad_recall") or "broad_recall")
 
     pending_target_titles = st.session_state.pop("pipeline_pending_target_titles_value", None)
     if pending_target_titles is not None:
         st.session_state["pipeline_target_titles_value"] = str(pending_target_titles)
+
+    pending_preferred_locations = st.session_state.pop("pipeline_pending_preferred_locations_value", None)
+    if pending_preferred_locations is not None:
+        st.session_state["pipeline_preferred_locations_value"] = str(pending_preferred_locations)
 
     if "pipeline_target_titles_value" not in st.session_state:
         st.session_state["pipeline_target_titles_value"] = current_target_titles
@@ -1482,80 +1679,28 @@ def _render_run_inputs() -> None:
         st.session_state["pipeline_include_keywords_value"] = current_include_keywords
     if "pipeline_exclude_keywords_value" not in st.session_state:
         st.session_state["pipeline_exclude_keywords_value"] = current_exclude_keywords
-    if "pipeline_remote_only_value" not in st.session_state:
-        st.session_state["pipeline_remote_only_value"] = current_remote_only
+    if "pipeline_include_remote_value" not in st.session_state:
+        st.session_state["pipeline_include_remote_value"] = current_include_remote
     if "pipeline_search_strategy_value" not in st.session_state:
         current_strategy_label = next(
             (label for label, value in SEARCH_STRATEGY_OPTIONS.items() if value == current_search_strategy),
             "Broader Search",
         )
         st.session_state["pipeline_search_strategy_value"] = current_strategy_label
-    if "pipeline_title_suggestions" not in st.session_state:
-        st.session_state["pipeline_title_suggestions"] = []
     if "pipeline_title_suggestions_notes" not in st.session_state:
         st.session_state["pipeline_title_suggestions_notes"] = ""
     if "pipeline_title_suggestion_message" not in st.session_state:
         st.session_state["pipeline_title_suggestion_message"] = ""
+    if "pipeline_run_input_summary" not in st.session_state:
+        st.session_state["pipeline_run_input_summary"] = {}
 
-    _render_section_shell(
-        "Run inputs",
-        "Tune what discovery looks for",
-        "Use this only when you want to change the shape of the search. If the current settings already look right, you can skip this and run jobs immediately.",
-        compact=True,
-        step="1",
-    )
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-        st.text_area(
-            "Target Titles",
-            key="pipeline_target_titles_value",
-            height=100,
-            help="Comma-separated values",
-        )
-
-        st.text_area(
-            "Preferred Locations",
-            key="pipeline_preferred_locations_value",
-            height=100,
-            help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nUse full structured entries instead of comma-separated fragments.",
-        )
-
-        st.multiselect(
-            "Preferred Job Levels",
-            options=JOB_LEVEL_OPTIONS,
-            key="pipeline_preferred_job_levels_value",
-            help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
-        )
-
-        st.text_area(
-            "Include Keywords",
-            key="pipeline_include_keywords_value",
-            height=100,
-            help="Comma-separated values",
-        )
-
-    with c2:
-        st.text_area(
-            "Exclude Keywords",
-            key="pipeline_exclude_keywords_value",
-            height=100,
-            help="Comma-separated values",
-        )
-        st.toggle(
-            "Remote Only",
-            key="pipeline_remote_only_value",
-            help="Include only roles that appear remote-friendly.",
-        )
-        st.selectbox(
-            "Search Strategy",
-            options=list(SEARCH_STRATEGY_OPTIONS.keys()),
-            key="pipeline_search_strategy_value",
-            help="Broader Search is the recommended default for V1. Standard keeps the search tighter when you want a narrower pass.",
-        )
-
-        st.caption("Minimum Compensation is not shown here yet because it is not currently a primary live run control in this workflow.")
+    suggestion_message = str(st.session_state.get("pipeline_title_suggestion_message", "") or "").strip()
+    notes = str(st.session_state.get("pipeline_title_suggestions_notes", "") or "").strip()
+    run_input_summary = st.session_state.get("pipeline_run_input_summary", {}) or {}
+    run_input_notice_message = str(st.session_state.pop("pipeline_run_input_notice_message", "") or "").strip()
+    run_input_notice_level = str(st.session_state.pop("pipeline_run_input_notice_level", "success") or "success").strip().lower()
+    suggested_titles = run_input_summary.get("titles", []) or []
+    suggested_locations = run_input_summary.get("locations", []) or []
 
     has_run_input_changes = any(
         [
@@ -1565,8 +1710,8 @@ def _render_run_inputs() -> None:
             != str(settings.get("preferred_job_levels", "")),
             str(st.session_state.get("pipeline_include_keywords_value", current_include_keywords)) != current_include_keywords,
             str(st.session_state.get("pipeline_exclude_keywords_value", current_exclude_keywords)) != current_exclude_keywords,
-            ("true" if bool(st.session_state.get("pipeline_remote_only_value", current_remote_only)) else "false")
-            != str(settings.get("remote_only", "true")),
+            ("true" if bool(st.session_state.get("pipeline_include_remote_value", current_include_remote)) else "false")
+            != str(settings.get("include_remote", "true")),
             SEARCH_STRATEGY_OPTIONS.get(
                 str(st.session_state.get("pipeline_search_strategy_value", "Broader Search")),
                 "broad_recall",
@@ -1574,120 +1719,185 @@ def _render_run_inputs() -> None:
         ]
     )
 
-    _render_ai_button_chip()
-    save_run_inputs = st.button(
-        "Save Run Inputs",
-        type="primary",
-        use_container_width=False,
-        disabled=not has_run_input_changes,
+    _render_section_shell(
+        "Run inputs",
+        "Tune what discovery looks for",
+        "Use this only when you want to change the shape of the search. If the current settings already look right, you can skip this and run jobs immediately.",
+        compact=True,
+        step="1",
     )
 
-    if save_run_inputs:
-        saved_target_titles = st.session_state.get("pipeline_target_titles_value", current_target_titles)
-        saved_include_keywords = st.session_state.get("pipeline_include_keywords_value", current_include_keywords)
-        save_settings(
-            {
-                "target_titles": saved_target_titles,
-                "preferred_locations": st.session_state.get("pipeline_preferred_locations_value", current_preferred_locations),
-                "preferred_job_levels": serialize_preferred_job_levels(
-                    st.session_state.get("pipeline_preferred_job_levels_value", current_preferred_job_levels)
-                ),
-                "include_keywords": saved_include_keywords,
-                "exclude_keywords": st.session_state.get("pipeline_exclude_keywords_value", current_exclude_keywords),
-                "remote_only": "true" if bool(st.session_state.get("pipeline_remote_only_value", current_remote_only)) else "false",
-                "search_strategy": SEARCH_STRATEGY_OPTIONS.get(
-                    str(st.session_state.get("pipeline_search_strategy_value", "Broader Search")),
-                    "broad_recall",
-                ),
-            }
+    section_left, section_right = st.columns([1.45, 0.95], gap="large")
+
+    with section_left:
+        st.text_area(
+            "Target Titles",
+            key="pipeline_target_titles_value",
+            height=100,
+            help="One title per line.",
         )
-        with st.spinner("Saving inputs and checking for title variants..."):
-            _generate_pipeline_title_suggestions(
-                target_titles=str(saved_target_titles or ""),
-                include_keywords=str(saved_include_keywords or ""),
+
+        location_col, remote_col = st.columns([1.35, 0.65], gap="medium")
+        with location_col:
+            st.text_area(
+                "Preferred Locations",
+                key="pipeline_preferred_locations_value",
+                height=100,
+                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nUse full structured entries instead of comma-separated fragments.",
             )
-        st.rerun()
+        with remote_col:
+            st.markdown("<div style='height: 1.8rem;'></div>", unsafe_allow_html=True)
+            st.toggle(
+                "Include Remote",
+                key="pipeline_include_remote_value",
+                help="When on, remote roles can be included alongside your preferred locations.",
+            )
 
-    suggestion_message = str(st.session_state.get("pipeline_title_suggestion_message", "") or "").strip()
-    suggestions = st.session_state.get("pipeline_title_suggestions", []) or []
-    notes = str(st.session_state.get("pipeline_title_suggestions_notes", "") or "").strip()
+        levels_col, strategy_col = st.columns([1.1, 0.9], gap="medium")
+        with levels_col:
+            st.multiselect(
+                "Preferred Job Levels",
+                options=JOB_LEVEL_OPTIONS,
+                key="pipeline_preferred_job_levels_value",
+                help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
+            )
+        with strategy_col:
+            st.selectbox(
+                "Search Strategy",
+                options=list(SEARCH_STRATEGY_OPTIONS.keys()),
+                key="pipeline_search_strategy_value",
+                help="Broader Search is the recommended default for V1. Standard keeps the search tighter when you want a narrower pass.",
+            )
 
-    if suggestion_message:
-        if suggestions:
-            st.info(suggestion_message)
-        else:
+        include_col, exclude_col = st.columns(2, gap="medium")
+        with include_col:
+            st.text_area(
+                "Include Keywords",
+                key="pipeline_include_keywords_value",
+                height=96,
+                help="Comma-separated values",
+            )
+        with exclude_col:
+            st.text_area(
+                "Exclude Keywords",
+                key="pipeline_exclude_keywords_value",
+                height=96,
+                help="Comma-separated values",
+            )
+
+    with section_right:
+        _render_pipeline_ai_chip()
+        save_run_inputs = st.button(
+            "Save Run Inputs",
+            type="primary",
+            use_container_width=True,
+            disabled=app_is_busy() or (not has_run_input_changes),
+        )
+
+        st.caption("Save your search shape here first. AI can clean up titles and locations and write the improved inputs directly back into the fields.")
+
+        if run_input_notice_message:
+            if run_input_notice_level == "error":
+                st.error(run_input_notice_message)
+            elif run_input_notice_level == "warning":
+                st.warning(run_input_notice_message)
+            else:
+                st.success(run_input_notice_message)
+
+        if suggested_titles or suggestion_message:
+            title_items = "".join(f"<li>{html.escape(str(title))}</li>" for title in suggested_titles)
+            location_items = "".join(f"<li>{html.escape(str(location))}</li>" for location in suggested_locations)
+            note_markup = (
+                f'<div class="pipeline-ai-updates-copy">{html.escape(notes)}</div>'
+                if notes
+                else ""
+            )
+            title_markup = (
+                '<div class="pipeline-ai-updates-label">Added title variants</div>'
+                f'<ul class="pipeline-ai-updates-list">{title_items}</ul>'
+                if suggested_titles
+                else ""
+            )
+            location_markup = (
+                '<div class="pipeline-ai-updates-label">Current saved location lines</div>'
+                f'<ul class="pipeline-ai-updates-list">{location_items}</ul>'
+                if suggested_locations
+                else ""
+            )
+            message_markup = (
+                f'<div class="pipeline-ai-updates-copy">{html.escape(suggestion_message)}</div>'
+                if suggestion_message
+                else ""
+            )
+            st.markdown(
+                f"""
+                <div class="pipeline-ai-updates-box">
+                    <div class="pipeline-ai-updates-title">AI Input Updates</div>
+                    {message_markup}
+                    {note_markup}
+                    {title_markup}
+                    {location_markup}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        elif suggestion_message:
             st.caption(suggestion_message)
 
-    if suggestions:
-        with st.container(border=True):
-            st.markdown("#### Suggested Title Variants")
-            if notes:
-                st.caption(notes)
-            st.caption("Up to 10 suggestions. Everything starts selected, and you can de-select anything you do not want to use.")
+    if save_run_inputs:
+        queue_action(
+            "pipeline",
+            "save_run_inputs",
+            payload={
+                "target_titles": str(st.session_state.get("pipeline_target_titles_value", current_target_titles) or ""),
+                "preferred_locations": str(
+                    st.session_state.get("pipeline_preferred_locations_value", current_preferred_locations) or ""
+                ),
+                "preferred_job_levels": st.session_state.get(
+                    "pipeline_preferred_job_levels_value",
+                    current_preferred_job_levels,
+                ),
+                "include_keywords": str(
+                    st.session_state.get("pipeline_include_keywords_value", current_include_keywords) or ""
+                ),
+                "exclude_keywords": str(
+                    st.session_state.get("pipeline_exclude_keywords_value", current_exclude_keywords) or ""
+                ),
+                "include_remote": bool(
+                    st.session_state.get("pipeline_include_remote_value", current_include_remote)
+                ),
+                "search_strategy": str(
+                    st.session_state.get("pipeline_search_strategy_value", "Broader Search") or "Broader Search"
+                ),
+            },
+            label="Save Run Inputs",
+        )
+        st.rerun()
 
-            selected_titles: list[str] = []
-            for index, title in enumerate(suggestions):
-                checkbox_key = f"pipeline_title_checkbox_{index}"
-                if checkbox_key not in st.session_state:
-                    st.session_state[checkbox_key] = True
-                if st.checkbox(title, key=checkbox_key):
-                    selected_titles.append(title)
-
-            c1, c2 = st.columns([1.2, 1])
-            with c1:
-                if st.button(
-                    "Add Selected Titles",
-                    key="pipeline_add_selected_titles",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=not bool(selected_titles),
-                ):
-                    updated_titles = _append_comma_separated(
-                        st.session_state.get("pipeline_target_titles_value", ""),
-                        selected_titles,
-                    )
-                    save_settings({"target_titles": updated_titles})
-                    st.session_state["pipeline_pending_target_titles_value"] = updated_titles
-                    st.session_state["pipeline_title_suggestion_message"] = "Selected title variants were added to Target Titles."
-                    _clear_pipeline_title_suggestions()
-                    st.rerun()
-            with c2:
-                if st.button("Dismiss", key="pipeline_dismiss_title_suggestions", use_container_width=True):
-                    st.session_state["pipeline_title_suggestion_message"] = "Title suggestions dismissed."
-                    _clear_pipeline_title_suggestions()
-                    st.rerun()
 
     _close_section_shell()
 
 
 def _render_action_deck() -> None:
     busy = app_is_busy()
-    use_ai_in_run = bool(st.session_state.get("pipeline_use_ai_in_run", True))
     _render_section_shell(
         "Recommended path",
         "Find and add jobs in one pass",
-        "This is the normal workflow. The app discovers links, validates them, scores accepted jobs, and adds the strongest matches to New Roles.",
+        "This is the normal workflow. Run Jobs discovers new links, refreshes stale existing jobs when needed, scores the strongest matches, and leaves New Roles ready for review.",
         compact=True,
         step="2",
     )
-    st.toggle(
-        "Use AI in this run",
-        key="pipeline_use_ai_in_run",
-        disabled=busy,
-        help="When on, this run may use AI title expansion during discovery and AI scoring or scrub on accepted jobs.",
-    )
-
-    _render_ai_button_chip()
-    if st.button("Find and Add Jobs", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
+    _render_pipeline_ai_chip()
+    if st.button("Run Jobs", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
         st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
         queue_action(
             "pipeline",
             "discover_and_ingest",
             payload={
-                "use_ai_title_expansion": use_ai_in_run,
-                "use_ai_scoring": use_ai_in_run,
+                "use_ai_title_expansion": True,
+                "use_ai_scoring": True,
             },
-            label="Find and Add Jobs",
+            label="Run Jobs",
         )
         st.rerun()
 
@@ -1695,138 +1905,61 @@ def _render_action_deck() -> None:
         '<div class="pipeline-secondary-actions-note">Default path for most runs. Best for normal day-to-day discovery.</div>',
         unsafe_allow_html=True,
     )
-
-    _render_ai_button_chip()
-    if st.button("Find Job Links Only", use_container_width=True, disabled=busy, key="pipeline_discover_only"):
-        st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-        queue_action(
-            "pipeline",
-            "discover_only",
-            payload={"use_ai_title_expansion": use_ai_in_run},
-            label="Find Job Links Only",
-        )
+    if st.button(
+        "Schedule automatic runs in Settings",
+        use_container_width=False,
+        key="pipeline_go_to_auto_runs",
+    ):
+        st.session_state["top_nav_selection"] = "Settings"
+        st.session_state["settings_subnav_selection"] = "Configuration"
         st.rerun()
 
     _close_section_shell()
 
 
 def _render_action_deck_manual_only() -> None:
-    busy = app_is_busy()
     manual_urls = st.session_state.get("pipeline_manual_urls", "")
-    use_ai_in_run = bool(st.session_state.get("pipeline_use_ai_in_run", True))
     has_manual_urls = bool(str(manual_urls or "").strip())
-    saved_job_links_exist = _job_urls_file_exists()
 
-    top_left, top_right = st.columns([1.15, 1])
+    _render_section_shell(
+        "Manual import",
+        "Seed specific jobs or bring saved links into the app",
+        "Use this section when you want to test exact postings or import links you already discovered. This stays secondary to the main Run Jobs flow, but it should stay easy to reach.",
+        compact=True,
+        step="3",
+    )
 
-    with top_left:
-        st.text_area(
-            "Paste job links",
-            key="pipeline_manual_urls",
-            height=170,
-            placeholder="Paste one job URL per line",
+    st.markdown(
+        '<div class="pipeline-card-copy">Paste any specific job links here when you want to seed exact postings into the app without running the full search.</div>',
+        unsafe_allow_html=True,
+    )
+    st.text_area(
+        "Paste job links",
+        key="pipeline_manual_urls",
+        height=220,
+        placeholder="Paste one job URL per line",
+    )
+
+    if st.button(
+        "Add Job Links",
+        use_container_width=True,
+        disabled=app_is_busy() or (not has_manual_urls),
+        key="pipeline_ingest_pasted",
+        help="Paste one or more job links first." if not has_manual_urls else None,
+    ):
+        st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
+        queue_action(
+            "pipeline",
+            "ingest_pasted",
+            payload={
+                "manual_urls": manual_urls,
+                "use_ai_scoring": True,
+            },
+            label="Add Job Links",
         )
+        st.rerun()
 
-        _render_ai_button_chip()
-        if st.button(
-            "Add Pasted Job Links",
-            use_container_width=True,
-            disabled=busy or (not has_manual_urls),
-            key="pipeline_ingest_pasted",
-            help="Paste one or more job links first." if not has_manual_urls else None,
-        ):
-            st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-            queue_action(
-                "pipeline",
-                "ingest_pasted",
-                payload={
-                    "manual_urls": manual_urls,
-                    "use_ai_scoring": use_ai_in_run,
-                },
-                label="Add Pasted Job Links",
-            )
-            st.rerun()
-
-    with top_right:
-        st.markdown(
-            '<div class="pipeline-card-copy">Use these when you already have links or when older jobs need their Fit Score and AI Recommendation refreshed under the latest scoring rules.</div>',
-            unsafe_allow_html=True,
-        )
-
-        _render_ai_button_chip()
-        if st.button(
-            "Add Saved Job Links",
-            use_container_width=True,
-            disabled=busy or (not saved_job_links_exist),
-            key="pipeline_ingest_saved",
-            help=(
-                "Saved job links file found and ready to import."
-                if saved_job_links_exist
-                else "No saved job links file exists yet. Run discovery first or paste job links."
-            ),
-        ):
-            st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-            queue_action(
-                "pipeline",
-                "ingest_saved",
-                payload={"use_ai_scoring": use_ai_in_run},
-                label="Add Saved Job Links",
-            )
-            st.rerun()
-
-        rescore_left, rescore_right = st.columns(2)
-        with rescore_left:
-            selected_rescore_label = st.selectbox(
-                "Rescore Range",
-                options=[label for label, _ in RESCORE_LIMIT_OPTIONS],
-                index=1,
-                disabled=busy,
-                key="pipeline_rescore_limit",
-                help="Use a smaller batch for faster maintenance runs. Choose All only when you want to refresh the full backlog.",
-            )
-        selected_rescore_limit = dict(RESCORE_LIMIT_OPTIONS).get(selected_rescore_label, 50)
-
-        with rescore_right:
-            selected_stale_label = st.selectbox(
-                "Rescore Age",
-                options=[label for label, _ in RESCORE_STALE_OPTIONS],
-                index=1,
-                disabled=busy,
-                key="pipeline_rescore_stale_age",
-                help="Use this to avoid spending AI calls on jobs that were refreshed recently.",
-            )
-        selected_stale_days = dict(RESCORE_STALE_OPTIONS).get(selected_stale_label, 7)
-
-        ai_ready_for_rescore = has_openai_api_key()
-        matching_jobs = count_jobs_for_rescoring(stale_days=selected_stale_days or None)
-        selected_jobs = matching_jobs if selected_rescore_limit == 0 else min(matching_jobs, selected_rescore_limit)
-        st.caption(
-            f"Current rescore policy matches {matching_jobs} jobs. "
-            f"This run will process {selected_jobs}."
-        )
-        if not ai_ready_for_rescore:
-            st.caption("Add an OpenAI API key in Settings -> OpenAI API to enable batch rescoring.")
-
-        _render_ai_button_chip()
-        if st.button(
-            "Rescore Existing Jobs",
-            use_container_width=True,
-            disabled=busy or (not ai_ready_for_rescore),
-            key="pipeline_rescore_existing",
-            help=(
-                "Refresh existing jobs with current AI scoring and scrub rules."
-                if ai_ready_for_rescore
-                else "No OpenAI API key is configured. Add one in Settings > OpenAI API."
-            ),
-        ):
-            st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-            queue_action(
-                "pipeline",
-                "rescore_existing_jobs",
-                payload={"limit": selected_rescore_limit, "stale_days": selected_stale_days},
-                label=f"Rescore Existing Jobs ({selected_rescore_label}, {selected_stale_label})",
-            )
-            st.rerun()
+    _close_section_shell()
 
 
 def _render_run_diagnostics_card() -> None:
@@ -2061,21 +2194,13 @@ def _render_pipeline_run_jobs_tab() -> None:
         "Choose one action and keep the setup nearby",
         "This page is for doing work, not reading logs. Set the run inputs first, use the recommended path for normal discovery, and use manual import or maintenance only when needed.",
     )
-    primary_left, primary_right = st.columns([1.15, 1])
-    with primary_left:
-        _render_run_inputs()
-    with primary_right:
-        _render_action_deck()
+    _render_run_inputs()
 
-    _render_section_shell(
-        "Manual import",
-        "Seed specific jobs or bring saved links into the app",
-        "Use this section when you want to test exact postings, import links you already discovered, or run maintenance on existing jobs. This is secondary to the main discovery flow, but it should stay visible.",
-        compact=True,
-        step="3",
-    )
-    _render_action_deck_manual_only()
-    _close_section_shell()
+    lower_left, lower_right = st.columns([1, 1])
+    with lower_left:
+        _render_action_deck()
+    with lower_right:
+        _render_action_deck_manual_only()
 
 
 def _render_pipeline_results_tab() -> None:

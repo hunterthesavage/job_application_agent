@@ -32,6 +32,7 @@ JOB_COLUMNS = [
     "source_type",
     "source_trust",
     "source_detail",
+    "parser_version",
     "compensation_raw",
     "compensation_status",
     "validation_status",
@@ -58,7 +59,14 @@ REQUIRED_JOB_COLUMNS = {
     "last_seen_run_id": "INTEGER NOT NULL DEFAULT 0",
     "seen_count": "INTEGER NOT NULL DEFAULT 0",
     "canonical_job_posting_url": "TEXT NOT NULL DEFAULT ''",
+    "last_page_refresh_at": "TEXT NOT NULL DEFAULT ''",
+    "last_score_refresh_at": "TEXT NOT NULL DEFAULT ''",
+    "last_refresh_status": "TEXT NOT NULL DEFAULT ''",
+    "parser_version": "TEXT NOT NULL DEFAULT ''",
 }
+
+
+DEFAULT_PARSER_VERSION = "validate_job_url_v1"
 
 
 TRACKING_QUERY_PREFIXES = (
@@ -216,6 +224,7 @@ def coerce_job_payload(job: Any) -> dict[str, Any]:
     payload["source_type"] = _clean(payload.get("source_type"))
     payload["source_trust"] = _clean(payload.get("source_trust"))
     payload["source_detail"] = _clean(payload.get("source_detail"))
+    payload["parser_version"] = _clean(payload.get("parser_version")) or DEFAULT_PARSER_VERSION
     payload["job_posting_url"] = _clean(payload.get("job_posting_url"))
     payload["canonical_job_posting_url"] = canonicalize_job_posting_url(payload.get("job_posting_url", ""))
 
@@ -342,6 +351,91 @@ def list_jobs_for_rescoring(limit: int | None = None, stale_days: int | None = N
         return conn.execute(query, params).fetchall()
 
 
+def _build_run_maintenance_selection_query(
+    *,
+    select_clause: str,
+    stale_days: int,
+    exclude_run_id: int = 0,
+) -> tuple[str, tuple[Any, ...]]:
+    effective_stale_days = max(int(stale_days or 0), 1)
+    query = f"""
+        {select_clause}
+        FROM jobs
+        WHERE active_status != 'Removed'
+          AND (
+                TRIM(COALESCE(company, '')) = ''
+                OR TRIM(COALESCE(title, '')) = ''
+                OR TRIM(COALESCE(compensation_raw, '')) = ''
+                OR TRIM(COALESCE(validation_status, '')) = ''
+                OR TRIM(COALESCE(last_page_refresh_at, '')) = ''
+                OR datetime(COALESCE(NULLIF(last_page_refresh_at, ''), '1970-01-01 00:00:00'))
+                    <= datetime('now', ?)
+          )
+    """
+    params: list[Any] = [f"-{effective_stale_days} days"]
+
+    if int(exclude_run_id or 0) > 0:
+        query += """
+          AND COALESCE(last_seen_run_id, 0) != ?
+        """
+        params.append(int(exclude_run_id))
+
+    query += """
+        ORDER BY
+            CASE
+                WHEN TRIM(COALESCE(company, '')) = '' OR TRIM(COALESCE(title, '')) = '' THEN 0
+                WHEN TRIM(COALESCE(compensation_raw, '')) = '' THEN 1
+                WHEN TRIM(COALESCE(last_page_refresh_at, '')) = '' THEN 2
+                ELSE 3
+            END,
+            CASE
+                WHEN workflow_status = 'New' THEN 0
+                WHEN workflow_status = 'Applied' THEN 1
+                ELSE 2
+            END,
+            fit_score DESC,
+            updated_at DESC,
+            id DESC
+    """
+    return query, tuple(params)
+
+
+def count_jobs_for_maintenance(stale_days: int = 7, exclude_run_id: int = 0) -> int:
+    ensure_job_columns()
+    query, params = _build_run_maintenance_selection_query(
+        select_clause="SELECT COUNT(*) AS maintenance_count",
+        stale_days=stale_days,
+        exclude_run_id=exclude_run_id,
+    )
+
+    with db_connection() as conn:
+        row = conn.execute(query, params).fetchone()
+        if row is None:
+            return 0
+        return int(row[0] or 0)
+
+
+def list_jobs_for_maintenance(
+    *,
+    limit: int | None = None,
+    stale_days: int = 7,
+    exclude_run_id: int = 0,
+) -> list[Any]:
+    ensure_job_columns()
+    query, params = _build_run_maintenance_selection_query(
+        select_clause="SELECT *",
+        stale_days=stale_days,
+        exclude_run_id=exclude_run_id,
+    )
+
+    if limit is not None and int(limit) > 0:
+        query += "\nLIMIT ?"
+        params = (*params, int(limit))
+
+    with db_connection() as conn:
+        return conn.execute(query, params).fetchall()
+
+
 def is_removed_duplicate_key(duplicate_key: str) -> bool:
     normalized = normalize_duplicate_key(duplicate_key)
     if not normalized:
@@ -406,13 +500,21 @@ def insert_job(payload: dict[str, Any], run_id: int | None = None) -> int:
                 first_seen_at,
                 last_seen_at,
                 last_seen_run_id,
-                seen_count
+                seen_count,
+                last_page_refresh_at,
+                last_score_refresh_at,
+                last_refresh_status,
+                parser_version
             ) VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'New', '',
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP,
                 ?,
-                1
+                1,
+                CURRENT_TIMESTAMP,
+                CASE WHEN ? IS NOT NULL OR TRIM(COALESCE(?, '')) <> '' OR TRIM(COALESCE(?, '')) <> '' THEN CURRENT_TIMESTAMP ELSE '' END,
+                'discovered',
+                ?
             )
             """,
             (
@@ -449,6 +551,10 @@ def insert_job(payload: dict[str, Any], run_id: int | None = None) -> int:
                 payload["duplicate_key"],
                 payload["active_status"],
                 effective_run_id,
+                payload["fit_score"],
+                payload["fit_tier"],
+                payload["ai_priority"],
+                payload["parser_version"],
             ),
         )
         return int(cur.lastrowid)
@@ -539,6 +645,13 @@ def update_existing_job(existing_id: int, payload: dict[str, Any], preserve_appl
                 last_seen_at = CURRENT_TIMESTAMP,
                 last_seen_run_id = ?,
                 seen_count = ?,
+                last_page_refresh_at = CURRENT_TIMESTAMP,
+                last_score_refresh_at = CASE
+                    WHEN ? IS NOT NULL OR TRIM(COALESCE(?, '')) <> '' OR TRIM(COALESCE(?, '')) <> '' THEN CURRENT_TIMESTAMP
+                    ELSE last_score_refresh_at
+                END,
+                last_refresh_status = 'discovered',
+                parser_version = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
@@ -578,10 +691,98 @@ def update_existing_job(existing_id: int, payload: dict[str, Any], preserve_appl
                 applied_date,
                 effective_run_id,
                 existing_seen_count + 1,
+                payload["fit_score"],
+                payload["fit_tier"],
+                payload["ai_priority"],
+                payload["parser_version"],
                 existing_id,
             ),
         )
         return was_promoted
+
+
+def update_job_refresh_fields(
+    job_id: int,
+    payload: dict[str, Any],
+    *,
+    scored: bool,
+    refresh_status: str,
+) -> None:
+    ensure_job_columns()
+    coerced = coerce_job_payload(payload)
+
+    with db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET
+                company = ?,
+                title = ?,
+                role_family = ?,
+                normalized_title = ?,
+                location = ?,
+                remote_type = ?,
+                dallas_dfw_match = ?,
+                job_posting_url = ?,
+                canonical_job_posting_url = ?,
+                compensation_raw = ?,
+                compensation_status = ?,
+                validation_status = ?,
+                validation_confidence = ?,
+                fit_score = ?,
+                fit_tier = ?,
+                ai_priority = ?,
+                match_rationale = ?,
+                risk_flags = ?,
+                application_angle = ?,
+                parser_version = ?,
+                last_page_refresh_at = CURRENT_TIMESTAMP,
+                last_score_refresh_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE last_score_refresh_at END,
+                last_refresh_status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                coerced["company"],
+                coerced["title"],
+                coerced["role_family"],
+                coerced["normalized_title"],
+                coerced["location"],
+                coerced["remote_type"],
+                coerced["dallas_dfw_match"],
+                coerced["job_posting_url"],
+                coerced["canonical_job_posting_url"],
+                coerced["compensation_raw"],
+                coerced["compensation_status"],
+                coerced["validation_status"],
+                coerced["validation_confidence"],
+                coerced["fit_score"],
+                coerced["fit_tier"],
+                coerced["ai_priority"],
+                coerced["match_rationale"],
+                coerced["risk_flags"],
+                coerced["application_angle"],
+                coerced["parser_version"],
+                1 if scored else 0,
+                _clean(refresh_status),
+                int(job_id),
+            ),
+        )
+
+
+def update_job_refresh_status(job_id: int, refresh_status: str) -> None:
+    ensure_job_columns()
+    with db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET
+                last_refresh_status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (_clean(refresh_status), int(job_id)),
+        )
 
 
 def update_job_scoring_fields(job_id: int, payload: dict[str, Any], *, include_core_fields: bool = False) -> None:

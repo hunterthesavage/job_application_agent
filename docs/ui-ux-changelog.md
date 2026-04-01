@@ -20,6 +20,20 @@ Entry format:
 
 ---
 
+## 2026-04-01
+
+### Turned Run Jobs into the primary all-in-one workflow and added automatic run scheduling
+- Summary: renamed the main Pipeline action to `Run Jobs`, updated the success/empty-state messaging so it reflects both new discovery and existing-job maintenance, hid the old manual rescore control behind the internal-tools reveal, added Settings controls for daily, weekdays, or custom weekly background runs with a time-of-day selector and last-run status, expanded the Windows portable overlay so the packaged app carries the same orchestration and scheduler files, and then tightened the schedule editor so it defaults to `Daily` when enabled, removes the redundant `Off` option from the frequency picker, suppresses repetitive schedule/path copy, and preserves the save-success notice after rerun.
+- Why: the product direction is now one button that does the full job-refresh cycle and one schedule that keeps jobs fresh in the background. Exposing separate maintenance concepts in the normal UI was fighting that mental model.
+- Validation: `python3 -m py_compile views/settings.py views/pipeline.py views/setup_wizard.py services/ui_busy.py services/auto_run.py scripts/run_scheduled_jobs.py`; `.venv/bin/python -m pytest -q tests/test_auto_run.py tests/test_settings.py tests/test_pipeline_runtime.py`
+- Files: `views/settings.py`, `views/pipeline.py`, `views/setup_wizard.py`, `services/ui_busy.py`, `services/auto_run.py`, `scripts/run_scheduled_jobs.py`, `scripts/build_windows_portable.ps1`, `docs/ui-ux-changelog.md`
+
+### Made Run Inputs line-based and changed remote matching to an explicit include toggle
+- Summary: Pipeline and Setup Wizard now treat target titles and preferred locations as one-entry-per-line fields, `Save Run Inputs` writes AI-cleaned titles and locations back into those fields, and the old remote fallback is now controlled by an explicit `Include Remote` checkbox that defaults on.
+- Why: exec-tech searches were getting polluted by old comma-split title fragments like `Technology`, and named-city searches were still letting generic remote roles through even when the user had not explicitly asked for them.
+- Validation: `python3 -m py_compile views/pipeline.py views/setup_wizard.py views/settings.py services/search_plan.py services/job_qualifier.py services/location_matching.py services/pipeline_runtime.py services/openai_title_suggestions.py src/validate_job_url.py src/validate_job_url_sqlite.py src/ingest_from_urls_file.py src/discover_job_urls.py`; `.venv/bin/python -m pytest -q tests/test_search_plan.py tests/test_openai_title_suggestions.py tests/test_job_qualifier.py tests/test_pipeline_runtime.py tests/test_settings.py tests/test_auto_run.py`
+- Files: `views/pipeline.py`, `views/setup_wizard.py`, `services/search_plan.py`, `services/job_qualifier.py`, `services/location_matching.py`, `services/pipeline_runtime.py`, `services/openai_title_suggestions.py`, `src/discover_job_urls.py`, `src/validate_job_url.py`, `src/validate_job_url_sqlite.py`, `src/ingest_from_urls_file.py`, `tests/test_search_plan.py`, `tests/test_openai_title_suggestions.py`, `tests/test_job_qualifier.py`, `tests/test_pipeline_runtime.py`
+
 ## 2026-03-29
 
 ### Reframed the internal backlog view around Now, Next, and Later
@@ -134,6 +148,20 @@ Entry format:
 - Why: rebuilding the package from scratch introduced UI regressions, so future Windows packaging work needs to preserve the working app shell and only change the packaging layer on the lab branch.
 - Validation: verified the exact baseline zip contents, confirmed the ghost-file count and safe Python clutter targets locally, updated the lab release workflow defaults so future packaging experiments publish to `windows-portable-lab`, expanded the Windows smoke workflow so the lab branch now gets automated Windows validation too, and fixed the stop-script cleanup path after the smoke run exposed a PowerShell `$PID` name collision.
 - Files: `scripts/build_windows_portable.ps1`, `app.py`, `config.py`, `services/app_control.py`, `.github/workflows/windows-portable-release.yml`, `.github/workflows/windows-smoke.yml`, `docs/windows-portable-build.md`, `docs/ui-ux-changelog.md`
+
+## 2026-04-01
+
+### Simplified the Run Jobs page into one main setup section plus two action lanes
+- Summary: removed the floating AI pills and the per-run AI toggle from Pipeline, made Run Inputs span the full page width, kept a dedicated visible title-suggestion area under saved inputs, moved the manual-import section beside the main Run Jobs actions, and relocated hidden internal maintenance controls into Settings -> System Status.
+- Why: the Run Jobs page had started to feel cluttered and inconsistent with the product direction of one main workflow that handles AI automatically, while the internal maintenance controls were taking up user-facing space they did not need.
+- Validation: `python3 -m py_compile views/pipeline.py views/settings.py`; `.venv/bin/python -m pytest -q tests/test_settings.py tests/test_auto_run.py`
+- Files: `views/pipeline.py`, `views/settings.py`, `docs/ui-ux-changelog.md`
+
+### Made Save Run Inputs clean up fields directly and reduced secondary actions on Pipeline
+- Summary: changed Save Run Inputs so it can append AI-suggested titles directly into the titles field and normalize preferred locations back into the location field, added a quick schedule handoff link under Run Jobs, simplified manual import to one Add Job Links button, and moved Find Job Links Only plus Add Saved Job Links into hidden internal settings.
+- Why: the main Pipeline page still made users manage too many secondary actions and separate suggestion states, when the product direction is one primary run flow with smart cleanup built into the setup step.
+- Validation: `python3 -m py_compile views/pipeline.py views/settings.py services/openai_title_suggestions.py`; `.venv/bin/python -m pytest -q tests/test_openai_title_suggestions.py tests/test_settings.py tests/test_auto_run.py`
+- Files: `views/pipeline.py`, `views/settings.py`, `services/openai_title_suggestions.py`, `tests/test_openai_title_suggestions.py`, `docs/ui-ux-changelog.md`
 
 ## 2026-03-28
 

@@ -113,7 +113,7 @@ def _start_first_discovery() -> None:
     st.session_state["top_nav_selection"] = "Pipeline"
     st.session_state["pipeline_subnav_selection"] = "Overview"
     st.session_state.pop("_post_wizard_run_message", None)
-    queue_action("pipeline", "discover_and_ingest", label="Find and Add Jobs")
+    queue_action("pipeline", "discover_and_ingest", label="Run Jobs")
 
 
 def _skip_to_app() -> None:
@@ -141,8 +141,8 @@ def _initialize_wizard_state(settings: dict[str, str]) -> None:
         st.session_state["wizard_include_keywords"] = settings.get("include_keywords", "")
     if "wizard_exclude_keywords" not in st.session_state:
         st.session_state["wizard_exclude_keywords"] = settings.get("exclude_keywords", "")
-    if "wizard_remote_only" not in st.session_state:
-        st.session_state["wizard_remote_only"] = str(settings.get("remote_only", "false")).strip().lower() == "true"
+    if "wizard_include_remote" not in st.session_state:
+        st.session_state["wizard_include_remote"] = str(settings.get("include_remote", "true")).strip().lower() == "true"
     if "wizard_minimum_compensation" not in st.session_state:
         st.session_state["wizard_minimum_compensation"] = settings.get("minimum_compensation", "")
 
@@ -230,8 +230,8 @@ def _render_welcome_step() -> None:
         st.caption("Skip for now and go straight into the app.")
 
 
-def _append_comma_separated(base_value: str, additions: list[str]) -> str:
-    current = [part.strip() for part in str(base_value or "").split(",") if part.strip()]
+def _append_line_separated(base_value: str, additions: list[str]) -> str:
+    current = [part.strip() for part in str(base_value or "").splitlines() if part.strip()]
     seen = {item.casefold() for item in current}
     for item in additions:
         clean = str(item or "").strip()
@@ -242,7 +242,7 @@ def _append_comma_separated(base_value: str, additions: list[str]) -> str:
             continue
         current.append(clean)
         seen.add(key)
-    return ", ".join(current)
+    return "\n".join(current)
 
 
 def _clear_wizard_title_suggestions() -> None:
@@ -311,8 +311,8 @@ def _render_search_step() -> None:
         st.session_state["wizard_include_keywords_widget"] = st.session_state.get("wizard_include_keywords", "")
     if "wizard_exclude_keywords_widget" not in st.session_state:
         st.session_state["wizard_exclude_keywords_widget"] = st.session_state.get("wizard_exclude_keywords", "")
-    if "wizard_remote_only_widget" not in st.session_state:
-        st.session_state["wizard_remote_only_widget"] = bool(st.session_state.get("wizard_remote_only", False))
+    if "wizard_include_remote_widget" not in st.session_state:
+        st.session_state["wizard_include_remote_widget"] = bool(st.session_state.get("wizard_include_remote", True))
     if "wizard_minimum_compensation_widget" not in st.session_state:
         st.session_state["wizard_minimum_compensation_widget"] = st.session_state.get("wizard_minimum_compensation", "")
 
@@ -324,14 +324,14 @@ def _render_search_step() -> None:
                 "Target Titles",
                 key="wizard_target_titles_widget",
                 height=120,
-                help="Comma-separated values. Example: VP Technology, CIO, Head of Platform",
+                help="One title per line. Example:\nVP Technology\nCIO\nHead of Platform",
             )
 
             preferred_locations = st.text_area(
                 "Preferred Locations",
                 key="wizard_preferred_locations_widget",
                 height=120,
-                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nYou can leave this blank only if Remote Only is turned on.",
+                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nYou can leave this blank only if Include Remote is turned on.",
             )
 
             preferred_job_levels = st.multiselect(
@@ -356,7 +356,7 @@ def _render_search_step() -> None:
                 help="Optional. Comma-separated values.",
             )
 
-            remote_only = st.toggle("Remote Only", key="wizard_remote_only_widget")
+            include_remote = st.toggle("Include Remote", key="wizard_include_remote_widget")
 
             minimum_compensation = st.text_input(
                 "Minimum Compensation",
@@ -385,8 +385,8 @@ def _render_search_step() -> None:
             if not titles_clean:
                 st.error("Add at least one target title before continuing.")
                 return
-            if not locations_clean and not remote_only:
-                st.error("Add at least one preferred location or turn on Remote Only.")
+            if not locations_clean and not include_remote:
+                st.error("Add at least one preferred location or turn on Include Remote.")
                 return
 
             save_settings(
@@ -396,7 +396,8 @@ def _render_search_step() -> None:
                     "preferred_job_levels": preferred_job_levels_clean,
                     "include_keywords": include_clean,
                     "exclude_keywords": exclude_clean,
-                    "remote_only": "true" if remote_only else "false",
+                    "include_remote": "true" if include_remote else "false",
+                    "remote_only": "false",
                     "minimum_compensation": minimum_clean,
                 }
             )
@@ -407,7 +408,7 @@ def _render_search_step() -> None:
             st.session_state["wizard_preferred_job_levels_widget"] = list(preferred_job_levels)
             st.session_state["wizard_include_keywords"] = include_clean
             st.session_state["wizard_exclude_keywords"] = exclude_clean
-            st.session_state["wizard_remote_only"] = remote_only
+            st.session_state["wizard_include_remote"] = include_remote
             st.session_state["wizard_minimum_compensation"] = minimum_clean
             st.session_state["wizard_ai_review_generated"] = False
             st.session_state["wizard_ai_review_choice_made"] = False
@@ -651,7 +652,7 @@ def _render_ai_review_step() -> None:
                     disabled=not bool(selected),
                     help="Select at least one suggested title first." if not selected else None,
                 ):
-                    updated = _append_comma_separated(st.session_state.get("wizard_target_titles", ""), selected)
+                    updated = _append_line_separated(st.session_state.get("wizard_target_titles", ""), selected)
                     st.session_state["wizard_target_titles"] = updated
                     st.session_state["wizard_target_titles_widget"] = updated
                     save_settings({"target_titles": updated})

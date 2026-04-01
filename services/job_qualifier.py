@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from services.search_plan import build_search_title_variants
+from services.search_plan import build_search_title_variants, parse_title_entries, resolve_include_remote
 
 
 def safe_text(value: Any) -> str:
@@ -206,7 +206,12 @@ def _function_lane_score(job_title: str, target_titles: list[str]) -> tuple[int,
     return 0, reasons, ""
 
 
-def _location_score(job_location: str, preferred_locations: list[str], remote_only: bool) -> tuple[int, list[str], str]:
+def _location_score(
+    job_location: str,
+    preferred_locations: list[str],
+    remote_only: bool,
+    include_remote: bool,
+) -> tuple[int, list[str], str]:
     normalized_location = normalize_text(job_location)
     reasons: list[str] = []
     reject_reason = ""
@@ -224,8 +229,12 @@ def _location_score(job_location: str, preferred_locations: list[str], remote_on
 
     if not preferred_locations:
         if "remote" in normalized_location:
-            reasons.append("remote accepted")
-            return 12, reasons, reject_reason
+            if include_remote:
+                reasons.append("remote accepted")
+                return 12, reasons, reject_reason
+            reject_reason = "location mismatch"
+            reasons.append("location mismatch")
+            return -8, reasons, reject_reason
         reasons.append("no preferred locations provided")
         return 8, reasons, reject_reason
 
@@ -235,7 +244,7 @@ def _location_score(job_location: str, preferred_locations: list[str], remote_on
             reasons.append(f"location matched '{pref}'")
             return 20, reasons, reject_reason
 
-    if "remote" in normalized_location:
+    if include_remote and "remote" in normalized_location:
         reasons.append("remote accepted as fallback")
         return 10, reasons, reject_reason
 
@@ -281,11 +290,12 @@ def qualify_job(
     job_text: str,
     settings: dict[str, Any],
 ) -> QualificationResult:
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     include_keywords = parse_csv_text(settings.get("include_keywords", ""))
     exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    include_remote = resolve_include_remote(settings)
     title_variants = build_search_title_variants(target_titles, max_variants=6) if target_titles else []
     scoring_titles = title_variants or target_titles
 
@@ -293,7 +303,12 @@ def qualify_job(
 
     title_score, title_reasons = _title_overlap_score(job_title, scoring_titles)
     function_score, function_reasons, function_reject_reason = _function_lane_score(job_title, scoring_titles)
-    location_score, location_reasons, location_reject_reason = _location_score(location, preferred_locations, remote_only)
+    location_score, location_reasons, location_reject_reason = _location_score(
+        location,
+        preferred_locations,
+        remote_only,
+        include_remote,
+    )
     keyword_score, keyword_reasons, keyword_reject_reason = _keyword_score(
         searchable_text=searchable,
         include_keywords=include_keywords,

@@ -1,4 +1,4 @@
-from views.pipeline import _wizard_first_run_has_results
+from views.pipeline import _run_jobs_has_reviewable_results
 
 
 def test_wizard_first_run_has_results_for_net_new_jobs():
@@ -13,7 +13,7 @@ def test_wizard_first_run_has_results_for_net_new_jobs():
         }
     }
 
-    assert _wizard_first_run_has_results(result) is True
+    assert _run_jobs_has_reviewable_results(result) is True
 
 
 def test_wizard_first_run_has_results_for_rediscovered_jobs():
@@ -28,7 +28,7 @@ def test_wizard_first_run_has_results_for_rediscovered_jobs():
         }
     }
 
-    assert _wizard_first_run_has_results(result) is True
+    assert _run_jobs_has_reviewable_results(result) is True
 
 
 def test_wizard_first_run_has_results_false_when_nothing_changed():
@@ -43,4 +43,4 @@ def test_wizard_first_run_has_results_false_when_nothing_changed():
         }
     }
 
-    assert _wizard_first_run_has_results(result) is False
+    assert _run_jobs_has_reviewable_results(result) is False

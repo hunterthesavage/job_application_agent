@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from services.ai_job_scoring import _clean, _clean_list, _extract_json_object, _extract_response_text
 from services.openai_key import get_effective_openai_api_key
+from src.validate_job_url import infer_dfw_match, infer_remote_type
 
 try:
     from openai import OpenAI
@@ -153,6 +154,8 @@ def build_scrub_prompt(job_payload: Dict[str, Any], resume_profile_text: str) ->
         "- clean: no meaningful contradiction found\n"
         "- review: some ambiguity or evidence gaps exist\n"
         "- reject: strong contradiction or clear mismatch exists\n\n"
+        "If the page text says a role is hybrid or tied to a named city/metro, do not leave it as a fully remote location.\n"
+        "When the page clearly says hybrid in a named place, prefer corrected_location like `Seattle, WA` instead of `Remote`.\n\n"
         "Only return corrected_title, corrected_company, corrected_location, or corrected_compensation_raw when the page evidence is strong.\n"
         "If confidence is not High, leave correction fields blank.\n"
         "Do not guess or normalize stylistically. Only correct fields that appear materially wrong or incomplete.\n\n"
@@ -273,6 +276,11 @@ def apply_scrub_to_job_payload(job_payload: Dict[str, Any], scrub_result: Dict[s
             job_payload["duplicate_key"] = ""
             if _clean(normalized.get("corrected_title", "")):
                 job_payload["normalized_title"] = ""
+            if _clean(normalized.get("corrected_location", "")):
+                corrected_location = _clean(job_payload.get("location", ""))
+                description_text = _clean(job_payload.get("description_text", ""))
+                job_payload["remote_type"] = infer_remote_type(corrected_location, description_text)
+                job_payload["dallas_dfw_match"] = infer_dfw_match(corrected_location)
 
     job_payload["risk_flags"] = _merge_text_items(
         job_payload.get("risk_flags", ""),

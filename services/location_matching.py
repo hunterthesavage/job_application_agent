@@ -435,7 +435,12 @@ def location_matches_preference(job_location: str, preferred_locations: list[str
     return False, "no preferred location match"
 
 
-def evaluate_location_filters(job_location: str, preferred_locations: list[str], remote_only: bool) -> tuple[bool, str]:
+def evaluate_location_filters(
+    job_location: str,
+    preferred_locations: list[str],
+    remote_only: bool,
+    include_remote: bool = True,
+) -> tuple[bool, str]:
     parsed_job = parse_location(job_location)
 
     if remote_only:
@@ -445,10 +450,10 @@ def evaluate_location_filters(job_location: str, preferred_locations: list[str],
             return True, "remote_only matched us-scope location"
         return False, "remote_only_gate"
 
-    if parsed_job.is_remote:
+    if include_remote and parsed_job.is_remote:
         return True, "matched remote location"
 
-    if parsed_job.is_us_scope_remote:
+    if include_remote and parsed_job.is_us_scope_remote:
         return True, "matched us-scope location"
 
     if not preferred_locations:

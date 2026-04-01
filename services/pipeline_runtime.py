@@ -22,8 +22,12 @@ from services.ai_job_scrub import (
 )
 from services.ingestion import ingest_job_records, update_ingestion_run_details
 from services.job_store import (
+    count_jobs_for_maintenance,
     count_jobs_for_rescoring,
+    list_jobs_for_maintenance,
     list_jobs_for_rescoring,
+    update_job_refresh_fields,
+    update_job_refresh_status,
     update_job_scoring_fields,
 )
 from services.location_matching import (
@@ -32,7 +36,7 @@ from services.location_matching import (
     parse_location,
 )
 from services.matching_profiles import expand_title_terms
-from services.search_plan import build_search_title_variants
+from services.search_plan import build_search_title_variants, parse_title_entries, resolve_include_remote
 from services.settings import load_settings
 from services.source_layer_import import record_source_layer_run
 from services.source_layer import get_source_layer_mode
@@ -47,6 +51,8 @@ from src.validate_job_url import create_job_record
 
 AUTO_ACCEPT_SCORE = 45
 MAX_URLS_PER_RUN = 25  # temporary fast-test cap; set to 0 for unlimited
+RUN_JOBS_REFRESH_LIMIT = 25
+RUN_JOBS_REFRESH_STALE_DAYS = 7
 TRANSIENT_FETCH_RETRY_ATTEMPTS = 2
 TRANSIENT_FETCH_RETRY_DELAY_SECONDS = 0.35
 NEXT_GEN_MAX_SEEDED_URLS_PER_COMPANY = 2
@@ -88,7 +94,7 @@ def safe_text(value) -> str:
 
 
 def _seed_search_title_variants(settings: dict[str, Any], max_variants: int = 6) -> list[str]:
-    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
     if not target_titles:
         return []
     return build_search_title_variants(target_titles, max_variants=max_variants)
@@ -518,7 +524,7 @@ def should_force_accept_without_location(job: Any, settings: dict[str, Any]) -> 
     if preferred_locations:
         return False
 
-    target_titles = parse_csv_setting(settings.get("target_titles", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
     expanded_titles = expand_title_terms(target_titles) if target_titles else []
 
     title = safe_text(getattr(job, "title", "")).lower()
@@ -552,6 +558,7 @@ def location_match_score(
     job_location: str,
     preferred_locations: list[str],
     remote_only: bool,
+    include_remote: bool,
 ) -> tuple[int, list[str]]:
     parsed_job = parse_location(job_location)
 
@@ -560,6 +567,7 @@ def location_match_score(
             job_location=job_location,
             preferred_locations=preferred_locations,
             remote_only=True,
+            include_remote=True,
         )
         if passed:
             if parsed_job.is_remote:
@@ -569,10 +577,10 @@ def location_match_score(
             return 15, [reason]
         return 0, [reason]
 
-    if parsed_job.is_remote:
+    if include_remote and parsed_job.is_remote:
         return 20, ["matched remote location"]
 
-    if parsed_job.is_us_scope_remote:
+    if include_remote and parsed_job.is_us_scope_remote:
         return 18, ["matched us-scope location"]
 
     if not preferred_locations:
@@ -666,11 +674,13 @@ def score_job_match(job, settings: dict[str, str]) -> dict[str, Any]:
 
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "true")).lower() == "true"
+    include_remote = resolve_include_remote(settings)
 
     location_filter_passed, location_filter_reason = evaluate_location_filters(
         job_location=location,
         preferred_locations=preferred_locations,
         remote_only=remote_only,
+        include_remote=include_remote,
     )
 
     hard_reject = not location_filter_passed
@@ -826,7 +836,7 @@ def _extract_url_title_hint(job_url: str) -> str:
 
 
 def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[bool, str]:
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
     if not target_titles:
         return True, "no target titles configured"
 
@@ -889,15 +899,16 @@ def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[
 def _cheap_seed_location_prefilter_from_hint(hint_source: str, settings: dict[str, Any]) -> tuple[bool, str]:
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    include_remote = resolve_include_remote(settings)
 
-    if not preferred_locations and not remote_only:
+    if not preferred_locations and not remote_only and not include_remote:
         return True, "no preferred locations configured"
 
     normalized_hint = normalize_text(hint_source)
     if not normalized_hint:
         return True, "no reliable url location hint"
 
-    if remote_only and "remote" in normalized_hint:
+    if (remote_only or include_remote) and "remote" in normalized_hint:
         foreign_markers = [
             marker
             for marker in SEED_FOREIGN_REMOTE_MARKERS
@@ -907,7 +918,7 @@ def _cheap_seed_location_prefilter_from_hint(hint_source: str, settings: dict[st
             return False, f"url location prefilter foreign remote mismatch: {hint_source}"
 
     if "remote" in normalized_hint:
-        return True, "url location hint matched remote"
+        return (True, "url location hint matched remote") if include_remote or remote_only else (False, "url location prefilter mismatch: remote disabled")
 
     if remote_only:
         return False, "url location prefilter mismatch: remote_only"
@@ -1968,6 +1979,7 @@ def _build_successfactors_search_url(endpoint_url: str, settings: dict[str, Any]
 
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    include_remote = resolve_include_remote(settings)
     location_value = "" if remote_only else safe_text(preferred_locations[0] if preferred_locations else "")
 
     parsed = urlparse(endpoint)
@@ -2033,13 +2045,14 @@ def _matches_taleo_seed_title(title: str, settings: dict[str, Any]) -> bool:
 
 def _matches_taleo_seed_location(location_text: str, settings: dict[str, Any]) -> bool:
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    include_remote = resolve_include_remote(settings)
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     normalized_location = normalize_text(location_text)
 
     if remote_only:
         return "remote" in normalized_location
 
-    if "remote" in normalized_location:
+    if include_remote and "remote" in normalized_location:
         return True
 
     if not preferred_locations:
@@ -2119,6 +2132,7 @@ def _extract_talentbrew_search_url(page_text: str, page_url: str) -> str:
 def _match_icims_location_value(page_text: str, settings: dict[str, Any]) -> str:
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = safe_text(settings.get("remote_only", "false")).lower() == "true"
+    include_remote = resolve_include_remote(settings)
     if remote_only:
         return ""
 
@@ -2487,6 +2501,7 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
                     live_refresh_count += 1
             except Exception as refresh_exc:
                 live_refresh_error_count += 1
+                update_job_refresh_status(job_id, "manual_rescore_refresh_error")
                 output_lines.append(
                     f"Live page refresh skipped: {company} | {title} | {type(refresh_exc).__name__}: {refresh_exc}"
                 )
@@ -2494,6 +2509,12 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
             score_result = score_accepted_job(payload, resume_profile_text)
             score_status = safe_text(score_result.get("status", "")).lower()
             if score_status != "scored":
+                update_job_refresh_fields(
+                    job_id,
+                    payload,
+                    scored=False,
+                    refresh_status="manual_rescore_skipped",
+                )
                 skipped_count += 1
                 output_lines.append(f"Skipped rescore: {company} | {title} | score status: {score_status or 'unknown'}")
                 continue
@@ -2501,7 +2522,12 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
             apply_score_to_job_payload(payload, score_result)
             scrub_result = scrub_accepted_job(payload, resume_profile_text)
             apply_scrub_to_job_payload(payload, scrub_result)
-            update_job_scoring_fields(job_id, payload, include_core_fields=True)
+            update_job_refresh_fields(
+                job_id,
+                payload,
+                scored=True,
+                refresh_status="manual_rescore_scored",
+            )
 
             rescored_count += 1
 
@@ -2552,6 +2578,157 @@ def rescore_existing_jobs(limit: int = 0, stale_days: int = 0) -> dict[str, Any]
     }
 
 
+def refresh_existing_jobs_if_needed(
+    *,
+    limit: int = RUN_JOBS_REFRESH_LIMIT,
+    stale_days: int = RUN_JOBS_REFRESH_STALE_DAYS,
+    use_ai_scoring: bool = True,
+    exclude_run_id: int = 0,
+) -> dict[str, Any]:
+    started_at = time.perf_counter()
+    stale_days = max(int(stale_days or 0), 1)
+    limit = int(limit or 0)
+    matching_count = count_jobs_for_maintenance(stale_days=stale_days, exclude_run_id=exclude_run_id)
+    rows = list_jobs_for_maintenance(limit=limit or None, stale_days=stale_days, exclude_run_id=exclude_run_id)
+
+    if use_ai_scoring:
+        resume_profile_text, resume_profile_source = load_scoring_profile_text()
+    else:
+        resume_profile_text, resume_profile_source = "", "AI disabled for this run"
+
+    if not rows:
+        output = (
+            "Existing-job maintenance summary:\n"
+            f"- Jobs matching refresh policy: {matching_count}\n"
+            "- Existing jobs refreshed: 0\n"
+            "- Existing jobs rescored: 0"
+        )
+        return {
+            "status": "completed",
+            "output": output,
+            "matching_count": matching_count,
+            "selected_count": 0,
+            "refreshed_count": 0,
+            "rescored_count": 0,
+            "changed_count": 0,
+            "error_count": 0,
+            "ai_skipped_count": 0,
+            "ai_error_count": 0,
+        }
+
+    refreshed_count = 0
+    rescored_count = 0
+    changed_count = 0
+    error_count = 0
+    ai_skipped_count = 0
+    ai_error_count = 0
+    output_lines = [
+        "Existing-job maintenance summary:",
+        f"- Jobs matching refresh policy: {matching_count}",
+        f"- Existing jobs selected: {len(rows)}",
+        f"- Existing job stale threshold: {stale_days} days",
+        f"- Existing job refresh limit: {'All matching jobs' if limit <= 0 else limit}",
+    ]
+    if use_ai_scoring:
+        output_lines.append(f"- AI profile source: {resume_profile_source}")
+    else:
+        output_lines.append("- AI scoring: disabled for this run")
+    output_lines.append("")
+
+    for row in rows:
+        payload = dict(row)
+        job_id = int(payload.get("id") or 0)
+        old_values = {
+            "company": payload.get("company"),
+            "title": payload.get("title"),
+            "location": payload.get("location"),
+            "remote_type": payload.get("remote_type"),
+            "compensation_raw": payload.get("compensation_raw"),
+            "fit_score": payload.get("fit_score"),
+            "fit_tier": payload.get("fit_tier"),
+            "ai_priority": payload.get("ai_priority"),
+            "match_rationale": payload.get("match_rationale"),
+        }
+
+        try:
+            payload, refreshed = _refresh_payload_with_live_page_data(payload)
+            if refreshed:
+                refreshed_count += 1
+
+            scored = False
+            if use_ai_scoring:
+                if resume_profile_text:
+                    score_result = score_accepted_job(payload, resume_profile_text)
+                    score_status = safe_text(score_result.get("status", "")).lower()
+                    if score_status == "scored":
+                        apply_score_to_job_payload(payload, score_result)
+                        scrub_result = scrub_accepted_job(payload, resume_profile_text)
+                        apply_scrub_to_job_payload(payload, scrub_result)
+                        rescored_count += 1
+                        scored = True
+                    elif score_status == "skipped":
+                        ai_skipped_count += 1
+                    else:
+                        ai_error_count += 1
+                else:
+                    ai_skipped_count += 1
+
+            refresh_status = "run_jobs_refreshed_and_scored" if scored else "run_jobs_refreshed"
+            update_job_refresh_fields(
+                job_id,
+                payload,
+                scored=scored,
+                refresh_status=refresh_status,
+            )
+
+            new_values = {
+                "company": payload.get("company"),
+                "title": payload.get("title"),
+                "location": payload.get("location"),
+                "remote_type": payload.get("remote_type"),
+                "compensation_raw": payload.get("compensation_raw"),
+                "fit_score": payload.get("fit_score"),
+                "fit_tier": payload.get("fit_tier"),
+                "ai_priority": payload.get("ai_priority"),
+                "match_rationale": payload.get("match_rationale"),
+            }
+            if old_values != new_values:
+                changed_count += 1
+        except Exception as exc:
+            error_count += 1
+            update_job_refresh_status(job_id, "run_jobs_refresh_error")
+            company = safe_text(payload.get("company", "")) or "Unknown company"
+            title = safe_text(payload.get("title", "")) or "Unknown title"
+            output_lines.append(f"- Refresh error: {company} | {title} | {type(exc).__name__}: {exc}")
+
+    elapsed = time.perf_counter() - started_at
+    output_lines.extend(
+        [
+            "",
+            f"- Existing jobs refreshed: {refreshed_count}",
+            f"- Existing jobs rescored: {rescored_count}",
+            f"- Existing jobs changed: {changed_count}",
+            f"- Existing jobs AI-skipped: {ai_skipped_count}",
+            f"- Existing jobs AI-errors: {ai_error_count}",
+            f"- Existing jobs refresh errors: {error_count}",
+            f"- Existing-job maintenance seconds: {elapsed:.2f}",
+        ]
+    )
+
+    return {
+        "status": "completed",
+        "output": "\n".join(output_lines).strip(),
+        "matching_count": matching_count,
+        "selected_count": len(rows),
+        "refreshed_count": refreshed_count,
+        "rescored_count": rescored_count,
+        "changed_count": changed_count,
+        "error_count": error_count,
+        "ai_skipped_count": ai_skipped_count,
+        "ai_error_count": ai_error_count,
+    }
+
+
 def discover_and_ingest(
     *,
     use_ai_title_expansion: bool = True,
@@ -2596,6 +2773,8 @@ def discover_and_ingest(
     _append_discovery_drop_summary_lines(discovery_summary_lines, discovery_result)
     combined_output_parts.append("\n".join(discovery_summary_lines).strip())
 
+    maintenance_result: dict[str, Any] | None = None
+
     if not discovered_urls:
         empty_ingest_result = {
             "accepted_jobs": 0,
@@ -2609,6 +2788,9 @@ def discover_and_ingest(
         combined_output_parts.append(
             "No URLs were available to ingest. Review your Settings criteria, confirm discovery dependencies are installed, or try pasted URLs."
         )
+        maintenance_result = refresh_existing_jobs_if_needed(use_ai_scoring=use_ai_scoring)
+        if maintenance_result.get("output"):
+            combined_output_parts.append(maintenance_result["output"])
         combined_output_parts.append(
             _format_source_layer_run_snapshot(
                 source_layer_mode=source_layer_mode,
@@ -2642,6 +2824,7 @@ def discover_and_ingest(
                 "ingest_seconds": 0.0,
                 "skip_summary": {},
             },
+            "maintenance": maintenance_result or {},
         }
 
     ingest_result = _build_jobs_from_urls(
@@ -2652,8 +2835,17 @@ def discover_and_ingest(
         seeded_job_urls=discovery_result.get("next_gen_seed_urls", []),
     )
 
+    summary = ingest_result.get("summary", {}) if isinstance(ingest_result.get("summary", {}), dict) else {}
+    run_id = int(summary.get("run_id", 0) or 0)
+    maintenance_result = refresh_existing_jobs_if_needed(
+        use_ai_scoring=use_ai_scoring,
+        exclude_run_id=run_id,
+    )
+
     if ingest_result.get("output"):
         combined_output_parts.append(ingest_result["output"])
+    if maintenance_result.get("output"):
+        combined_output_parts.append(maintenance_result["output"])
 
     _record_pipeline_source_layer_run(
         source_layer_mode=source_layer_mode,
@@ -2670,13 +2862,14 @@ def discover_and_ingest(
     )
 
     total_seconds = time.perf_counter() - total_started_at
-    summary = ingest_result.get("summary", {}) if isinstance(ingest_result.get("summary", {}), dict) else {}
-    run_id = int(summary.get("run_id", 0) or 0)
     if run_id:
         update_ingestion_run_details(
             run_id,
             {
                 "pipeline_total_seconds": round(total_seconds, 2),
+                "maintenance_refreshed_count": int(maintenance_result.get("refreshed_count", 0) or 0),
+                "maintenance_rescored_count": int(maintenance_result.get("rescored_count", 0) or 0),
+                "maintenance_changed_count": int(maintenance_result.get("changed_count", 0) or 0),
             },
         )
     combined_output_parts.append(f"Total pipeline seconds: {total_seconds:.2f}")
@@ -2686,4 +2879,5 @@ def discover_and_ingest(
         "output": "\n\n".join(combined_output_parts).strip(),
         "discovery": discovery_result,
         "ingest": ingest_result,
+        "maintenance": maintenance_result,
     }

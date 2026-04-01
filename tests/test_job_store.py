@@ -105,3 +105,29 @@ def test_update_job_scoring_fields_can_persist_core_scrub_corrections(temp_db_pa
     assert existing["location"] == "Dallas, TX"
     assert existing["compensation_raw"] == "$220,000 - $260,000"
     assert existing["fit_score"] == 82
+
+
+def test_list_jobs_for_maintenance_prioritizes_stale_or_incomplete_jobs(temp_db_path, seeded_db, sample_job_payload):
+    import services.job_store as job_store
+
+    stale_payload = dict(sample_job_payload)
+    stale_payload["duplicate_key"] = "stale-job"
+    stale_payload["job_posting_url"] = "https://example.com/jobs/stale"
+    stale_payload["company"] = ""
+    inserted = job_store.upsert_job(stale_payload)
+
+    seeded_db.execute(
+        """
+        UPDATE jobs
+        SET
+            company = '',
+            last_page_refresh_at = ''
+        WHERE id = ?
+        """,
+        (inserted["job_id"],),
+    )
+    seeded_db.commit()
+
+    rows = job_store.list_jobs_for_maintenance(limit=10, stale_days=7)
+
+    assert any(int(row["id"]) == int(inserted["job_id"]) for row in rows)

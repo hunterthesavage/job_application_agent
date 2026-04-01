@@ -4,6 +4,7 @@ from pathlib import Path
 
 from services.ingestion import ingest_job_records
 from services.location_matching import evaluate_location_filters
+from services.search_plan import parse_title_entries, resolve_include_remote
 from services.settings import load_settings
 from services.source_trust import enrich_job_payload
 from src.validate_job_url import create_job_record
@@ -86,10 +87,11 @@ def passes_settings_filters(job, settings: dict[str, str]) -> tuple[bool, str]:
         ]
     ).lower()
 
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
     preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     exclude_keywords = parse_csv_text(settings.get("exclude_keywords", ""))
     remote_only = safe_text(settings.get("remote_only", "true")).lower() == "true"
+    include_remote = resolve_include_remote(settings)
 
     if target_titles and not text_contains_any(title, target_titles):
         return False, "settings_title_gate"
@@ -98,6 +100,7 @@ def passes_settings_filters(job, settings: dict[str, str]) -> tuple[bool, str]:
         job_location=location,
         preferred_locations=preferred_locations,
         remote_only=remote_only,
+        include_remote=include_remote,
     )
     if not location_passed:
         return False, location_reason

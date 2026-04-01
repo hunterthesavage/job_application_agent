@@ -51,3 +51,46 @@ def test_suggest_titles_with_openai_honors_max_titles(monkeypatch):
     assert result["ok"] is True
     assert len(result["titles"]) == 10
     assert result["titles"][-1] == "Title 10"
+
+
+def test_suggest_run_input_refinements_returns_titles_and_locations(monkeypatch):
+    import services.openai_title_suggestions as suggestions
+
+    monkeypatch.setattr(suggestions, "get_effective_openai_api_key", lambda: "test-key")
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return _FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": __import__("json").dumps(
+                                {
+                                    "titles": [
+                                        "VP Information Technology",
+                                        "Vice President, IT",
+                                    ],
+                                    "locations": [
+                                        "Dallas, TX",
+                                        "Fort Worth, TX",
+                                    ],
+                                    "notes": "Tightened titles and normalized the DFW locations.",
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(suggestions.requests, "post", fake_post)
+
+    result = suggestions.suggest_run_input_refinements_with_openai(
+        current_titles="VP of IT",
+        preferred_locations="Dallas, DFW",
+        include_remote=True,
+    )
+
+    assert result["ok"] is True
+    assert result["titles"] == ["VP Information Technology", "Vice President, IT"]
+    assert result["locations"] == ["Dallas, TX", "Fort Worth, TX"]

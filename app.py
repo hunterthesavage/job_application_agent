@@ -161,6 +161,9 @@ def render_action_loading_screen(scope: str) -> None:
     elif not is_first_discovery:
         kicker = "Pipeline Run"
         lowered = busy_label.lower()
+        if "save run inputs" in lowered:
+            title = "Cleaning up your run inputs before the next search."
+            copy = "Normalizing titles, tightening location lines, and saving the updated search shape back into the app."
         if "rescore" in lowered:
             title = "Rechecking your saved jobs for fresher signals."
             copy = "Refreshing live pages, applying updated scoring, and tightening stale job data before the results come back into view."

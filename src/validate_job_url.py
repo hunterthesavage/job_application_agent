@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from services.db import db_connection
 from services.ingestion import ingest_job_records
+from services.search_plan import parse_preferred_locations, parse_title_entries, resolve_include_remote
 from services.source_trust import enrich_job_payload
 from src.models import JobRecord, now_string
 
@@ -698,6 +699,36 @@ def infer_company_from_domain(url: str) -> str:
 
 def infer_location(text: str) -> str:
     lowered = text.lower()
+    hybrid_markers = [
+        "hybrid",
+        "remote/in-office",
+        "in-office schedule",
+        "work from our",
+        "days a week",
+        "days per week",
+        "office at least",
+        "open to candidates in the",
+    ]
+    has_hybrid_signal = any(marker in lowered for marker in hybrid_markers)
+
+    hybrid_patterns = [
+        r"open to candidates in the\s+([A-Z][a-zA-Z .'-]+),\s*([A-Z]{2})\s+area",
+        r"based in\s+([A-Z][a-zA-Z .'-]+),\s*([A-Z]{2})",
+        r"located in\s+([A-Z][a-zA-Z .'-]+),\s*([A-Z]{2})",
+    ]
+    if has_hybrid_signal:
+        for pattern in hybrid_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return f"{match.group(1).strip()}, {match.group(2).strip().upper()}"
+
+    match = re.search(r"\b([A-Z][a-zA-Z .'-]+),\s*([A-Z]{2})\b", text)
+    if has_hybrid_signal and match:
+        return f"{match.group(1).strip()}, {match.group(2).strip()}"
+
+    match = re.search(r"\b([A-Z][a-zA-Z .'-]+)\s*-\s*([A-Z]{2})\b", text)
+    if has_hybrid_signal and match:
+        return f"{match.group(1).strip()}, {match.group(2).strip()}"
 
     if "remote" in lowered and "united states" in lowered:
         return "Remote, United States"
@@ -720,13 +751,27 @@ def infer_location(text: str) -> str:
     return "Unknown"
 
 
-def infer_remote_type(location: str) -> str:
-    lowered = location.lower()
+def infer_remote_type(location: str, text: str = "") -> str:
+    lowered = f"{location} {text}".lower()
+
+    if any(
+        marker in lowered
+        for marker in [
+            "hybrid",
+            "remote/in-office",
+            "in-office schedule",
+            "office at least",
+            "days a week",
+            "days per week",
+        ]
+    ):
+        return "Hybrid"
 
     if "remote" in lowered:
         return "Fully Remote"
 
-    if any(city in lowered for city in DFW_KEYWORDS):
+    location_lowered = location.lower()
+    if any(city in location_lowered for city in DFW_KEYWORDS):
         return "Dallas / DFW"
 
     return "Other"
@@ -741,7 +786,7 @@ def infer_dfw_match(location: str) -> str:
     return "No"
 
 
-def infer_validation_status(title: str, location: str) -> tuple[str, str]:
+def infer_validation_status(title: str, location: str, text: str = "") -> tuple[str, str]:
     """
     Lightweight parse-quality signal, not final acceptance policy.
 
@@ -753,7 +798,7 @@ def infer_validation_status(title: str, location: str) -> tuple[str, str]:
     """
     normalized = normalize_title(title)
     valid_title = len(normalized) > 3
-    valid_location = infer_remote_type(location) in {"Fully Remote", "Dallas / DFW"} or location == "Unknown"
+    valid_location = infer_remote_type(location, text) in {"Fully Remote", "Dallas / DFW", "Hybrid"} or location == "Unknown"
 
     if valid_title and valid_location:
         return "Validated", "Medium"
@@ -829,7 +874,7 @@ def rough_fit_score(title: str, location: str, url: str, text: str) -> tuple[int
     risks = []
 
     role_family = infer_role_family(title)
-    remote_type = infer_remote_type(location)
+    remote_type = infer_remote_type(location, text)
     ats_type = detect_ats_type(url)
     lowered_text = text.lower()
 
@@ -952,7 +997,7 @@ def create_job_record(job_url: str) -> JobRecord:
     role_family = infer_role_family(title)
     normalized_title = normalize_title(title)
 
-    validation_status, validation_confidence = infer_validation_status(title, location)
+    validation_status, validation_confidence = infer_validation_status(title, location, text)
     fit_score, fit_tier, rationale_with_risks = rough_fit_score(title, location, final_url, text)
     parse_confidence = infer_parse_confidence(title, location, company)
 
@@ -1099,7 +1144,7 @@ def passes_strict_title_gate(title: str) -> bool:
 
 
 def passes_settings_title_gate(title: str, settings: dict[str, str]) -> bool:
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
     if not target_titles:
         return True
 
@@ -1120,8 +1165,9 @@ def passes_strict_location_gate(location: str) -> bool:
 
 
 def passes_settings_location_gate(location: str, settings: dict[str, str]) -> bool:
-    preferred_locations = parse_csv_text(settings.get("preferred_locations", ""))
+    preferred_locations = parse_preferred_locations(settings.get("preferred_locations", ""))
     remote_only = settings.get("remote_only", "false").lower() == "true"
+    include_remote = resolve_include_remote(settings)
 
     lowered = location.lower()
 
@@ -1132,9 +1178,15 @@ def passes_settings_location_gate(location: str, settings: dict[str, str]) -> bo
             return True
         return False
 
+    if include_remote and "remote" in lowered:
+        return True
+
     if preferred_locations:
         if any(term.lower() in lowered for term in preferred_locations):
             return True
+        return False
+
+    if "remote" in lowered and not include_remote:
         return False
 
     return True

@@ -65,6 +65,23 @@ def test_infer_location_recognizes_dallas() -> None:
     assert validator.infer_location(text) == "Dallas, TX"
 
 
+def test_infer_location_prefers_named_hybrid_city_over_remote() -> None:
+    text = (
+        "This position is open to candidates in the Seattle, WA area. "
+        "You will have a hybrid remote/in-office schedule where you will work "
+        "from our casual, pet-friendly office at least 3 days a week."
+    )
+    assert validator.infer_location(text) == "Seattle, WA"
+
+
+def test_infer_remote_type_detects_hybrid_from_text() -> None:
+    text = (
+        "This position is open to candidates in the Seattle, WA area with a hybrid "
+        "remote/in-office schedule and at least 3 days a week in office."
+    )
+    assert validator.infer_remote_type("Seattle, WA", text) == "Hybrid"
+
+
 def test_infer_company_from_workday_tenant_uses_tenant_name() -> None:
     url = "https://harriscomputer.wd3.myworkdayjobs.com/en-US/1/job/SVP-Technology---Engineering_R0040737"
     assert validator.infer_company_from_domain(url) == "Harris Computer"

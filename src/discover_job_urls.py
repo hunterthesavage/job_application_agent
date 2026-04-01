@@ -13,7 +13,11 @@ try:
 except ImportError:
     DDGS = None
 
-from services.search_plan import build_search_plan as build_structured_search_plan
+from services.search_plan import (
+    build_search_plan as build_structured_search_plan,
+    parse_title_entries,
+    resolve_include_remote,
+)
 from services.url_resolution import (
     choose_best_discovery_url_with_reason,
     is_discovery_only_host,
@@ -264,7 +268,7 @@ def title_has_target_seniority(title: str) -> bool:
 
 
 def title_matches_settings(title: str, settings: dict[str, str]) -> bool:
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
     if not target_titles:
         return title_has_target_seniority(title)
 
@@ -287,7 +291,7 @@ def expand_search_title_terms(
     - Do not call AI during passive preview/render flows.
     - Fall back to the raw user titles if AI is unavailable or fails.
     """
-    target_titles = parse_csv_text(settings.get("target_titles", ""))
+    target_titles = parse_title_entries(settings.get("target_titles", ""))
     base_titles = dedupe_preserve_order(target_titles)
 
     if not base_titles:
@@ -388,9 +392,15 @@ def _split_location_parts(value: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
-def expand_location_query_terms(preferred_locations: list[str], remote_only: bool) -> list[str]:
+def expand_location_query_terms(
+    preferred_locations: list[str],
+    remote_only: bool,
+    include_remote: bool,
+) -> list[str]:
     if not preferred_locations:
-        return ["remote"] if remote_only else ["remote", "United States"]
+        if remote_only:
+            return ["remote"]
+        return ["remote", "United States"] if include_remote else ["United States"]
 
     expanded: list[str] = []
 
@@ -432,7 +442,7 @@ def expand_location_query_terms(preferred_locations: list[str], remote_only: boo
 
         if remote_only:
             expanded.append("remote")
-        else:
+        elif include_remote:
             expanded.append("remote")
             expanded.append("United States")
 
@@ -479,12 +489,17 @@ def build_search_plan(settings: dict[str, str]) -> list[str]:
     if plan.preferred_locations:
         plan_lines.append(f"Locations: {' | '.join(plan.preferred_locations[:6])}")
     else:
-        plan_lines.append(f"Locations: {'remote only' if plan.remote_only else 'no location preference'}")
+        if plan.remote_only:
+            plan_lines.append("Locations: remote only")
+        elif plan.include_remote:
+            plan_lines.append("Locations: remote or any location")
+        else:
+            plan_lines.append("Locations: no location preference")
 
     if plan.include_keywords:
         plan_lines.append(f"Include keywords: {', '.join(plan.include_keywords[:6])}")
 
-    plan_lines.append(f"Remote only: {'true' if plan.remote_only else 'false'}")
+    plan_lines.append(f"Include remote: {'true' if plan.include_remote else 'false'}")
     plan_lines.append(
         f"Search strategy: {'Broader Search' if plan.search_strategy == 'broad_recall' else 'Standard'}"
     )
