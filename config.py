@@ -1,7 +1,7 @@
 from pathlib import Path
 
 APP_NAME = "Job Application Agent"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"

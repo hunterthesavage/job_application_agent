@@ -20,7 +20,7 @@ It is usable and actively tested, but:
 
 ## Version
 
-Current release: **1.0.0**
+Current release: **1.0.1**
 
 ## What it does
 
