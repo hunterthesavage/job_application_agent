@@ -292,6 +292,27 @@ def _next_gen_vendor_priority(ats_vendor: str, *, senior_technology_bias: bool) 
     return 0
 
 
+def _is_preferred_next_gen_seed_row(row: Any) -> bool:
+    ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
+    endpoint_url = _safe_text(row["endpoint_url"])
+    careers_url_status = _safe_text(row["careers_url_status"]).lower()
+    review_status = _safe_text(row["review_status"]).lower()
+
+    if not _supports_next_gen_seed_endpoint(ats_vendor, endpoint_url):
+        return False
+    if careers_url_status != "validated":
+        return False
+    if review_status == "rejected":
+        return False
+
+    try:
+        confidence_score = float(row["confidence_score"] or 0)
+    except Exception:
+        confidence_score = 0.0
+
+    return confidence_score >= 0.80 and int(row["is_primary"] or 0) == 1
+
+
 def _senior_technology_vendor_quotas(selection_cap: int) -> list[tuple[str, int]]:
     if selection_cap <= 0:
         return []
@@ -334,9 +355,15 @@ def _select_diversified_next_gen_rows(
     scored_rows: list[tuple[int, str, str, Any]],
     *,
     selection_cap: int,
+    preferred_endpoint_urls: set[str] | None = None,
+    stop_after_quota_pass: bool = False,
+    excluded_endpoint_urls: set[str] | None = None,
 ) -> list[Any]:
     if selection_cap <= 0 or not scored_rows:
         return []
+
+    preferred_endpoint_urls = preferred_endpoint_urls or set()
+    excluded_endpoint_urls = excluded_endpoint_urls or set()
 
     quotas = _senior_technology_vendor_quotas(selection_cap)
     selected_indices: set[int] = set()
@@ -352,6 +379,10 @@ def _select_diversified_next_gen_rows(
                 continue
             if endpoint_url in selected_endpoint_urls:
                 continue
+            if endpoint_url in excluded_endpoint_urls:
+                continue
+            if preferred_endpoint_urls and endpoint_url not in preferred_endpoint_urls:
+                continue
             ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
             if ats_vendor != vendor:
                 continue
@@ -364,6 +395,9 @@ def _select_diversified_next_gen_rows(
             if taken >= limit or len(selected_rows) >= selection_cap:
                 break
 
+    if stop_after_quota_pass:
+        return selected_rows[:selection_cap]
+
     if len(selected_rows) >= selection_cap:
         return selected_rows[:selection_cap]
 
@@ -371,6 +405,10 @@ def _select_diversified_next_gen_rows(
         if idx in selected_indices:
             continue
         if endpoint_url in selected_endpoint_urls:
+            continue
+        if endpoint_url in excluded_endpoint_urls:
+            continue
+        if preferred_endpoint_urls and endpoint_url not in preferred_endpoint_urls:
             continue
         ats_vendor = _safe_text(row["ats_vendor"]).lower() or "unknown"
         if not _supports_next_gen_seed_endpoint(ats_vendor, endpoint_url):
@@ -385,6 +423,8 @@ def _select_diversified_next_gen_rows(
         if idx in selected_indices:
             continue
         if endpoint_url in selected_endpoint_urls:
+            continue
+        if endpoint_url in excluded_endpoint_urls:
             continue
         selected_endpoint_urls.add(endpoint_url)
         selected_rows.append(row)
@@ -454,6 +494,7 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
     approved_count = 0
     candidate_count = 0
     primary_count = 0
+    preferred_next_gen_seed_count = 0
 
     for row in rows:
         ats_vendor = str(row["ats_vendor"] or "").strip().lower() or "unknown"
@@ -465,6 +506,8 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
             candidate_count += 1
         if int(row["is_primary"] or 0) == 1:
             primary_count += 1
+        if _is_preferred_next_gen_seed_row(row):
+            preferred_next_gen_seed_count += 1
 
     scored_rows = sorted(
         (
@@ -490,11 +533,44 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
         ),
     )
 
-    if source_layer_mode == "next_gen" and senior_technology_bias:
-        selected_rows = _select_diversified_next_gen_rows(
-            scored_rows[selection_offset:],
-            selection_cap=selection_cap,
-        )
+    if source_layer_mode == "next_gen":
+        preferred_endpoint_urls = {
+            _safe_text(row["endpoint_url"])
+            for row in rows
+            if _is_preferred_next_gen_seed_row(row)
+        }
+        if preferred_endpoint_urls and senior_technology_bias:
+            selected_rows = _select_diversified_next_gen_rows(
+                scored_rows[selection_offset:],
+                selection_cap=selection_cap,
+                preferred_endpoint_urls=preferred_endpoint_urls,
+                stop_after_quota_pass=True,
+            )
+        elif preferred_endpoint_urls:
+            selected_rows = [
+                item[3]
+                for item in scored_rows[selection_offset:]
+                if item[2] in preferred_endpoint_urls
+            ][:selection_cap]
+        elif senior_technology_bias:
+            selected_rows = _select_diversified_next_gen_rows(
+                scored_rows[selection_offset:],
+                selection_cap=selection_cap,
+            )
+        else:
+            selected_rows = [item[3] for item in scored_rows[selection_offset:selection_offset + selection_cap]]
+
+        if len(selected_rows) < selection_cap:
+            selected_endpoint_urls = {
+                _safe_text(row["endpoint_url"])
+                for row in selected_rows
+            }
+            remaining_rows = _select_diversified_next_gen_rows(
+                scored_rows[selection_offset:],
+                selection_cap=selection_cap - len(selected_rows),
+                excluded_endpoint_urls=selected_endpoint_urls,
+            )
+            selected_rows.extend(remaining_rows)
     else:
         selected_rows = [item[3] for item in scored_rows[selection_offset:selection_offset + selection_cap]]
     selected_companies = list(
@@ -542,6 +618,10 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
             )
         )
         lines.append(f"- Next-gen seed-supporting candidates: {supported_selected}")
+        lines.append(f"- Preferred next-gen seed pool: {preferred_next_gen_seed_count}")
+        lines.append(
+            f"- Preferred next-gen candidates selected: {sum(1 for row in selected_rows if _is_preferred_next_gen_seed_row(row))}"
+        )
         if senior_technology_bias:
             lines.append("- Next-gen ranking bias: senior technology leadership")
             lines.append("- Next-gen ATS mix profile: diversified senior tech")
@@ -563,6 +643,7 @@ def run_shadow_endpoint_selection(settings: dict[str, str] | None = None) -> dic
         "approved_endpoint_count": approved_count,
         "candidate_endpoint_count": candidate_count,
         "primary_endpoint_count": primary_count,
+        "preferred_next_gen_seed_count": preferred_next_gen_seed_count,
         "selected_endpoint_count": len(selected_rows),
         "selected_company_names": selected_companies,
         "selected_candidates": selected_candidates,

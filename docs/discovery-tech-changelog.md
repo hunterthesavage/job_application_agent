@@ -22,6 +22,12 @@ Entry format:
 
 ## 2026-03-28
 
+### Preferred validated seed pool now leads next-gen shadow selection
+- Summary: populated the local shadow registry from the legacy validated endpoint export and updated next-gen shadow selection so it prefers seedable, validated, high-confidence, primary endpoints before backfilling from the broader imported pool.
+- Why: next-gen was finally operational after shadow import, but it was still choosing from the entire imported registry too evenly, which let weak or off-target seeds crowd out the more trustworthy ATS roots we actually want to test first.
+- Validation: `python3 -m services.source_layer_legacy_smoke`; `python3 -m services.source_layer_shadow_populate`; `python3 -m services.source_layer_status_smoke`; `python3 -m py_compile services/source_layer_shadow.py tests/test_source_layer_shadow.py`; `.venv/bin/python -m pytest -q tests/test_source_layer_shadow.py`; live selector output now reports `Preferred next-gen seed pool: 114` and `Preferred next-gen candidates selected: 25`.
+- Files: `services/source_layer_shadow.py`, `tests/test_source_layer_shadow.py`, `docs/discovery-tech-changelog.md`
+
 ### Made Workday seeds search title-aware before broad fallback
 - Summary: Workday next-gen seed discovery now queries the Workday jobs API with the normalized seed title first, falls back to the broad job catalog only when needed, and uses structured posting title/location fields to reject obvious off-target or foreign-remote results before building detail URLs.
 - Why: Workday extraction itself is healthy, but broad catalog paging was pulling too many irrelevant postings, and the cheap remote gate was still letting explicit non-U.S. remote hints slip through in sparse senior-tech runs.

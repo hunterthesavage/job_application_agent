@@ -193,6 +193,116 @@ def test_run_shadow_endpoint_selection_prefers_supported_seed_vendors_for_next_g
     assert "Next-gen seed-supporting candidates: 2" in result["output"]
 
 
+def test_run_shadow_endpoint_selection_prefers_high_confidence_validated_seed_pool(temp_db_path):
+    import services.source_layer_shadow as shadow
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute(
+            """
+            INSERT INTO companies (name, canonical_domain, hq, active)
+            VALUES
+                ('High Confidence Seed', 'highseed.com', 'Remote', 1),
+                ('Low Confidence Seed', 'lowseed.com', 'Remote', 1),
+                ('Another High Confidence Seed', 'anotherhighseed.com', 'Remote', 1)
+            """
+        )
+        companies = conn.execute("SELECT id, name FROM companies ORDER BY id").fetchall()
+        company_ids = {row["name"]: row["id"] for row in companies}
+
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id,
+                endpoint_url,
+                endpoint_type,
+                ats_vendor,
+                extraction_method,
+                discovery_source,
+                confidence_score,
+                health_score,
+                review_status,
+                careers_url_status,
+                is_primary,
+                last_validated_at,
+                active,
+                notes
+            )
+            VALUES (?, 'https://highseed.wd1.myworkdayjobs.com/External', 'careers_page', 'workday', 'workday',
+                    'legacy_import', 0.95, 0.95, 'unreviewed', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of IT remote role')
+            """,
+            (company_ids["High Confidence Seed"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id,
+                endpoint_url,
+                endpoint_type,
+                ats_vendor,
+                extraction_method,
+                discovery_source,
+                confidence_score,
+                health_score,
+                review_status,
+                careers_url_status,
+                is_primary,
+                last_validated_at,
+                active,
+                notes
+            )
+            VALUES (?, 'https://job-boards.greenhouse.io/anotherhighseed', 'careers_page', 'greenhouse', 'greenhouse',
+                    'legacy_import', 0.90, 0.90, 'unreviewed', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President technology remote role')
+            """,
+            (company_ids["Another High Confidence Seed"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO hiring_endpoints (
+                company_id,
+                endpoint_url,
+                endpoint_type,
+                ats_vendor,
+                extraction_method,
+                discovery_source,
+                confidence_score,
+                health_score,
+                review_status,
+                careers_url_status,
+                is_primary,
+                last_validated_at,
+                active,
+                notes
+            )
+            VALUES (?, 'https://jobs.lever.co/lowseed', 'careers_page', 'lever', 'lever',
+                    'legacy_import', 0.55, 0.55, 'approved', 'validated', 1, '2026-03-26T10:00:00Z', 1,
+                    'Vice President of IT remote role')
+            """,
+            (company_ids["Low Confidence Seed"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = shadow.run_shadow_endpoint_selection(
+        {
+            "_source_layer_mode": "next_gen",
+            "_shadow_selection_cap": "2",
+            "target_titles": "VP of IT",
+            "preferred_locations": "",
+            "remote_only": "true",
+        }
+    )
+
+    selected_companies = [candidate["company_name"] for candidate in result["selected_candidates"]]
+    assert selected_companies == ["High Confidence Seed", "Another High Confidence Seed"]
+    assert result["preferred_next_gen_seed_count"] == 2
+    assert "Preferred next-gen seed pool: 2" in result["output"]
+
+
 def test_run_shadow_endpoint_selection_prefers_seedable_taleo_endpoint_shapes(temp_db_path):
     import services.source_layer_shadow as shadow
 
