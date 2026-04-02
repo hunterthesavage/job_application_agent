@@ -11,6 +11,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from config import APP_NAME
 from services.desktop_wrapper import find_free_port, streamlit_health_url, streamlit_url
 
 
@@ -59,7 +60,20 @@ def main() -> int:
             try:
                 homepage_response = requests.get(url, timeout=2)
                 homepage_status = homepage_response.status_code
-                page_ok = homepage_response.ok and "streamlit" in homepage_response.text.lower()
+                page_text = homepage_response.text
+                lower_text = page_text.lower()
+                error_signatures = [
+                    "module not found",
+                    "modulenotfounderror",
+                    "traceback",
+                    "no module named",
+                ]
+                page_ok = (
+                    homepage_response.ok
+                    and "streamlit" in lower_text
+                    and APP_NAME.lower() in lower_text
+                    and not any(signature in lower_text for signature in error_signatures)
+                )
             except requests.RequestException:
                 page_ok = False
 

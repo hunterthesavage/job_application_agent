@@ -36,10 +36,13 @@ python -m PyInstaller `
   --windowed `
   --name $AppName `
   --collect-all streamlit `
+  --collect-all ddgs `
   --collect-all webview `
   --collect-all qtpy `
   --collect-all PySide6 `
   --add-data "app.py;." `
+  --add-data "greenhouse_boards.txt;." `
+  --add-data "lever_boards.txt;." `
   --add-data "services;services" `
   --add-data "views;views" `
   --add-data "ui;ui" `

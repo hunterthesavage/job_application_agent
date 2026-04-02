@@ -6,7 +6,19 @@ import subprocess
 
 import streamlit as st
 
-from config import APP_NAME, APP_VERSION, BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
+from config import (
+    APP_NAME,
+    APP_VERSION,
+    BACKUPS_DIR,
+    DATA_DIR,
+    DATABASE_PATH,
+    JOB_URLS_FILE,
+    LOGS_DIR,
+    MANUAL_URLS_FILE,
+    OPENAI_API_KEY_FILE,
+    PROJECT_ROOT,
+    RUNTIME_SETTINGS_FILE,
+)
 from services.auto_run import (
     AUTO_RUN_FREQUENCY_OPTIONS,
     WEEKDAY_OPTIONS,
@@ -518,7 +530,7 @@ def _reset_app_data() -> tuple[list[str], list[str]]:
         DATA_DIR / "openai_api_state.json",
         JOB_URLS_FILE,
         MANUAL_URLS_FILE,
-        PROJECT_ROOT / "runtime_settings.json",
+        RUNTIME_SETTINGS_FILE,
     ]
 
     for target in targets:

@@ -13,6 +13,8 @@ try:
 except ImportError:
     DDGS = None
 
+from config import PROJECT_ROOT, RUNTIME_SETTINGS_FILE
+
 from services.search_plan import (
     build_search_plan as build_structured_search_plan,
     parse_title_entries,
@@ -28,10 +30,9 @@ from services.url_resolution import (
 )
 
 
-GREENHOUSE_BOARD_FILE = "greenhouse_boards.txt"
-LEVER_BOARD_FILE = "lever_boards.txt"
+GREENHOUSE_BOARD_FILE = PROJECT_ROOT / "greenhouse_boards.txt"
+LEVER_BOARD_FILE = PROJECT_ROOT / "lever_boards.txt"
 OUTPUT_FILE = "job_urls.txt"
-RUNTIME_SETTINGS_FILE = "runtime_settings.json"
 
 MAX_GREENHOUSE_URLS = 5
 MAX_LEVER_URLS = 30
@@ -247,11 +248,12 @@ def load_runtime_settings() -> dict[str, str]:
     return {}
 
 
-def load_board_urls(file_path: str) -> list[str]:
+def load_board_urls(file_path: str | Path) -> list[str]:
     urls = []
+    path = Path(file_path)
 
     try:
-        with open(file_path, "r", encoding="utf-8") as file:
+        with path.open("r", encoding="utf-8") as file:
             for line in file:
                 line = line.strip()
                 if line and not line.startswith("#"):

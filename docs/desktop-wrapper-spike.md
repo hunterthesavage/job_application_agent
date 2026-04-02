@@ -33,10 +33,11 @@ Build the native app bundle with:
 ./scripts/build_macos_desktop_app.sh
 ```
 
-The first pass outputs:
+The build now outputs:
 
 ```text
 dist/Job Application Agent.app
+dist/desktop-wrapper-release/JobApplicationAgent-macos-desktop-wrapper-<version>.zip
 ```
 
 ## First Windows Wrapper Build
@@ -87,7 +88,7 @@ It verifies:
 
 If the wrapper feels good, the next step is packaging:
 
-- macOS: `py2app` or `pyinstaller`
+- macOS: `pyinstaller`
 - Windows: `pyinstaller`
 
 That packaging step should stay on this branch until we decide the wrapper is stable enough for broader testing.
