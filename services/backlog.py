@@ -53,6 +53,16 @@ BACKLOG_ITEMS: list[dict[str, str]] = [
         "detail": "The packaging path is much healthier now, but one more real-machine pass would further de-risk broader sharing.",
     },
     {
+        "lane": "Next",
+        "title": "Prefer the Windows installer over the portable zip",
+        "detail": "Once the desktop wrapper installer is stable, promote the one-file Windows setup .exe as the main handoff and keep the zip only as fallback.",
+    },
+    {
+        "lane": "Later",
+        "title": "Sign the Windows installer and app",
+        "detail": "Use Authenticode signing so the Windows installer and desktop app stop showing Unknown publisher and SmartScreen trust friction on first launch.",
+    },
+    {
         "lane": "Later",
         "title": "Sign and notarize the Mac desktop package",
         "detail": "Use Apple Developer ID signing, notarization, and stapling so the desktop app stops showing the unidentified developer/security friction on first launch.",

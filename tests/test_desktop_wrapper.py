@@ -30,7 +30,7 @@ def test_build_streamlit_command_uses_headless_local_server() -> None:
 
 def test_resolve_window_dimensions_returns_usable_bounds() -> None:
     width, height, min_size = resolve_window_dimensions()
-    assert width >= 1180
-    assert height >= 820
+    assert width >= 1024
+    assert height >= 720
     assert min_size[0] < width
     assert min_size[1] < height

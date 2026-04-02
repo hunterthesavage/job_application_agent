@@ -46,6 +46,9 @@ Once the desktop wrapper installer is stable, promote the one-file Windows setup
 
 These are worth keeping, but they are not the best V1 use of time right now.
 
+### Sign the Windows installer and app
+Use Authenticode signing so the Windows installer and desktop app stop showing Unknown publisher / SmartScreen trust friction on first launch.
+
 ### Sign and notarize the Mac desktop package
 Use Apple Developer ID signing, notarization, and stapling so the desktop app stops showing the unidentified developer/security friction on first launch.
 

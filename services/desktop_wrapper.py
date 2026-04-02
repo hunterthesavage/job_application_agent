@@ -62,7 +62,7 @@ def resolve_webview_gui() -> str | None:
 
 def resolve_window_dimensions() -> tuple[int, int, tuple[int, int]]:
     if sys.platform == "win32":
-        return (1180, 820, (960, 680))
+        return (1024, 720, (860, 620))
     if sys.platform == "darwin":
         return (1360, 920, (1100, 760))
     return (1280, 860, (1024, 720))
