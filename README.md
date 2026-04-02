@@ -66,59 +66,56 @@ cd ~/job_application_agent
 
 # Windows Setup
 
-### Step 1) Download The Windows Package
+### Step 1) Download The Windows Installer
 
-Current Windows Package:
+Current Windows Installer:
 
-- [Windows Install Zip](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-current/JobApplicationAgent-windows-portable.zip)
+- [Windows Installer 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-setup-1.0.2.exe)
 
+### Step 2) Keep The Installer If Windows Flags It
 
-### Step 2) Extract The Zip
+1. After the download finishes, Windows may warn that the installer is not commonly downloaded.
+   ![Step 2.1 - Download warning](docs/assets/windows-installer-step-1b-download-warning.png)
 
-1. Open File Explorer.
-   
-  ![Step 1 - Download the Windows package](docs/assets/windows-step-1-download.png)
+2. Open the downloads flyout menu and click `Keep`.
+   ![Step 2.2 - Keep the installer](docs/assets/windows-installer-step-2-keep-menu.png)
 
-2. Find the zip you downloaded.
-3. Click the zip once to highlight it.
-4. Use one of these options:
-   - click `Extract all` in the File Explorer toolbar
-   - or right-click the zip and click `Extract All...`
-5. Click `Extract`.
-  ![Step 2 - Extract the zip](docs/assets/windows-step-2-extract.png)
+3. If Windows shows a second confirmation, use the menu and choose `Keep anyway`.
+   ![Step 2.3 - Keep anyway confirm](docs/assets/windows-installer-step-3-more-info.png)
 
-### Step 3) Start The App
+### Step 3) Run The Installer
 
-1. Open the extracted `JobApplicationAgent` folder.
-2. Double-click `INSTALL JAA.bat`.
-   ![Step 3 - Open the extracted folder](docs/assets/windows-step-3-open-folder.png)
-  
-3. If Windows asks whether to run the file, click `Run`.
-   ![Step 4 - Run the installer](docs/assets/windows-step-4-run-warning.png)
-  
-4. If Windows Security asks about Python network access, click `Allow`.
-   ![Step 4 - Allow Python through Windows Security](docs/assets/windows-step-4-firewall.png)
-  
-5. Wait a few seconds for the browser to open.
+1. Double-click `JobApplicationAgentDesktop-setup-1.0.2.exe`.
 
-The app should open in your browser at:
+2. Windows Defender SmartScreen may block the first run because the installer is unsigned. Depending on your Windows version, the first prompt may look a little different.
+   ![Step 3.1 - SmartScreen initial prompt](docs/assets/windows-installer-step-1-smartscreen-initial.png)
+   ![Step 3.2 - SmartScreen alternate prompt](docs/assets/windows-installer-step-3-more-info.png)
 
-- [http://localhost:8505](http://localhost:8505)
+3. Click `More info`, then click `Run anyway`.
+   ![Step 3.3 - SmartScreen run anyway](docs/assets/windows-installer-step-3b-run-anyway.png)
 
-When you are done:
+4. Walk through the installer. The default install path and Start Menu folder are fine for most testers.
+   ![Step 3.4 - Installer path](docs/assets/windows-installer-step-4-start-menu-folder.png)
 
-- for the current test package, click `Close Application` inside the app or double-click `STOP JAA.bat`
-- for the fallback known-good package, close the browser tab and then close the Command Prompt window that launched with the app
+5. Finish the installer and launch the app from the new shortcut or Start Menu entry.
 
-### Fallback Windows Package
+The app should open as its own desktop window.
+
+### Step 4) First Launch Notes
+
+- The Windows prompts above are expected right now because the installer is not code-signed yet.
+- Future builds should reduce this trust friction once Windows signing is added.
+- Your app data is stored separately from the install folder, so reinstalling does not wipe your jobs or settings unless you remove the app data folder too.
+
+### Fallback Windows Zip
 
 Fallback Download Link if the current package does not install on this machine:
 
-- [Older Install Zip File](https://github.com/hunterthesavage/job_application_agent/releases/download/windows-portable-latest/JobApplicationAgent-windows-portable.zip) - known-good Windows recovery package
+- [Windows Zip 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-windows-1.0.2.zip)
 
 ### Manual fallback setup
 
-If you are running directly from the repo instead of the portable package, use the existing Python-based setup:
+If you are running directly from the repo instead of the desktop installer, use the existing Python-based setup:
 
 1. Install **Python x64 3.13**
 2. Download the repo zip
@@ -129,19 +126,19 @@ Exact installer:
 
 - [Python 3.13.12 Windows installer (64-bit)](https://www.python.org/ftp/python/3.13.12/python-3.13.12-amd64.exe)
 
-Maintainers can build the portable package with:
+Maintainers can build the desktop package with:
 
 ```powershell
-.\scripts\build_windows_portable.ps1
+.\scripts\build_windows_desktop.ps1 -BuildInstaller
 ```
 
 More details:
 
-- `docs/windows-portable-build.md`
+- `docs/desktop-wrapper-spike.md`
 
 ### Windows packaging status
 
-The current Windows package above is the most up-to-date live package. The older known-good recovery package remains linked as the fallback option if the current package has trouble on a tester machine.
+The current Windows installer above is the preferred live package. The zip remains available only as a fallback.
 
 ## First launch
 
