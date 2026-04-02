@@ -264,12 +264,25 @@ def render_action_loading_screen(scope: str) -> None:
         """
         <script>
         (function () {
-          try { window.scrollTo(0, 0); } catch (e) {}
-          try { parent.window.scrollTo(0, 0); } catch (e) {}
-          try {
-            const root = window.parent.document.querySelector('.main');
-            if (root) { root.scrollTop = 0; }
-          } catch (e) {}
+          function nudgeTop() {
+            try { window.scrollTo(0, 0); } catch (e) {}
+            try { parent.window.scrollTo(0, 0); } catch (e) {}
+            try {
+              const root = window.parent.document.querySelector('.main');
+              if (root) { root.scrollTop = 0; }
+            } catch (e) {}
+            try {
+              const sections = window.parent.document.querySelectorAll('section.main, div[data-testid="stAppViewContainer"]');
+              sections.forEach((node) => { try { node.scrollTop = 0; } catch (e) {} });
+            } catch (e) {}
+          }
+          nudgeTop();
+          let count = 0;
+          const timer = setInterval(() => {
+            nudgeTop();
+            count += 1;
+            if (count >= 12) { clearInterval(timer); }
+          }, 150);
         })();
         </script>
         """,

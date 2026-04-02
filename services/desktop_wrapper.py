@@ -213,7 +213,16 @@ def stop_embedded_server() -> None:
 
 
 def _monitor_server(window: object, process: subprocess.Popen[str]) -> None:
+    maximized_once = False
     while True:
+        if sys.platform == "win32" and not maximized_once:
+            try:
+                maximize = getattr(window, "maximize", None)
+                if callable(maximize):
+                    maximize()
+                    maximized_once = True
+            except Exception:
+                pass
         if process.poll() is not None:
             try:
                 destroy = getattr(window, "destroy", None)
@@ -226,8 +235,17 @@ def _monitor_server(window: object, process: subprocess.Popen[str]) -> None:
 
 
 def _monitor_embedded_server(window: object) -> None:
+    maximized_once = False
     while True:
         time.sleep(0.5)
+        if sys.platform == "win32" and not maximized_once:
+            try:
+                maximize = getattr(window, "maximize", None)
+                if callable(maximize):
+                    maximize()
+                    maximized_once = True
+            except Exception:
+                pass
         try:
             _ = window.title
         except Exception:

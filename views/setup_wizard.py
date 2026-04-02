@@ -97,10 +97,12 @@ def _set_step_index(index: int) -> None:
 
 
 def _go_next() -> None:
+    st.session_state.pop("_post_wizard_run_message", None)
     _set_step_index(_current_step_index() + 1)
 
 
 def _go_back() -> None:
+    st.session_state.pop("_post_wizard_run_message", None)
     _set_step_index(_current_step_index() - 1)
 
 
@@ -263,6 +265,31 @@ def _normalize_line_separated(value: str) -> list[str]:
     return normalized
 
 
+def _normalize_wizard_location_lines(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if "\n" in text:
+        parts = text.splitlines()
+    elif ";" in text:
+        parts = text.split(";")
+    else:
+        parts = text.split(",")
+
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw in parts:
+        clean = " ".join(str(raw or "").strip().split())
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(clean)
+    return normalized
+
+
 def _refine_wizard_search_inputs(
     *,
     target_titles: str,
@@ -271,7 +298,7 @@ def _refine_wizard_search_inputs(
     include_remote: bool,
 ) -> tuple[str, str]:
     title_lines = _normalize_line_separated(target_titles)
-    location_lines = _normalize_line_separated(preferred_locations)
+    location_lines = _normalize_wizard_location_lines(preferred_locations)
 
     fallback_titles = "\n".join(title_lines)
     fallback_locations = "\n".join(location_lines)
@@ -295,7 +322,7 @@ def _refine_wizard_search_inputs(
     suggested_locations = result.get("locations", []) or []
 
     final_titles = _append_line_separated(fallback_titles, [str(item or "") for item in suggested_titles]).strip()
-    final_location_lines = _normalize_line_separated("\n".join(str(item or "") for item in suggested_locations)) or location_lines
+    final_location_lines = _normalize_wizard_location_lines("\n".join(str(item or "") for item in suggested_locations)) or location_lines
     final_locations = "\n".join(final_location_lines).strip()
 
     return final_titles, final_locations
