@@ -50,6 +50,6 @@ jobs:
         with:
           name: windows-desktop-wrapper
           path: |
-            dist/windows-desktop/JobApplicationAgentDesktop-windows.zip
-            dist/windows-desktop/JobApplicationAgentDesktop-setup.exe
+            dist/windows-desktop/JobApplicationAgentDesktop-windows-*.zip
+            dist/windows-desktop/JobApplicationAgentDesktop-setup-*.exe
             dist/windows-desktop/JobApplicationAgentDesktop

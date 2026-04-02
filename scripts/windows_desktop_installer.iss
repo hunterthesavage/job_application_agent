@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.0.2"
 #endif
 
 #ifndef RepoRoot
@@ -22,7 +22,7 @@ DisableDirPage=yes
 Compression=lzma
 SolidCompression=yes
 OutputDir={#OutputDirPath}
-OutputBaseFilename=JobApplicationAgentDesktop-setup
+OutputBaseFilename=JobApplicationAgentDesktop-setup-{#AppVersion}
 WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible

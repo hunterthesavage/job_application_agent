@@ -382,6 +382,13 @@ def _render_search_step() -> None:
     st.markdown("## Search Criteria")
     st.write("This step drives the search. Add the titles, locations, and keywords you want the app to use.")
 
+    pending_titles = st.session_state.pop("wizard_pending_target_titles_widget", None)
+    if pending_titles is not None:
+        st.session_state["wizard_target_titles_widget"] = str(pending_titles)
+    pending_locations = st.session_state.pop("wizard_pending_preferred_locations_widget", None)
+    if pending_locations is not None:
+        st.session_state["wizard_preferred_locations_widget"] = str(pending_locations)
+
     if "wizard_target_titles_widget" not in st.session_state:
         st.session_state["wizard_target_titles_widget"] = st.session_state.get("wizard_target_titles", "")
     if "wizard_preferred_locations_widget" not in st.session_state:
@@ -493,9 +500,9 @@ def _render_search_step() -> None:
             )
 
             st.session_state["wizard_target_titles"] = refined_titles
-            st.session_state["wizard_target_titles_widget"] = refined_titles
+            st.session_state["wizard_pending_target_titles_widget"] = refined_titles
             st.session_state["wizard_preferred_locations"] = refined_locations
-            st.session_state["wizard_preferred_locations_widget"] = refined_locations
+            st.session_state["wizard_pending_preferred_locations_widget"] = refined_locations
             st.session_state["wizard_preferred_job_levels"] = list(preferred_job_levels)
             st.session_state["wizard_preferred_job_levels_widget"] = list(preferred_job_levels)
             st.session_state["wizard_include_keywords"] = include_clean

@@ -12,10 +12,10 @@ $pyInstallerSpec = Join-Path $repoRoot "$AppName.spec"
 $buildRoot = Join-Path $repoRoot "build"
 $distAppRoot = Join-Path $repoRoot "dist"
 $packageDir = Join-Path $distRoot $AppName
-$portableZip = Join-Path $distRoot "$AppName-windows.zip"
-$installerPath = Join-Path $distRoot "$AppName-setup.exe"
 $installerScript = Join-Path $repoRoot "scripts/windows_desktop_installer.iss"
 $appVersion = python -c "from config import APP_VERSION; print(APP_VERSION)"
+$portableZip = Join-Path $distRoot "$AppName-windows-$appVersion.zip"
+$installerPath = Join-Path $distRoot "$AppName-setup-$appVersion.exe"
 
 function Remove-IfExists {
     param([string]$Path)
@@ -27,8 +27,8 @@ function Remove-IfExists {
 Write-Host "==> Cleaning previous Windows desktop build"
 Remove-IfExists $buildRoot
 Remove-IfExists $distAppRoot
-Remove-IfExists $portableZip
-Remove-IfExists $installerPath
+Get-ChildItem -Path $distRoot -Filter "$AppName-windows-*.zip" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Path $distRoot -Filter "$AppName-setup-*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
 
 Write-Host "==> Ensuring PyInstaller is installed"
