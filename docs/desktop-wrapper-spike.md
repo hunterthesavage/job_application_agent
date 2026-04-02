@@ -39,6 +39,21 @@ The first pass outputs:
 dist/Job Application Agent.app
 ```
 
+## First Windows Wrapper Build
+
+Build the Windows desktop wrapper package on Windows with:
+
+```powershell
+.\scripts\build_windows_desktop.ps1
+```
+
+The first pass outputs:
+
+```text
+dist/windows-desktop/JobApplicationAgentDesktop
+dist/windows-desktop/JobApplicationAgentDesktop-windows.zip
+```
+
 ## Smoke Test
 
 You can run the wrapper smoke test with:

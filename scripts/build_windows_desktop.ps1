@@ -1,0 +1,74 @@
+param(
+    [string]$DistRoot = "dist/windows-desktop",
+    [string]$AppName = "JobApplicationAgentDesktop"
+)
+
+$ErrorActionPreference = "Stop"
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$distRoot = Join-Path $repoRoot $DistRoot
+$pyInstallerSpec = Join-Path $repoRoot "$AppName.spec"
+$buildRoot = Join-Path $repoRoot "build"
+$distAppRoot = Join-Path $repoRoot "dist"
+$packageDir = Join-Path $distRoot $AppName
+$portableZip = Join-Path $distRoot "$AppName-windows.zip"
+
+function Remove-IfExists {
+    param([string]$Path)
+    if (Test-Path $Path) {
+        Remove-Item -Path $Path -Recurse -Force
+    }
+}
+
+Write-Host "==> Cleaning previous Windows desktop build"
+Remove-IfExists $buildRoot
+Remove-IfExists $distAppRoot
+Remove-IfExists $portableZip
+New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
+
+Write-Host "==> Ensuring PyInstaller is installed"
+python -m pip install pyinstaller | Out-Host
+
+Write-Host "==> Building Windows desktop executable"
+python -m PyInstaller `
+  --noconfirm `
+  --clean `
+  --windowed `
+  --name $AppName `
+  --collect-all streamlit `
+  --collect-all webview `
+  --add-data "app.py;." `
+  --add-data "services;services" `
+  --add-data "views;views" `
+  --add-data "ui;ui" `
+  --add-data "src;src" `
+  --add-data "config.py;." `
+  desktop_app.py | Out-Host
+
+if (-not (Test-Path (Join-Path $distAppRoot $AppName))) {
+    throw "Expected PyInstaller output at dist/$AppName"
+}
+
+Move-Item -Path (Join-Path $distAppRoot $AppName) -Destination $packageDir -Force
+
+$readme = @'
+Job Application Agent - Windows Desktop Wrapper
+
+How to use:
+1. Extract this zip anywhere you like.
+2. Open the extracted folder.
+3. Double-click JobApplicationAgentDesktop.exe
+
+Notes:
+- This package includes its own Python runtime.
+- The app opens in its own native window.
+- If an external Apply link is opened, it will still use your default browser.
+'@
+Set-Content -Path (Join-Path $packageDir "WINDOWS_DESKTOP_README.txt") -Value $readme -Encoding ASCII
+
+Write-Host "==> Creating Windows desktop zip"
+Compress-Archive -Path $packageDir -DestinationPath $portableZip -Force
+
+Write-Host "==> Windows desktop package ready"
+Write-Host "Package folder: $packageDir"
+Write-Host "Package zip:    $portableZip"
