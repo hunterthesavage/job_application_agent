@@ -260,6 +260,21 @@ def render_action_loading_screen(scope: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+    components_html(
+        """
+        <script>
+        (function () {
+          try { window.scrollTo(0, 0); } catch (e) {}
+          try { parent.window.scrollTo(0, 0); } catch (e) {}
+          try {
+            const root = window.parent.document.querySelector('.main');
+            if (root) { root.scrollTop = 0; }
+          } catch (e) {}
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 def initialize_app_once() -> None:
     if st.session_state.get("_app_initialized", False):

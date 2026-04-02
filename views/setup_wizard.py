@@ -18,7 +18,10 @@ from services.openai_key import (
 )
 from services.profile_context_templates import generate_profile_context_from_resume
 from services.settings import load_settings, save_settings
-from services.openai_title_suggestions import suggest_titles_with_openai
+from services.openai_title_suggestions import (
+    suggest_run_input_refinements_with_openai,
+    suggest_titles_with_openai,
+)
 from services.ui_busy import queue_action
 
 
@@ -245,6 +248,59 @@ def _append_line_separated(base_value: str, additions: list[str]) -> str:
     return "\n".join(current)
 
 
+def _normalize_line_separated(value: str) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw in str(value or "").splitlines():
+        clean = " ".join(str(raw or "").strip().split())
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(clean)
+    return normalized
+
+
+def _refine_wizard_search_inputs(
+    *,
+    target_titles: str,
+    preferred_locations: str,
+    include_keywords: str,
+    include_remote: bool,
+) -> tuple[str, str]:
+    title_lines = _normalize_line_separated(target_titles)
+    location_lines = _normalize_line_separated(preferred_locations)
+
+    fallback_titles = "\n".join(title_lines)
+    fallback_locations = "\n".join(location_lines)
+
+    if not get_openai_api_key_details().get("active_key_present"):
+        return fallback_titles, fallback_locations
+
+    result = suggest_run_input_refinements_with_openai(
+        current_titles=fallback_titles,
+        preferred_locations=fallback_locations,
+        profile_summary=str(st.session_state.get("wizard_profile_summary", "") or ""),
+        resume_text=str(st.session_state.get("wizard_resume_text", "") or ""),
+        include_keywords=include_keywords,
+        include_remote=include_remote,
+    )
+
+    if not result.get("ok"):
+        return fallback_titles, fallback_locations
+
+    suggested_titles = result.get("titles", []) or []
+    suggested_locations = result.get("locations", []) or []
+
+    final_titles = _append_line_separated(fallback_titles, [str(item or "") for item in suggested_titles]).strip()
+    final_location_lines = _normalize_line_separated("\n".join(str(item or "") for item in suggested_locations)) or location_lines
+    final_locations = "\n".join(final_location_lines).strip()
+
+    return final_titles, final_locations
+
+
 def _clear_wizard_title_suggestions() -> None:
     st.session_state["wizard_title_suggestions"] = []
     st.session_state["wizard_title_suggestions_notes"] = ""
@@ -389,10 +445,17 @@ def _render_search_step() -> None:
                 st.error("Add at least one preferred location or turn on Include Remote.")
                 return
 
+            refined_titles, refined_locations = _refine_wizard_search_inputs(
+                target_titles=titles_clean,
+                preferred_locations=locations_clean,
+                include_keywords=include_clean,
+                include_remote=include_remote,
+            )
+
             save_settings(
                 {
-                    "target_titles": titles_clean,
-                    "preferred_locations": locations_clean,
+                    "target_titles": refined_titles,
+                    "preferred_locations": refined_locations,
                     "preferred_job_levels": preferred_job_levels_clean,
                     "include_keywords": include_clean,
                     "exclude_keywords": exclude_clean,
@@ -402,8 +465,10 @@ def _render_search_step() -> None:
                 }
             )
 
-            st.session_state["wizard_target_titles"] = titles_clean
-            st.session_state["wizard_preferred_locations"] = locations_clean
+            st.session_state["wizard_target_titles"] = refined_titles
+            st.session_state["wizard_target_titles_widget"] = refined_titles
+            st.session_state["wizard_preferred_locations"] = refined_locations
+            st.session_state["wizard_preferred_locations_widget"] = refined_locations
             st.session_state["wizard_preferred_job_levels"] = list(preferred_job_levels)
             st.session_state["wizard_preferred_job_levels_widget"] = list(preferred_job_levels)
             st.session_state["wizard_include_keywords"] = include_clean

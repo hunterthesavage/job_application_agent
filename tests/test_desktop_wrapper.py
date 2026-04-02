@@ -2,6 +2,7 @@ from services.desktop_wrapper import (
     build_streamlit_command,
     find_free_port,
     resolve_window_dimensions,
+    resolve_window_launch_flags,
     streamlit_health_url,
     streamlit_url,
 )
@@ -34,3 +35,9 @@ def test_resolve_window_dimensions_returns_usable_bounds() -> None:
     assert height >= 720
     assert min_size[0] < width
     assert min_size[1] < height
+
+
+def test_resolve_window_launch_flags_returns_mapping() -> None:
+    flags = resolve_window_launch_flags()
+    assert isinstance(flags, dict)
+    assert "maximized" in flags

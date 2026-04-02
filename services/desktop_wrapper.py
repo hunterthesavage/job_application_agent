@@ -68,6 +68,12 @@ def resolve_window_dimensions() -> tuple[int, int, tuple[int, int]]:
     return (1280, 860, (1024, 720))
 
 
+def resolve_window_launch_flags() -> dict[str, bool]:
+    if sys.platform == "win32":
+        return {"maximized": True}
+    return {"maximized": False}
+
+
 def is_frozen_app() -> bool:
     return bool(getattr(sys, "frozen", False))
 
@@ -249,12 +255,14 @@ def launch_desktop_window() -> int:
     wait_for_streamlit(port, process if process is not None else _EmbeddedServerSentinel())
 
     window_width, window_height, min_size = resolve_window_dimensions()
+    launch_flags = resolve_window_launch_flags()
     window = webview.create_window(
         f"{APP_NAME} {APP_VERSION}",
         streamlit_url(port),
         width=window_width,
         height=window_height,
         min_size=min_size,
+        maximized=bool(launch_flags.get("maximized", False)),
         text_select=True,
     )
 
