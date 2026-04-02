@@ -48,16 +48,16 @@ def resolve_auto_close_seconds() -> float:
     raw_value = str(os.environ.get("JAA_DESKTOP_AUTOCLOSE_SECONDS", "")).strip()
     if not raw_value:
         return 0.0
+    try:
+        return max(0.0, float(raw_value))
+    except Exception:
+        return 0.0
 
 
 def resolve_webview_gui() -> str | None:
     if sys.platform == "win32":
         return "qt"
     return None
-    try:
-        return max(0.0, float(raw_value))
-    except Exception:
-        return 0.0
 
 
 def is_frozen_app() -> bool:
