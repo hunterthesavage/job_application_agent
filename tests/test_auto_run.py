@@ -57,3 +57,36 @@ def test_disable_auto_run_schedule_removes_launch_agent(monkeypatch, tmp_path):
 
     assert result["ok"] is True
     assert not launch_agent_path.exists()
+
+
+def test_run_subprocess_hides_console_on_windows(monkeypatch):
+    import services.auto_run as auto_run
+
+    captured_kwargs = {}
+
+    class DummyCompleted:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    class DummyStartupInfo:
+        def __init__(self):
+            self.dwFlags = 0
+            self.wShowWindow = None
+
+    monkeypatch.setattr(auto_run.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(auto_run.subprocess, "STARTUPINFO", DummyStartupInfo, raising=False)
+    monkeypatch.setattr(auto_run.subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
+    monkeypatch.setattr(auto_run.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    def fake_run(command, **kwargs):
+        captured_kwargs.update(kwargs)
+        return DummyCompleted()
+
+    monkeypatch.setattr(auto_run.subprocess, "run", fake_run)
+
+    ok, _ = auto_run._run_subprocess(["schtasks", "/Query"])
+
+    assert ok is True
+    assert captured_kwargs["creationflags"] == 0x08000000
+    assert captured_kwargs["startupinfo"].wShowWindow == 0
