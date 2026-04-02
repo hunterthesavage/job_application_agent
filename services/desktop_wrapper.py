@@ -48,6 +48,12 @@ def resolve_auto_close_seconds() -> float:
     raw_value = str(os.environ.get("JAA_DESKTOP_AUTOCLOSE_SECONDS", "")).strip()
     if not raw_value:
         return 0.0
+
+
+def resolve_webview_gui() -> str | None:
+    if sys.platform == "win32":
+        return "qt"
+    return None
     try:
         return max(0.0, float(raw_value))
     except Exception:
@@ -262,10 +268,11 @@ def launch_desktop_window() -> int:
 
         threading.Thread(target=_auto_close, daemon=True, name="jaa-desktop-autoclose").start()
 
+    gui = resolve_webview_gui()
     if embedded_mode:
-        webview.start(_monitor_embedded_server, args=(window,))
+        webview.start(_monitor_embedded_server, args=(window,), gui=gui)
     else:
-        webview.start(_monitor_server, args=(window, process))
+        webview.start(_monitor_server, args=(window, process), gui=gui)
     return 0
 
 

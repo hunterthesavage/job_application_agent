@@ -22,7 +22,7 @@ jobs:
 
       - name: Install project requirements
         shell: pwsh
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt PySide6 qtpy
 
       - name: Build Windows desktop package
         shell: pwsh

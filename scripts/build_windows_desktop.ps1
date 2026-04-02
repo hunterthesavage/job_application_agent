@@ -27,7 +27,7 @@ Remove-IfExists $portableZip
 New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
 
 Write-Host "==> Ensuring PyInstaller is installed"
-python -m pip install pyinstaller | Out-Host
+python -m pip install pyinstaller PySide6 qtpy | Out-Host
 
 Write-Host "==> Building Windows desktop executable"
 python -m PyInstaller `
@@ -37,6 +37,8 @@ python -m PyInstaller `
   --name $AppName `
   --collect-all streamlit `
   --collect-all webview `
+  --collect-all qtpy `
+  --collect-all PySide6 `
   --add-data "app.py;." `
   --add-data "services;services" `
   --add-data "views;views" `
