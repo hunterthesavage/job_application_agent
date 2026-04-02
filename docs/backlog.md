@@ -43,6 +43,9 @@ The packaging path is much healthier now, but one more real-machine pass would f
 
 These are worth keeping, but they are not the best V1 use of time right now.
 
+### Sign and notarize the Mac desktop package
+Use Apple Developer ID signing, notarization, and stapling so the desktop app stops showing the unidentified developer/security friction on first launch.
+
 ### Surface OpenAI usage, token, and cost visibility
 Add a read-only app view that shows OpenAI usage for the configured key, including token consumption, cost, and links back to billing or usage pages.
 

@@ -54,6 +54,11 @@ BACKLOG_ITEMS: list[dict[str, str]] = [
     },
     {
         "lane": "Later",
+        "title": "Sign and notarize the Mac desktop package",
+        "detail": "Use Apple Developer ID signing, notarization, and stapling so the desktop app stops showing the unidentified developer/security friction on first launch.",
+    },
+    {
+        "lane": "Later",
         "title": "Surface OpenAI usage, token, and cost visibility",
         "detail": "Add a read-only app view that shows OpenAI usage for the configured key, including token consumption, cost, and links back to billing or usage pages.",
     },
