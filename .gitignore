@@ -38,6 +38,8 @@ backup_validation_fix/
 backup_nav_redesign/
 backup_option_b_style/
 dist/
+build/
+*.spec
 
 # Streamlit local state
 .streamlit/secrets.toml

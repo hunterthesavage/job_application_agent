@@ -54,6 +54,17 @@ def resolve_auto_close_seconds() -> float:
         return 0.0
 
 
+def is_frozen_app() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def resolve_streamlit_script_path() -> Path:
+    if is_frozen_app():
+        frozen_root = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
+        return frozen_root / "app.py"
+    return PROJECT_ROOT / "app.py"
+
+
 def streamlit_url(port: int) -> str:
     return f"http://{STREAMLIT_HOST}:{int(port)}"
 
@@ -86,6 +97,19 @@ def build_streamlit_command(port: int) -> list[str]:
     ]
 
 
+def build_streamlit_flag_options(port: int) -> dict[str, object]:
+    return {
+        "global_developmentMode": False,
+        "server_headless": True,
+        "server_address": STREAMLIT_HOST,
+        "server_port": int(port),
+        "browser_gatherUsageStats": False,
+        "client_toolbarMode": "minimal",
+        "client_showSidebarNavigation": False,
+        "theme_base": "dark",
+    }
+
+
 def start_streamlit_server(port: int) -> subprocess.Popen[str]:
     ensure_runtime_dirs()
     env = os.environ.copy()
@@ -102,6 +126,35 @@ def start_streamlit_server(port: int) -> subprocess.Popen[str]:
         text=True,
     )
     return process
+
+
+def start_embedded_streamlit_server(port: int) -> threading.Thread:
+    try:
+        from streamlit.web import bootstrap
+    except Exception as exc:  # pragma: no cover - depends on frozen runtime
+        raise DesktopWrapperLaunchError("Streamlit bootstrap is unavailable in the packaged desktop runtime.") from exc
+
+    script_path = resolve_streamlit_script_path()
+    if not script_path.exists():
+        raise DesktopWrapperLaunchError(f"Bundled app.py was not found at {script_path}.")
+
+    def _run_streamlit() -> None:
+        original_signal_setup = bootstrap._set_up_signal_handler
+        bootstrap._set_up_signal_handler = lambda server: None
+        try:
+            bootstrap.load_config_options(build_streamlit_flag_options(port))
+            bootstrap.run(
+                str(script_path),
+                False,
+                [],
+                build_streamlit_flag_options(port),
+            )
+        finally:
+            bootstrap._set_up_signal_handler = original_signal_setup
+
+    thread = threading.Thread(target=_run_streamlit, daemon=True, name="jaa-streamlit-embedded")
+    thread.start()
+    return thread
 
 
 def wait_for_streamlit(port: int, process: subprocess.Popen[str], timeout_seconds: float = STREAMLIT_BOOT_TIMEOUT_SECONDS) -> None:
@@ -135,6 +188,10 @@ def stop_streamlit_server(process: subprocess.Popen[str] | None) -> None:
             pass
 
 
+def stop_embedded_server() -> None:
+    os._exit(0)
+
+
 def _monitor_server(window: object, process: subprocess.Popen[str]) -> None:
     while True:
         if process.poll() is not None:
@@ -148,6 +205,15 @@ def _monitor_server(window: object, process: subprocess.Popen[str]) -> None:
         time.sleep(0.5)
 
 
+def _monitor_embedded_server(window: object) -> None:
+    while True:
+        time.sleep(0.5)
+        try:
+            _ = window.title
+        except Exception:
+            return
+
+
 def launch_desktop_window() -> int:
     try:
         import webview
@@ -157,9 +223,16 @@ def launch_desktop_window() -> int:
         ) from exc
 
     port = resolve_desktop_port()
-    process = start_streamlit_server(port)
-    atexit.register(stop_streamlit_server, process)
-    wait_for_streamlit(port, process)
+    process: subprocess.Popen[str] | None = None
+    embedded_mode = is_frozen_app()
+
+    if embedded_mode:
+        start_embedded_streamlit_server(port)
+    else:
+        process = start_streamlit_server(port)
+        atexit.register(stop_streamlit_server, process)
+
+    wait_for_streamlit(port, process if process is not None else _EmbeddedServerSentinel())
 
     window = webview.create_window(
         f"{APP_NAME} {APP_VERSION}",
@@ -171,7 +244,10 @@ def launch_desktop_window() -> int:
     )
 
     def _on_closed() -> None:
-        stop_streamlit_server(process)
+        if embedded_mode:
+            stop_embedded_server()
+        else:
+            stop_streamlit_server(process)
 
     window.events.closed += _on_closed
 
@@ -186,7 +262,10 @@ def launch_desktop_window() -> int:
 
         threading.Thread(target=_auto_close, daemon=True, name="jaa-desktop-autoclose").start()
 
-    webview.start(_monitor_server, args=(window, process))
+    if embedded_mode:
+        webview.start(_monitor_embedded_server, args=(window,))
+    else:
+        webview.start(_monitor_server, args=(window, process))
     return 0
 
 
@@ -200,3 +279,12 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+class _EmbeddedServerSentinel:
+    def poll(self) -> None:
+        return None
+
+    @property
+    def returncode(self) -> None:
+        return None

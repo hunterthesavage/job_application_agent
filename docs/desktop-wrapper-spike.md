@@ -25,6 +25,20 @@ Or double-click:
 run_desktop_app.command
 ```
 
+## First macOS Bundle Build
+
+Build the native app bundle with:
+
+```bash
+./scripts/build_macos_desktop_app.sh
+```
+
+The first pass outputs:
+
+```text
+dist/Job Application Agent.app
+```
+
 ## Smoke Test
 
 You can run the wrapper smoke test with:
