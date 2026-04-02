@@ -753,7 +753,7 @@ def _render_ai_review_step() -> None:
                 ):
                     updated = _append_line_separated(st.session_state.get("wizard_target_titles", ""), selected)
                     st.session_state["wizard_target_titles"] = updated
-                    st.session_state["wizard_target_titles_widget"] = updated
+                    st.session_state["wizard_pending_target_titles_widget"] = updated
                     save_settings({"target_titles": updated})
                     st.session_state["wizard_ai_review_choice_made"] = True
                     st.session_state["wizard_ai_review_message"] = "Selected title suggestions were added. Starting your first job search now."
