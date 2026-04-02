@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import platform
-import plistlib
 import subprocess
 import sys
 from datetime import datetime, time as dt_time
@@ -162,6 +161,8 @@ def _run_subprocess(command: list[str]) -> tuple[bool, str]:
 
 
 def _configure_launchd(settings: dict[str, str]) -> dict[str, Any]:
+    import plistlib
+
     hour, minute, normalized_time = parse_auto_run_time(settings.get("auto_run_time", "08:00"))
     frequency = normalize_auto_run_frequency(settings.get("auto_run_frequency", "off"))
     days = parse_auto_run_days(settings.get("auto_run_days", "mon,tue,wed,thu,fri"))
