@@ -36,6 +36,7 @@ python -m PyInstaller `
   --windowed `
   --name $AppName `
   --collect-all streamlit `
+  --collect-all openai `
   --collect-all ddgs `
   --collect-all webview `
   --collect-all qtpy `
