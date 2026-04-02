@@ -39,6 +39,9 @@ The app now explains saved versus environment keys clearly, but public users may
 ### Validate the Windows package on one more real machine
 The packaging path is much healthier now, but one more real-machine pass would further de-risk broader sharing.
 
+### Prefer the Windows installer over the portable zip
+Once the desktop wrapper installer is stable, promote the one-file Windows setup `.exe` as the main handoff and keep the zip only as fallback.
+
 ## Later
 
 These are worth keeping, but they are not the best V1 use of time right now.

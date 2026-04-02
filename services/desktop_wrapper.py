@@ -60,6 +60,14 @@ def resolve_webview_gui() -> str | None:
     return None
 
 
+def resolve_window_dimensions() -> tuple[int, int, tuple[int, int]]:
+    if sys.platform == "win32":
+        return (1180, 820, (960, 680))
+    if sys.platform == "darwin":
+        return (1360, 920, (1100, 760))
+    return (1280, 860, (1024, 720))
+
+
 def is_frozen_app() -> bool:
     return bool(getattr(sys, "frozen", False))
 
@@ -240,12 +248,13 @@ def launch_desktop_window() -> int:
 
     wait_for_streamlit(port, process if process is not None else _EmbeddedServerSentinel())
 
+    window_width, window_height, min_size = resolve_window_dimensions()
     window = webview.create_window(
         f"{APP_NAME} {APP_VERSION}",
         streamlit_url(port),
-        width=1460,
-        height=980,
-        min_size=(1180, 760),
+        width=window_width,
+        height=window_height,
+        min_size=min_size,
         text_select=True,
     )
 

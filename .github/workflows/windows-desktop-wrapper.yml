@@ -24,9 +24,13 @@ jobs:
         shell: pwsh
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt PySide6 qtpy
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y
+
       - name: Build Windows desktop package
         shell: pwsh
-        run: .\scripts\build_windows_desktop.ps1
+        run: .\scripts\build_windows_desktop.ps1 -BuildInstaller
 
       - name: Verify packaged executable exists
         shell: pwsh
@@ -47,4 +51,5 @@ jobs:
           name: windows-desktop-wrapper
           path: |
             dist/windows-desktop/JobApplicationAgentDesktop-windows.zip
+            dist/windows-desktop/JobApplicationAgentDesktop-setup.exe
             dist/windows-desktop/JobApplicationAgentDesktop

@@ -53,6 +53,13 @@ The first pass outputs:
 ```text
 dist/windows-desktop/JobApplicationAgentDesktop
 dist/windows-desktop/JobApplicationAgentDesktop-windows.zip
+dist/windows-desktop/JobApplicationAgentDesktop-setup.exe
+```
+
+The `.zip` remains the fallback portable package, but the preferred Windows handoff should become the single-file installer:
+
+```text
+JobApplicationAgentDesktop-setup.exe
 ```
 
 ## Smoke Test

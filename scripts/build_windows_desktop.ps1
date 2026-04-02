@@ -1,6 +1,7 @@
 param(
     [string]$DistRoot = "dist/windows-desktop",
-    [string]$AppName = "JobApplicationAgentDesktop"
+    [string]$AppName = "JobApplicationAgentDesktop",
+    [switch]$BuildInstaller
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,6 +13,9 @@ $buildRoot = Join-Path $repoRoot "build"
 $distAppRoot = Join-Path $repoRoot "dist"
 $packageDir = Join-Path $distRoot $AppName
 $portableZip = Join-Path $distRoot "$AppName-windows.zip"
+$installerPath = Join-Path $distRoot "$AppName-setup.exe"
+$installerScript = Join-Path $repoRoot "scripts/windows_desktop_installer.iss"
+$appVersion = python -c "from config import APP_VERSION; print(APP_VERSION)"
 
 function Remove-IfExists {
     param([string]$Path)
@@ -24,6 +28,7 @@ Write-Host "==> Cleaning previous Windows desktop build"
 Remove-IfExists $buildRoot
 Remove-IfExists $distAppRoot
 Remove-IfExists $portableZip
+Remove-IfExists $installerPath
 New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
 
 Write-Host "==> Ensuring PyInstaller is installed"
@@ -75,6 +80,25 @@ Set-Content -Path (Join-Path $packageDir "WINDOWS_DESKTOP_README.txt") -Value $r
 Write-Host "==> Creating Windows desktop zip"
 Compress-Archive -Path $packageDir -DestinationPath $portableZip -Force
 
+if ($BuildInstaller) {
+    $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+    if (-not (Test-Path $iscc)) {
+        throw "Inno Setup was not found at $iscc"
+    }
+
+    Write-Host "==> Creating Windows desktop installer"
+    & $iscc "/DAppVersion=$appVersion" "/DRepoRoot=$repoRoot" $installerScript | Out-Host
+
+    if (-not (Test-Path $installerPath)) {
+        throw "Expected Windows installer at $installerPath"
+    }
+} else {
+    Write-Host "==> Skipping installer build (use -BuildInstaller to produce a one-file setup.exe)"
+}
+
 Write-Host "==> Windows desktop package ready"
 Write-Host "Package folder: $packageDir"
 Write-Host "Package zip:    $portableZip"
+if (Test-Path $installerPath) {
+    Write-Host "Installer exe:  $installerPath"
+}
