@@ -1,4 +1,5 @@
 import html
+import re
 from datetime import datetime
 
 import pandas as pd
@@ -84,9 +85,69 @@ def _split_scrub_corrections(risk_flags: str) -> tuple[list[str], list[str]]:
     return corrections, remaining_risks
 
 
+def _parse_compensation_number(value: str) -> int | None:
+    text = str(value or "").strip().upper().replace(",", "").replace("$", "")
+    if not text:
+        return None
+
+    multiplier = 1
+    if text.endswith("K"):
+        multiplier = 1000
+        text = text[:-1].strip()
+
+    try:
+        return int(round(float(text) * multiplier))
+    except Exception:
+        return None
+
+
+def _format_currency_number(value: int) -> str:
+    return f"${value:,}"
+
+
+def _format_compensation_display(raw_value: str) -> str:
+    text = str(raw_value or "").strip()
+    if not text:
+        return ""
+
+    lowered = text.lower()
+    is_hourly = any(marker in lowered for marker in ["/hr", "per hour", "hourly", "/hour", "hr."])
+    numbers = re.findall(r"\$?\d[\d,]*(?:\.\d+)?K?", text, re.IGNORECASE)
+    inherit_k = any(str(item).strip().upper().endswith("K") for item in numbers)
+    normalized_numbers: list[str] = []
+    for item in numbers:
+        token = str(item).strip()
+        if inherit_k and not token.upper().endswith("K") and re.fullmatch(r"\$?\d[\d,]*(?:\.\d+)?", token):
+            token = f"{token}K"
+        normalized_numbers.append(token)
+
+    parsed = [_parse_compensation_number(item) for item in normalized_numbers]
+    parsed = [item for item in parsed if item is not None]
+
+    if not parsed:
+        return text
+
+    if len(parsed) >= 2:
+        formatted = f"{_format_currency_number(parsed[0])}-{_format_currency_number(parsed[1])}"
+    else:
+        formatted = _format_currency_number(parsed[0])
+
+    if is_hourly:
+        return f"{formatted}/hr"
+
+    return formatted
+
+
 def _render_ai_button_chip() -> None:
     st.markdown(
         '<div class="ai-button-chip-wrap"><span class="ai-button-chip" title="Uses OpenAI">AI</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_ai_button_chip_placeholder() -> None:
+    st.markdown(
+        '<div class="ai-button-chip-wrap ai-button-chip-wrap-placeholder"><span class="ai-button-chip ai-button-chip-hidden">AI</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -395,6 +456,7 @@ def render_job_card(
     source_detail = safe_value(row, "Source Detail")
     discovery_state = safe_value(row, "Discovery State")
     compensation_raw = safe_value(row, "Compensation Raw")
+    compensation_display = _format_compensation_display(compensation_raw)
     job_url = safe_value(row, "Job Posting URL")
     scrub_corrections, display_risks = _split_scrub_corrections(risk_flags)
 
@@ -420,12 +482,10 @@ def render_job_card(
             pills.append(f'<span class="meta-pill location">Location: {html.escape(location)}</span>')
         if fit_score:
             pills.append(f'<span class="meta-pill fit">Fit Score: {html.escape(fit_score)}</span>')
-        if fit_tier:
-            pills.append(f'<span class="meta-pill fit">Tier: {html.escape(fit_tier)}</span>')
         if ai_recommendation:
             pills.append(f'<span class="meta-pill comp">Recommendation: {html.escape(ai_recommendation)}</span>')
-        if compensation_raw:
-            pills.append(f'<span class="meta-pill comp">Compensation: {html.escape(compensation_raw)}</span>')
+        if compensation_display:
+            pills.append(f'<span class="meta-pill comp">Compensation: {html.escape(compensation_display)}</span>')
 
         if pills:
             st.markdown(f'<div class="meta-row">{"".join(pills)}</div>', unsafe_allow_html=True)
@@ -486,8 +546,6 @@ def render_job_card(
             else:
                 st.success(message)
 
-        st.markdown('<div class="job-actions-label">Next actions</div>', unsafe_allow_html=True)
-
         top_actions = st.columns(2)
         bottom_actions = st.columns(2)
 
@@ -500,6 +558,24 @@ def render_job_card(
         )
 
         with top_actions[0]:
+            _render_ai_button_chip_placeholder()
+            apply_disabled = not bool(job_url)
+
+            if st.button(
+                "🚀 Apply",
+                key=f"apply_{job_id}",
+                use_container_width=True,
+                type="primary",
+                disabled=app_is_busy() or apply_disabled,
+            ):
+                opened = open_url(job_url)
+                if opened:
+                    st.session_state[apply_ready_key] = True
+                    st.rerun()
+                else:
+                    st.warning("Could not automatically open the URL.")
+
+        with top_actions[1]:
             _render_ai_button_chip()
             if st.button(
                 "✍️ Cover Letter",
@@ -516,23 +592,6 @@ def render_job_card(
                     label="Generating Cover Letter",
                 )
                 st.rerun()
-
-        with top_actions[1]:
-            apply_disabled = not bool(job_url)
-
-            if st.button(
-                "🚀 Apply",
-                key=f"apply_{job_id}",
-                use_container_width=True,
-                type="primary",
-                disabled=app_is_busy() or apply_disabled,
-            ):
-                opened = open_url(job_url)
-                if opened:
-                    st.session_state[apply_ready_key] = True
-                    st.rerun()
-                else:
-                    st.warning("Could not automatically open the URL.")
 
         with bottom_actions[0]:
             if st.button(
