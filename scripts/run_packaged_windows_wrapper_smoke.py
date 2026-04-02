@@ -16,6 +16,42 @@ from config import APP_NAME
 from services.desktop_wrapper import find_free_port, streamlit_health_url, streamlit_url
 
 
+def assess_homepage(url: str, *, timeout_seconds: float = 12.0) -> tuple[bool, str, str]:
+    error_signatures = [
+        "module not found",
+        "modulenotfounderror",
+        "traceback",
+        "no module named",
+    ]
+    deadline = time.time() + max(1.0, float(timeout_seconds))
+    last_status = "n/a"
+    saw_streamlit_shell = False
+
+    while time.time() < deadline:
+        try:
+            page = requests.get(url, timeout=2)
+            last_status = str(page.status_code)
+            page_text = page.text
+            lower_text = page_text.lower()
+
+            if any(signature in lower_text for signature in error_signatures):
+                return False, last_status, "error_signature_detected"
+
+            if page.ok and APP_NAME.lower() in lower_text:
+                return True, last_status, "app_name_visible"
+
+            if page.ok and "streamlit" in lower_text:
+                saw_streamlit_shell = True
+        except requests.RequestException:
+            pass
+
+        time.sleep(0.5)
+
+    if saw_streamlit_shell:
+        return True, last_status, "streamlit_shell_visible"
+    return False, last_status, "homepage_not_ready"
+
+
 def main() -> int:
     exe = PROJECT_ROOT / "dist" / "windows-desktop" / "JobApplicationAgentDesktop" / "JobApplicationAgentDesktop.exe"
     if not exe.exists():
@@ -38,6 +74,7 @@ def main() -> int:
     health_ok = False
     page_ok = False
     page_status = "n/a"
+    page_reason = "not_checked"
     start = time.time()
 
     try:
@@ -54,25 +91,7 @@ def main() -> int:
             time.sleep(0.35)
 
         if health_ok:
-            try:
-                page = requests.get(streamlit_url(port), timeout=2)
-                page_text = page.text
-                lower_text = page_text.lower()
-                error_signatures = [
-                    "module not found",
-                    "modulenotfounderror",
-                    "traceback",
-                    "no module named",
-                ]
-                page_ok = (
-                    page.ok
-                    and "streamlit" in lower_text
-                    and APP_NAME.lower() in lower_text
-                    and not any(signature in lower_text for signature in error_signatures)
-                )
-                page_status = str(page.status_code)
-            except requests.RequestException:
-                page_ok = False
+            page_ok, page_status, page_reason = assess_homepage(streamlit_url(port))
 
         try:
             process.wait(timeout=20)
@@ -97,6 +116,7 @@ def main() -> int:
         print(f"- Health endpoint reached: {'yes' if health_ok else 'no'}")
         print(f"- Homepage served: {'yes' if page_ok else 'no'}")
         print(f"- Homepage status: {page_status}")
+        print(f"- Homepage check: {page_reason}")
         print(f"- Wrapper exited cleanly after auto-close: {'yes' if exit_ok else 'no'}")
         print(f"- Server stopped after window close: {'yes' if shutdown_ok else 'no'}")
         print(f"- Elapsed seconds: {time.time() - start:.2f}")
