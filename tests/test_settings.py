@@ -146,3 +146,36 @@ def test_initialize_settings_state_uses_default_filename_pattern_when_saved_valu
         st.session_state["settings_cover_letter_filename_pattern_value"]
         == settings_module.get_default_cover_letter_filename_pattern()
     )
+
+
+def test_settings_normalize_cover_letter_output_settings_recovers_crossed_values():
+    import services.settings as settings_module
+
+    folder, pattern = settings_module.normalize_cover_letter_output_settings(
+        "CL_{company}.txt",
+        "/Users/hunter/Documents/Job Application Agent/Cover Letters",
+    )
+
+    assert folder == settings_module.get_default_cover_letter_output_folder()
+    assert pattern == settings_module.get_default_cover_letter_filename_pattern()
+
+
+def test_settings_save_settings_recovers_crossed_cover_letter_values(temp_db_path, monkeypatch):
+    import services.settings as settings_module
+
+    monkeypatch.setattr(
+        settings_module,
+        "db_connection",
+        __import__("services.db", fromlist=["db_connection"]).db_connection,
+        raising=False,
+    )
+
+    saved = settings_module.save_settings(
+        {
+            "cover_letter_output_folder": "CL_{company}.txt",
+            "cover_letter_filename_pattern": "/tmp/cover-letters",
+        }
+    )
+
+    assert saved["cover_letter_output_folder"] == settings_module.get_default_cover_letter_output_folder()
+    assert saved["cover_letter_filename_pattern"] == settings_module.get_default_cover_letter_filename_pattern()
