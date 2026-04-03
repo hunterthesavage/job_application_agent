@@ -35,30 +35,22 @@
 
 ## macOS Setup
 
-### Option 1: Recommended macOS DMG
+### Option 1) Download The macOS Disk Image
 
-Primary Mac download:
-
-- [macOS DMG 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgent-macos-desktop-wrapper-1.0.2.dmg)
-
-#### Step-by-step
-
-1. Open the downloaded `.dmg`.
-2. Drag `Job Application Agent.app` into `Applications`, then open it from `Applications`.
+1. Downloaded [macOS DMG 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgent-macos-desktop-wrapper-1.0.2.dmg).
+2. Double-click on `Job Application Agent`
    ![Mac DMG step 1 - Open the app](docs/assets/mac-dmg-step-1-open-app.png)
 3. On first launch, macOS may block the app and show a security warning. Click `Done` for now.
    ![Mac DMG step 2 - Security warning](docs/assets/mac-dmg-step-2-security-warning.png)
 4. Open `System Settings -> Privacy & Security`, scroll down to the `Allow applications...` area, and click `Open Anyway`.
    ![Mac DMG step 3 - Open anyway](docs/assets/mac-dmg-step-3-open-anyway.png)
-5. Return to the app and launch it again.
+5. The App should now launch
 
-### Option 2: macOS ZIP fallback
+### Option 2) Download The macOS Zip
 
 If the `.dmg` does not work on this machine, use the zip instead:
 
-- [macOS ZIP 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgent-macos-desktop-wrapper-1.0.2.zip)
-
-#### Step-by-step
+- [macOS Zip 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgent-macos-desktop-wrapper-1.0.2.zip)
 
 1. Download and unzip the fallback package.
 2. Move `Job Application Agent.app` into `Applications`.
@@ -81,43 +73,32 @@ cd ~ && ( [ -d job_application_agent/.git ] || git clone https://github.com/hunt
 
 ## Windows Setup
 
-### Option 1: Recommended Windows installer
+### Option 1) Step-By-Step Windows Install
 
-Primary Windows download:
-
-- [Windows Installer 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-setup-1.0.2.exe)
-
-#### Step-by-step
-
-1. Download `JobApplicationAgentDesktop-setup-1.0.2.exe`.
-2. After the download finishes, Windows may warn that the file is not commonly downloaded.
+1. Download [Windows Installer 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-setup-1.0.2.exe).
+2. After the download finishes, you may get this warning. Click the 3 dots `...` and choose Keep.
    ![Step 1 - Download warning](docs/assets/windows-installer-step-1b-download-warning.png)
-3. Open the downloads menu, then click `Keep`.
+3. You may also get this Trust warning. Click the drop down and choose 'Keep anyway'.
    ![Step 2 - Keep the installer](docs/assets/windows-installer-step-2-keep-menu.png)
-4. If Windows asks for a second confirmation, choose `Keep anyway`.
+4. If the Microsoft Defender comes up, choose `More Info`.
    ![Step 3 - Keep anyway confirm](docs/assets/windows-installer-step-3-more-info.png)
-5. Double-click `JobApplicationAgentDesktop-setup-1.0.2.exe` to launch it.
-6. Windows Defender SmartScreen may block the first run because the installer is unsigned. If you see the blue protection screen, click `More info`.
-   ![Step 4 - SmartScreen initial prompt](docs/assets/windows-installer-step-1-smartscreen-initial.png)
-7. Click `Run anyway`.
+5. Click `Run anyway`.
    ![Step 5 - SmartScreen run anyway](docs/assets/windows-installer-step-3b-run-anyway.png)
-8. Walk through the installer. The default Start Menu folder and install location are fine for most testers.
+6. Walk through the installer. The default Start Menu folder and install location are fine in most cases.
    ![Step 6 - Installer path](docs/assets/windows-installer-step-4-start-menu-folder.png)
-9. Finish the installer and launch the app from the new shortcut or Start Menu entry.
-
-The app should open as its own desktop window.
+9. Finishing the installer should launch the App. Note: you should not have to go through the Security steps once it's installed.
 
 > These prompts are expected right now because the installer is not code-signed yet.
 >
 > Your app data is stored separately from the install folder, so reinstalling does not wipe your jobs or settings unless you remove the app data folder too.
 
-### Option 2: Windows ZIP fallback
+### Option 2) Download The Windows Zip
 
 If the installer does not work on this machine, use the zip instead:
 
-- [Windows ZIP 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-windows-1.0.2.zip)
+- [Windows Zip 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-windows-1.0.2.zip)
 
-#### Step-by-step
+### Step-By-Step Windows Zip Fallback
 
 1. Download the Windows zip package.
    ![Windows zip step 1 - Download](docs/assets/windows-step-1-download.png)
@@ -161,9 +142,7 @@ More details:
 
 </details>
 
----
-
-## First Launch
+## First launch
 
 On first launch, the app should open to the Setup Wizard when there are no jobs and setup has not been completed.
 
