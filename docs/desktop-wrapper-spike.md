@@ -38,6 +38,7 @@ The build now outputs:
 ```text
 dist/Job Application Agent.app
 dist/desktop-wrapper-release/JobApplicationAgent-macos-desktop-wrapper-<version>.zip
+dist/desktop-wrapper-release/JobApplicationAgent-macos-desktop-wrapper-<version>.dmg
 ```
 
 ## First Windows Wrapper Build

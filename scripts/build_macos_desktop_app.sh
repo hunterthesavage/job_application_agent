@@ -27,6 +27,10 @@ APP_BUNDLE_PATH="dist/${APP_NAME}.app"
 RELEASE_DIR="dist/desktop-wrapper-release"
 ZIP_NAME="JobApplicationAgent-macos-desktop-wrapper-${APP_VERSION}.zip"
 ZIP_PATH="${RELEASE_DIR}/${ZIP_NAME}"
+DMG_NAME="JobApplicationAgent-macos-desktop-wrapper-${APP_VERSION}.dmg"
+DMG_PATH="${RELEASE_DIR}/${DMG_NAME}"
+DMG_STAGING_DIR="build/dmg-staging"
+DMG_VOLUME_NAME="${APP_NAME} ${APP_VERSION}"
 
 if ! python -c "import PyInstaller" >/dev/null 2>&1; then
   echo "==> Installing PyInstaller into the local virtual environment"
@@ -85,9 +89,25 @@ mkdir -p "${RELEASE_DIR}"
 rm -f "${ZIP_PATH}"
 ditto -c -k --sequesterRsrc --keepParent "${APP_BUNDLE_PATH}" "${ZIP_PATH}"
 
+echo "==> Packaging macOS desktop app dmg"
+rm -rf "${DMG_STAGING_DIR}"
+mkdir -p "${DMG_STAGING_DIR}"
+cp -R "${APP_BUNDLE_PATH}" "${DMG_STAGING_DIR}/"
+ln -s /Applications "${DMG_STAGING_DIR}/Applications"
+rm -f "${DMG_PATH}"
+hdiutil create \
+  -volname "${DMG_VOLUME_NAME}" \
+  -srcfolder "${DMG_STAGING_DIR}" \
+  -ov \
+  -format UDZO \
+  "${DMG_PATH}"
+
 echo
 echo "Desktop app bundle created at:"
 echo "${APP_BUNDLE_PATH}"
 echo
 echo "Desktop app zip created at:"
 echo "${ZIP_PATH}"
+echo
+echo "Desktop app dmg created at:"
+echo "${DMG_PATH}"
