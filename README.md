@@ -41,9 +41,9 @@ Current release: **1.0.2**
 
 ### Option 1) Download The macOS Disk Image
 
-1. Open the downloaded [macOS DMG 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgent-macos-desktop-wrapper-1.0.2.dmg).
+1. Downloaded [macOS DMG 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgent-macos-desktop-wrapper-1.0.2.dmg).
 
-2. Drag `Job Application Agent.app` into `Applications`, then open it from `Applications`.
+2. Double-click on `Job Application Agent`
    ![Mac DMG step 1 - Open the app](docs/assets/mac-dmg-step-1-open-app.png)
 
 3. On first launch, macOS may block the app and show a security warning. Click `Done` for now.
