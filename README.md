@@ -82,32 +82,31 @@ If the installer does not work on this machine, use the zip instead:
 
 - [Windows Zip 1.0.2](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-windows-1.0.2.zip)
 
-### Step 2) Keep The Installer If Windows Flags It
+### Step-By-Step Windows Install
 
-1. After the download finishes, Windows may warn that the installer is not commonly downloaded.
-   ![Step 2.1 - Download warning](docs/assets/windows-installer-step-1b-download-warning.png)
+1. Download `JobApplicationAgentDesktop-setup-1.0.2.exe`.
 
-2. Open the downloads flyout menu and click `Keep`.
-   ![Step 2.2 - Keep the installer](docs/assets/windows-installer-step-2-keep-menu.png)
+2. After the download finishes, Windows may warn that the file is not commonly downloaded.
+   ![Step 1 - Download warning](docs/assets/windows-installer-step-1b-download-warning.png)
 
-3. If Windows shows a second confirmation, use the menu and choose `Keep anyway`.
-   ![Step 2.3 - Keep anyway confirm](docs/assets/windows-installer-step-3-more-info.png)
+3. Open the downloads menu, then click `Keep`.
+   ![Step 2 - Keep the installer](docs/assets/windows-installer-step-2-keep-menu.png)
 
-### Step 3) Run The Installer
+4. If Windows asks for a second confirmation, choose `Keep anyway`.
+   ![Step 3 - Keep anyway confirm](docs/assets/windows-installer-step-3-more-info.png)
 
-1. Double-click `JobApplicationAgentDesktop-setup-1.0.2.exe`.
+5. Double-click `JobApplicationAgentDesktop-setup-1.0.2.exe` to launch it.
 
-2. Windows Defender SmartScreen may block the first run because the installer is unsigned. Depending on your Windows version, the first prompt may look a little different.
-   ![Step 3.1 - SmartScreen initial prompt](docs/assets/windows-installer-step-1-smartscreen-initial.png)
-   ![Step 3.2 - SmartScreen alternate prompt](docs/assets/windows-installer-step-3-more-info.png)
+6. Windows Defender SmartScreen may block the first run because the installer is unsigned. If you see the blue protection screen, click `More info`.
+   ![Step 4 - SmartScreen initial prompt](docs/assets/windows-installer-step-1-smartscreen-initial.png)
 
-3. Click `More info`, then click `Run anyway`.
-   ![Step 3.3 - SmartScreen run anyway](docs/assets/windows-installer-step-3b-run-anyway.png)
+7. Click `Run anyway`.
+   ![Step 5 - SmartScreen run anyway](docs/assets/windows-installer-step-3b-run-anyway.png)
 
-4. Walk through the installer. The default install path and Start Menu folder are fine for most testers.
-   ![Step 3.4 - Installer path](docs/assets/windows-installer-step-4-start-menu-folder.png)
+8. Walk through the installer. The default Start Menu folder and install location are fine for most testers.
+   ![Step 6 - Installer path](docs/assets/windows-installer-step-4-start-menu-folder.png)
 
-5. Finish the installer and launch the app from the new shortcut or Start Menu entry.
+9. Finish the installer and launch the app from the new shortcut or Start Menu entry.
 
 The app should open as its own desktop window.
 
