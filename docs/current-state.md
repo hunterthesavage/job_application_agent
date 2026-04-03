@@ -6,7 +6,7 @@ Job Application Agent is a local-first Streamlit app for discovering, validating
 The current product is designed around a single-user workflow on a local machine, with SQLite as the primary system of record and optional OpenAI support for title suggestions and cover-letter-related workflows.
 
 ## Current release
-- Version: `1.0.3`
+- Version: `1.0.4`
 
 ## What is working now
 
@@ -32,21 +32,16 @@ Current steps:
 The wizard saves settings progressively and can trigger the first real pipeline run by queueing a `discover_and_ingest` action.
 
 ### Pipeline
-The Pipeline view is the operator console for the app.
+The Pipeline view is now intentionally simpler.
+
+Current sections:
+- `Find Roles`
+- `Search Results`
 
 Current capabilities:
 - Edit and save run inputs
-- Find and Add Jobs
-- Find Job Links Only
-- Add Saved Job Links
-- Add Pasted Job Links
-- Rescore Existing Jobs
-- View search summary
-- View generated search queries
-- View fallback Google search links
-- View source registry summary
-- View recent job runs
-- View last run monitor
+- Run the main search flow from `Find Roles`
+- View latest run summary and diagnostics in `Search Results`
 
 ### Discovery and ingest runtime
 Current pipeline flow:
@@ -64,15 +59,11 @@ Current pipeline flow:
 ### OpenAI-backed actions in the current UI
 Current user-visible actions that can call OpenAI:
 - `✍ Cover Letter`
-- `Find and Add Jobs`
-- `Find Job Links Only`
-- `Add Saved Job Links`
-- `Add Pasted Job Links`
-- `Rescore Existing Jobs`
+- `Find Roles`
 
 Important distinction:
-- `Cover Letter` and `Rescore Existing Jobs` are direct OpenAI actions
-- the Pipeline run buttons are mixed flows where OpenAI is only one part of the overall process
+- `Cover Letter` is a direct OpenAI action
+- `Find Roles` is a mixed flow where OpenAI is only one part of the overall process
 
 Current OpenAI usage in those flows:
 - title expansion during discovery

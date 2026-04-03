@@ -7,6 +7,14 @@ This project follows semantic versioning:
 - `MINOR` for meaningful new capabilities that keep the product recognizably the same
 - `PATCH` for bug fixes, polish, install improvements, and small workflow refinements
 
+## [1.0.4] - 2026-04-03
+
+- Simplified Pipeline down to `Find Roles` and `Search Results` so the main search path is easier to understand.
+- Removed the extra internal-facing Pipeline sections and debated link-only import actions from the main user flow.
+- Simplified Settings `System Status` down to health, backups, restore, and reset.
+- Switched `Configuration` to auto-save so settings changes persist immediately without a separate save step.
+- Changed the default `New Roles` sort to `Newest First`.
+
 ## [1.0.3] - 2026-04-03
 
 - Fixed the Source Layer tab crash caused by a missing `os` import in Settings.

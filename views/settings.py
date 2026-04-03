@@ -344,6 +344,115 @@ def apply_configuration_defaults_to_session(
     ) + 1
 
 
+def _get_configuration_state(settings: dict[str, str]) -> dict[str, str]:
+    return {
+        "cover_letter_output_folder": str(
+            settings.get("cover_letter_output_folder", DEFAULT_SETTINGS["cover_letter_output_folder"]) or ""
+        ),
+        "cover_letter_filename_pattern": str(
+            settings.get("cover_letter_filename_pattern", DEFAULT_SETTINGS["cover_letter_filename_pattern"]) or ""
+        ),
+        "default_min_fit_score": str(settings.get("default_min_fit_score", "Any") or "Any"),
+        "default_jobs_per_page": str(settings.get("default_jobs_per_page", "10") or "10"),
+        "default_new_roles_sort": str(settings.get("default_new_roles_sort", "Newest First") or "Newest First"),
+        "preferred_job_levels": str(settings.get("preferred_job_levels", "") or ""),
+        "auto_run_enabled": "true" if str_to_bool(settings.get("auto_run_enabled", "false")) else "false",
+        "auto_run_frequency": str(settings.get("auto_run_frequency", "off") or "off"),
+        "auto_run_time": parse_auto_run_time(str(settings.get("auto_run_time", "08:00") or "08:00"))[2],
+        "auto_run_days": serialize_auto_run_days(parse_auto_run_days(settings.get("auto_run_days", "mon,tue,wed,thu,fri"))),
+    }
+
+
+def _get_staged_configuration_state(settings: dict[str, str]) -> dict[str, str]:
+    normalized_folder, normalized_pattern = normalize_cover_letter_output_settings(
+        st.session_state.get("settings_cover_letter_output_folder_value", DEFAULT_SETTINGS["cover_letter_output_folder"]),
+        st.session_state.get("settings_cover_letter_filename_pattern_value", DEFAULT_SETTINGS["cover_letter_filename_pattern"]),
+    )
+    selected_time_value = st.session_state.get(
+        "settings_auto_run_time_value",
+        parse_auto_run_time_value(settings.get("auto_run_time", "08:00")),
+    )
+    selected_time_text = (
+        selected_time_value.strftime("%H:%M")
+        if isinstance(selected_time_value, dt_time)
+        else parse_auto_run_time(str(settings.get("auto_run_time", "08:00") or "08:00"))[2]
+    )
+    selected_enabled = bool(
+        st.session_state.get(
+            "settings_auto_run_enabled_value",
+            str_to_bool(settings.get("auto_run_enabled", "false")),
+        )
+    )
+    selected_frequency_label = str(
+        st.session_state.get("settings_auto_run_frequency_value", "Daily") or "Daily"
+    )
+    selected_frequency = AUTO_RUN_FREQUENCY_OPTIONS.get(selected_frequency_label, "daily")
+
+    if selected_frequency == "custom_weekly":
+        selected_days = [
+            value
+            for label, value in WEEKDAY_OPTIONS
+            if label in st.session_state.get("settings_auto_run_days_label_value", [])
+        ]
+    elif selected_frequency == "weekdays":
+        selected_days = ["mon", "tue", "wed", "thu", "fri"]
+    else:
+        selected_days = parse_auto_run_days(settings.get("auto_run_days", "mon,tue,wed,thu,fri"))
+
+    return {
+        "cover_letter_output_folder": str(normalized_folder),
+        "cover_letter_filename_pattern": str(normalized_pattern),
+        "default_min_fit_score": str(st.session_state.get("settings_default_min_fit_score_value", settings.get("default_min_fit_score", "Any"))),
+        "default_jobs_per_page": str(st.session_state.get("settings_default_jobs_per_page_value", settings.get("default_jobs_per_page", "10"))),
+        "default_new_roles_sort": str(st.session_state.get("settings_default_new_roles_sort_value", settings.get("default_new_roles_sort", "Newest First"))),
+        "preferred_job_levels": serialize_preferred_job_levels(
+            st.session_state.get(
+                "settings_preferred_job_levels_value",
+                parse_preferred_job_levels(settings.get("preferred_job_levels", "")),
+            )
+        ),
+        "auto_run_enabled": "true" if selected_enabled else "false",
+        "auto_run_frequency": selected_frequency if selected_enabled else "off",
+        "auto_run_time": selected_time_text,
+        "auto_run_days": serialize_auto_run_days(selected_days),
+    }
+
+
+def _save_configuration_changes(settings: dict[str, str], *, show_success_notice: bool = True) -> None:
+    payload = _get_staged_configuration_state(settings)
+
+    if payload == _get_configuration_state(settings):
+        return
+
+    saved_settings = save_settings(payload)
+    apply_configuration_defaults_to_session(
+        default_min_fit_score=payload["default_min_fit_score"],
+        default_jobs_per_page=payload["default_jobs_per_page"],
+    )
+    schedule_result = configure_auto_run_schedule(saved_settings)
+
+    st.session_state["settings_cover_letter_output_folder_value"] = saved_settings["cover_letter_output_folder"]
+    st.session_state["settings_cover_letter_filename_pattern_value"] = saved_settings["cover_letter_filename_pattern"]
+
+    if schedule_result.get("ok") and show_success_notice:
+        st.session_state["settings_configuration_notice"] = {
+            "kind": "success",
+            "message": "Configuration saved automatically.",
+        }
+    elif not schedule_result.get("ok"):
+        st.session_state["settings_configuration_notice"] = {
+            "kind": "warning",
+            "message": schedule_result.get(
+                "detail",
+                "Configuration saved, but the automatic run scheduler could not be updated.",
+            ),
+        }
+
+
+def _autosave_configuration_from_session() -> None:
+    _save_configuration_changes(load_settings(), show_success_notice=False)
+
+
 def _label_from_health_status(value: str) -> str:
     normalized = str(value or "").strip().lower()
     if normalized in {"ok", "healthy", "ready", "pass", "passed"}:
@@ -611,37 +720,34 @@ def _render_maintenance_notice() -> None:
     )
 
 
-def _render_status_overview(*, show_internal_search_tools: bool = False) -> None:
+def _render_status_overview() -> None:
     status = get_system_status()
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Jobs", status["jobs_total"])
-    c2.metric("New Roles", status["jobs_new"])
-    c3.metric("Applied", status["jobs_applied"])
-    c4.metric("Removed", status["removed_total"])
-
-    st.markdown("#### App Status")
-    st.write(f"- Latest backup: {status.get('latest_backup_path', '—')}")
-    st.write(
-        f"- OpenAI API key: {status.get('openai_api_key_status', 'Unknown')} | "
-        f"{status.get('openai_api_key_source', 'Unknown source')} | "
-        f"{status.get('openai_api_key_masked', 'Not saved')}"
-    )
-    st.write(f"- Last cover letter: {status['last_cover_letter_path']}")
-    st.write(f"- Last cover letter time: {status['last_cover_letter_at']}")
-    st.write(f"- Last import: {status['last_import_at']}")
-    st.write(f"- Last import status: {status['last_import_status']}")
-
-    st.markdown("#### Health Status")
-    st.caption("Run this when you want to confirm the local install is healthy before sharing it or troubleshooting it.")
-
-    st.markdown("### Backup and Maintenance")
-    st.caption("Backups and restores change local app data only. Create Backup makes a timestamped copy. Restore Latest Backup replaces the current local database with the newest saved backup.")
-    _render_maintenance_notice()
-    b1, b2, b3 = st.columns(3)
     latest_backup = get_latest_backup()
 
-    with b1:
+    st.markdown("### System Status")
+    st.caption(f"{APP_NAME} {APP_VERSION}")
+    st.caption(f"Database path: {DATABASE_PATH}")
+    st.caption(f"Latest backup: {status.get('latest_backup_path', '—')}")
+
+    _render_maintenance_notice()
+
+    st.markdown("### Run Health")
+    st.caption("Use this when you want to confirm the local app is healthy before troubleshooting or sharing it.")
+
+    health_col, backup_col, restore_col = st.columns(3)
+    with health_col:
+        if st.button(
+            "Run Health Check",
+            use_container_width=True,
+            type="secondary",
+            help="Run a local diagnostic sweep across the database, backups, key status, and cover letter output path.",
+        ):
+            with st.spinner("Running health check..."):
+                result = run_health_check()
+            st.session_state["settings_last_health_check_result"] = result
+            st.rerun()
+
+    with backup_col:
         if st.button(
             "Create Backup",
             use_container_width=True,
@@ -651,7 +757,6 @@ def _render_status_overview(*, show_internal_search_tools: bool = False) -> None
             try:
                 with st.spinner("Creating backup..."):
                     backup_path = backup_database()
-
                 st.session_state["settings_maintenance_notice"] = {
                     "kind": "success",
                     "message": "Backup created.",
@@ -662,20 +767,7 @@ def _render_status_overview(*, show_internal_search_tools: bool = False) -> None
                 st.error("Backup failed.")
                 st.text(str(exc))
 
-    with b2:
-        if st.button(
-            "Run Health Check",
-            use_container_width=True,
-            type="secondary",
-            help="Run a local diagnostic sweep across the database, backups, key status, and cover letter output path.",
-        ):
-            with st.spinner("Running health check..."):
-                result = run_health_check()
-
-            st.session_state["settings_last_health_check_result"] = result
-            st.rerun()
-
-    with b3:
+    with restore_col:
         restore_confirmed = bool(st.session_state.get("settings_confirm_restore_latest_backup", False))
         restore_label = "Confirm Restore" if restore_confirmed else "Restore Latest Backup"
         if st.button(
@@ -696,7 +788,6 @@ def _render_status_overview(*, show_internal_search_tools: bool = False) -> None
             try:
                 with st.spinner("Restoring latest backup..."):
                     restored_from = restore_latest_backup()
-
                 st.session_state["settings_maintenance_notice"] = {
                     "kind": "success",
                     "message": "Latest backup restored.",
@@ -716,123 +807,6 @@ def _render_status_overview(*, show_internal_search_tools: bool = False) -> None
     if isinstance(last_health_check_result, dict):
         st.markdown("---")
         _render_health_check_result(last_health_check_result)
-
-    if show_internal_search_tools:
-        st.markdown("---")
-        st.markdown("#### Internal Maintenance")
-        st.caption("Use this hidden internal area when you want to run secondary discovery/import actions or refresh existing jobs with the latest parser, AI scoring, and scrub rules.")
-
-        internal_busy = app_is_busy()
-        saved_job_links_exist = Path(JOB_URLS_FILE).exists()
-
-        action_left, action_right = st.columns(2)
-        with action_left:
-            if st.button(
-                "Find Job Links Only",
-                use_container_width=True,
-                type="secondary",
-                disabled=internal_busy,
-                key="settings_discover_only",
-            ):
-                queue_action(
-                    "pipeline",
-                    "discover_only",
-                    payload={"use_ai_title_expansion": True},
-                    label="Find Job Links Only",
-                )
-                st.session_state["top_nav_selection"] = "Pipeline"
-                st.session_state["pipeline_subnav_selection"] = "Run Jobs"
-                st.rerun()
-        with action_right:
-            if st.button(
-                "Add Saved Job Links",
-                use_container_width=True,
-                type="secondary",
-                disabled=internal_busy or (not saved_job_links_exist),
-                key="settings_ingest_saved",
-                help=(
-                    "Saved job links file found and ready to import."
-                    if saved_job_links_exist
-                    else "No saved job links file exists yet. Run discovery first or paste job links."
-                ),
-            ):
-                queue_action(
-                    "pipeline",
-                    "ingest_saved",
-                    payload={"use_ai_scoring": True},
-                    label="Add Saved Job Links",
-                )
-                st.session_state["top_nav_selection"] = "Pipeline"
-                st.session_state["pipeline_subnav_selection"] = "Run Jobs"
-                st.rerun()
-
-        rescore_left, rescore_right = st.columns(2)
-        with rescore_left:
-            selected_rescore_label = st.selectbox(
-                "Rescore Range",
-                options=[label for label, _ in RESCORE_LIMIT_OPTIONS],
-                index=1,
-                key="settings_rescore_limit",
-                help="Use a smaller batch for faster maintenance runs. Choose All only when you want to refresh the full backlog.",
-            )
-        selected_rescore_limit = dict(RESCORE_LIMIT_OPTIONS).get(selected_rescore_label, 50)
-
-        with rescore_right:
-            selected_stale_label = st.selectbox(
-                "Rescore Age",
-                options=[label for label, _ in RESCORE_STALE_OPTIONS],
-                index=1,
-                key="settings_rescore_stale_age",
-                help="Use this to avoid spending AI calls on jobs that were refreshed recently.",
-            )
-        selected_stale_days = dict(RESCORE_STALE_OPTIONS).get(selected_stale_label, 7)
-
-        ai_ready_for_rescore = has_openai_api_key()
-        matching_jobs = count_jobs_for_rescoring(stale_days=selected_stale_days or None)
-        selected_jobs = matching_jobs if selected_rescore_limit == 0 else min(matching_jobs, selected_rescore_limit)
-        st.caption(
-            f"Current rescore policy matches {matching_jobs} jobs. "
-            f"This run will process {selected_jobs}."
-        )
-        if not ai_ready_for_rescore:
-            st.caption("Add an OpenAI API key in Settings -> OpenAI API to enable batch rescoring.")
-
-        if st.button(
-            "Rescore Existing Jobs",
-            use_container_width=False,
-            type="secondary",
-            disabled=not ai_ready_for_rescore,
-            key="settings_rescore_existing_jobs",
-            help=(
-                "Refresh existing jobs with current AI scoring and scrub rules."
-                if ai_ready_for_rescore
-                else "No OpenAI API key is configured. Add one in Settings > OpenAI API."
-            ),
-        ):
-            try:
-                with st.spinner("Refreshing and rescoring existing jobs..."):
-                    result = rescore_existing_jobs(
-                        limit=selected_rescore_limit,
-                        stale_days=selected_stale_days,
-                    )
-                rescored_count = int(result.get("rescored_count", 0) or 0)
-                errors = int(result.get("errors", 0) or 0)
-                st.session_state["settings_maintenance_notice"] = {
-                    "kind": "success" if rescored_count > 0 else "warning",
-                    "message": (
-                        f"Refreshed and rescored {rescored_count} existing jobs."
-                        if rescored_count > 0
-                        else "No existing jobs were available to refresh and rescore."
-                    ),
-                    "details": f"Errors: {errors}",
-                }
-            except Exception as exc:
-                st.session_state["settings_maintenance_notice"] = {
-                    "kind": "error",
-                    "message": "Existing job refresh failed.",
-                    "details": str(exc),
-                }
-            st.rerun()
 
     _render_reset_app_section()
 
@@ -1100,60 +1074,60 @@ def _render_status_source_layer() -> None:
 
 def render_system_status_tab() -> None:
     _inject_settings_css()
-    settings = load_settings()
-    show_internal_search_tools = str_to_bool(settings.get("show_internal_search_tools", "false"))
-    status_nav_options = _get_status_nav_options(show_internal_search_tools=show_internal_search_tools)
-    initialize_nav_state("settings_status_subnav_selection", status_nav_options[0])
-
-    st.markdown("### System Status")
-    st.caption("Use this area for maintenance, local app health, and launch tracking.")
-    st.caption(f"{APP_NAME} version {APP_VERSION}")
-    st.caption(f"Database path: {DATABASE_PATH}")
-
-    if "settings_show_internal_search_tools_value" not in st.session_state:
-        st.session_state["settings_show_internal_search_tools_value"] = show_internal_search_tools
-
-    st.toggle(
-        "Show Internal Search Tools",
-        key="settings_show_internal_search_tools_value",
-        help="Internal-only testing toggle. Turn this on when you want Source Layer diagnostics and backlog views visible in Settings.",
-        on_change=_save_internal_search_tools_visibility,
-    )
-
-    internal_tools_notice = st.session_state.pop("settings_internal_search_tools_notice", "")
-    if internal_tools_notice:
-        st.caption(internal_tools_notice)
-
-    selected_status_section = render_button_nav(
-        options=status_nav_options,
-        state_key="settings_status_subnav_selection",
-        key_prefix="settings_status_subnav",
-        selected_button_type="tertiary",
-    )
-    st.markdown("<div style='height: 0.6rem;'></div>", unsafe_allow_html=True)
-
-    if selected_status_section == "Backlog":
-        _render_status_backlog()
-    elif selected_status_section == "Source Layer":
-        _render_status_source_layer()
-    else:
-        _render_status_overview(show_internal_search_tools=show_internal_search_tools)
+    _render_status_overview()
 
 
 def render_configuration_tab(settings: dict[str, str]) -> None:
-    st.markdown("### Cover Letter Output")
-    st.caption("This only affects generated cover letters. Discovery and AI scoring still work without it.")
-    st.caption(f"If you do nothing, letters will go here by default: {get_default_cover_letter_output_folder()}")
+    st.markdown("### Configuration")
+    st.caption("Set the defaults the app should use for letters, list views, and automatic runs.")
+
+    current_fit = str(settings.get("default_min_fit_score", "75"))
+    if current_fit not in FIT_OPTIONS:
+        current_fit = "75"
+
+    current_page_size = str(settings.get("default_jobs_per_page", "10"))
+    if current_page_size not in PAGE_SIZE_OPTIONS:
+        current_page_size = "10"
+
+    current_new_roles_sort = str(settings.get("default_new_roles_sort", "Newest First"))
+    if current_new_roles_sort not in NEW_ROLES_SORT_OPTIONS:
+        current_new_roles_sort = "Newest First"
+
+    saved_levels = parse_preferred_job_levels(settings.get("preferred_job_levels", ""))
+    current_auto_run_enabled = str_to_bool(settings.get("auto_run_enabled", "false"))
+    current_auto_run_frequency = str(settings.get("auto_run_frequency", "off") or "off")
+    current_auto_run_time = str(settings.get("auto_run_time", "08:00") or "08:00")
+    current_auto_run_days = parse_auto_run_days(settings.get("auto_run_days", "mon,tue,wed,thu,fri"))
+
+    if "settings_default_min_fit_score_value" not in st.session_state:
+        st.session_state["settings_default_min_fit_score_value"] = current_fit
+    if "settings_default_jobs_per_page_value" not in st.session_state:
+        st.session_state["settings_default_jobs_per_page_value"] = current_page_size
+    if "settings_default_new_roles_sort_value" not in st.session_state:
+        st.session_state["settings_default_new_roles_sort_value"] = current_new_roles_sort
+    if "settings_preferred_job_levels_value" not in st.session_state:
+        st.session_state["settings_preferred_job_levels_value"] = saved_levels
+    if "settings_auto_run_days_label_value" not in st.session_state:
+        st.session_state["settings_auto_run_days_label_value"] = [
+            label for label, value in WEEKDAY_OPTIONS if value in current_auto_run_days
+        ]
+
+    config_notice = st.session_state.pop("settings_configuration_notice", None)
+    if isinstance(config_notice, dict):
+        kind = str(config_notice.get("kind", "info") or "info").strip().lower()
+        message = str(config_notice.get("message", "") or "").strip()
+        if message:
+            if kind == "success":
+                st.success(message)
+            elif kind == "warning":
+                st.warning(message)
+            else:
+                st.info(message)
 
     folder_col, browse_col = st.columns([5, 1.2])
-
     with browse_col:
         st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
-        browse_clicked = st.button(
-            "Browse",
-            use_container_width=True,
-            key="browse_cover_letter_folder",
-        )
+        browse_clicked = st.button("Browse", use_container_width=True, key="browse_cover_letter_folder")
 
     if browse_clicked:
         current_folder = st.session_state.get(
@@ -1165,22 +1139,13 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             title="Select Cover Letter Output Folder",
         )
         if picker_error:
-            st.session_state["cover_letter_output_settings_saved_message"] = (
-                f"Could not open folder picker: {picker_error}"
-            )
-        st.session_state["settings_cover_letter_output_folder_value"] = selected_folder
-
-        try:
-            saved_settings = save_cover_letter_output_settings(
-                st.session_state["settings_cover_letter_output_folder_value"],
-                st.session_state["settings_cover_letter_filename_pattern_value"],
-            )
-            st.session_state["settings_cover_letter_output_folder_value"] = saved_settings["cover_letter_output_folder"]
-            st.session_state["settings_cover_letter_filename_pattern_value"] = saved_settings["cover_letter_filename_pattern"]
-            st.session_state["cover_letter_output_settings_saved_message"] = "Cover letter output folder saved."
-        except Exception as exc:
-            st.session_state["cover_letter_output_settings_saved_message"] = f"Failed to save folder: {exc}"
-
+            st.session_state["settings_configuration_notice"] = {
+                "kind": "warning",
+                "message": f"Could not open folder picker: {picker_error}",
+            }
+        else:
+            st.session_state["settings_cover_letter_output_folder_value"] = selected_folder
+            _save_configuration_changes(load_settings(), show_success_notice=False)
         st.rerun()
 
     with folder_col:
@@ -1188,95 +1153,57 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             "Cover Letter Output Folder",
             key="settings_cover_letter_output_folder_value",
             help="Folder where generated .txt cover letters will be saved.",
-            on_change=handle_cover_letter_folder_change,
+            on_change=_autosave_configuration_from_session,
         )
 
     resolved_folder = Path(
-        st.session_state.get(
-            "settings_cover_letter_output_folder_value",
-            DEFAULT_SETTINGS["cover_letter_output_folder"],
+        str(
+            st.session_state.get(
+                "settings_cover_letter_output_folder_value",
+                DEFAULT_SETTINGS["cover_letter_output_folder"],
+            )
+            or DEFAULT_SETTINGS["cover_letter_output_folder"]
         )
     ).expanduser()
     st.caption(f"Resolved output path: {resolved_folder}")
-    if not resolved_folder.exists():
-        st.info("This folder will be created automatically the first time you generate a cover letter.")
 
     st.text_input(
         "Cover Letter Filename Pattern",
         key="settings_cover_letter_filename_pattern_value",
-        help="Use placeholders like {company}, {title}, {date}. Example: CL_Hunter_Samuels_{company}.txt",
-        on_change=handle_cover_letter_pattern_change,
+        help="Use placeholders like {company}, {title}, {date}.",
+        on_change=_autosave_configuration_from_session,
     )
-
     st.caption("Available placeholders: {company}, {title}, {date}")
-
-    saved_message = st.session_state.get("cover_letter_output_settings_saved_message", "")
-    if saved_message:
-        if saved_message.lower().startswith("failed"):
-            st.error(saved_message)
-        else:
-            st.success(saved_message)
 
     st.markdown("---")
     st.markdown("### Page Defaults")
-
-    current_fit = str(settings.get("default_min_fit_score", "75"))
-    if current_fit not in FIT_OPTIONS:
-        current_fit = "75"
-
-    current_page_size = str(settings.get("default_jobs_per_page", "10"))
-    if current_page_size not in PAGE_SIZE_OPTIONS:
-        current_page_size = "10"
-
-    current_new_roles_sort = str(settings.get("default_new_roles_sort", "Highest Fit Score"))
-    if current_new_roles_sort not in NEW_ROLES_SORT_OPTIONS:
-        current_new_roles_sort = "Highest Fit Score"
-
-    saved_levels = parse_preferred_job_levels(settings.get("preferred_job_levels", ""))
-
-    if "settings_default_min_fit_score_value" not in st.session_state:
-        st.session_state["settings_default_min_fit_score_value"] = current_fit
-    if "settings_default_jobs_per_page_value" not in st.session_state:
-        st.session_state["settings_default_jobs_per_page_value"] = current_page_size
-    if "settings_default_new_roles_sort_value" not in st.session_state:
-        st.session_state["settings_default_new_roles_sort_value"] = current_new_roles_sort
-    if "settings_preferred_job_levels_value" not in st.session_state:
-        st.session_state["settings_preferred_job_levels_value"] = saved_levels
-
-    d1, d2, d3 = st.columns(3)
-
-    with d1:
+    defaults_left, defaults_center, defaults_right = st.columns(3)
+    with defaults_left:
         st.selectbox(
             "Default Minimum Fit Score",
             FIT_OPTIONS,
             key="settings_default_min_fit_score_value",
+            on_change=_autosave_configuration_from_session,
         )
-
-    with d2:
+    with defaults_center:
         st.selectbox(
             "Default Jobs Per Page",
             PAGE_SIZE_OPTIONS,
             key="settings_default_jobs_per_page_value",
+            on_change=_autosave_configuration_from_session,
         )
-
-    with d3:
+    with defaults_right:
         st.selectbox(
             "Default New Roles Sort",
             NEW_ROLES_SORT_OPTIONS,
             key="settings_default_new_roles_sort_value",
             help="Controls the default sort used when you open New Roles.",
+            on_change=_autosave_configuration_from_session,
         )
 
     st.markdown("---")
     st.markdown("### Automatic Job Runs")
-    st.caption(
-        "Use one schedule for the same Run Jobs flow the app uses manually. When this is on, the app can discover new jobs, refresh stale existing jobs, and re-run AI scoring in the background."
-    )
-
-    current_auto_run_enabled = str_to_bool(settings.get("auto_run_enabled", "false"))
-    current_auto_run_frequency = str(settings.get("auto_run_frequency", "off") or "off")
-    current_auto_run_time = str(settings.get("auto_run_time", "08:00") or "08:00")
-    current_auto_run_days = parse_auto_run_days(settings.get("auto_run_days", "mon,tue,wed,thu,fri"))
+    st.caption("Use one schedule for the same search the app runs manually.")
 
     auto_run_notice = st.session_state.pop("settings_auto_run_notice", None)
     if auto_run_notice:
@@ -1291,6 +1218,10 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
                 st.info(message)
 
     frequency_options = [label for label, value in AUTO_RUN_FREQUENCY_OPTIONS.items() if value != "off"]
+    current_frequency_label = next(
+        (label for label, value in AUTO_RUN_FREQUENCY_OPTIONS.items() if value == current_auto_run_frequency and value != "off"),
+        "Daily",
+    )
     weekday_labels = {value: label for label, value in WEEKDAY_OPTIONS}
 
     if bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)):
@@ -1303,21 +1234,21 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
         st.toggle(
             "Enable Automatic Job Runs",
             key="settings_auto_run_enabled_value",
-            help="When on, the app installs a background scheduler on this machine and runs the full Run Jobs flow at the time you choose below.",
+            on_change=_autosave_configuration_from_session,
         )
-
         st.selectbox(
             "Automatic Run Frequency",
             options=frequency_options,
             key="settings_auto_run_frequency_value",
             disabled=not bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)),
+            on_change=_autosave_configuration_from_session,
         )
-
         st.time_input(
             "Automatic Run Time",
             key="settings_auto_run_time_value",
             disabled=not bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)),
-            help="Local machine time. The background run uses this machine's time zone.",
+            help="Local machine time.",
+            on_change=_autosave_configuration_from_session,
         )
 
         selected_frequency_value = AUTO_RUN_FREQUENCY_OPTIONS.get(
@@ -1328,9 +1259,9 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             st.multiselect(
                 "Run On These Days",
                 options=[label for label, _ in WEEKDAY_OPTIONS],
-                default=[weekday_labels.get(day, day.title()) for day in current_auto_run_days],
                 key="settings_auto_run_days_label_value",
                 help="Choose one or more days for the weekly schedule.",
+                on_change=_autosave_configuration_from_session,
             )
             selected_auto_run_days = [
                 value
@@ -1344,23 +1275,6 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             selected_auto_run_days = current_auto_run_days or ["mon", "tue", "wed", "thu", "fri"]
 
     with schedule_right:
-        selected_time_value = st.session_state.get("settings_auto_run_time_value", parse_auto_run_time_value(current_auto_run_time))
-        selected_time_text = (
-            selected_time_value.strftime("%H:%M")
-            if isinstance(selected_time_value, dt_time)
-            else parse_auto_run_time(current_auto_run_time)[2]
-        )
-        selected_enabled = bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled))
-        selected_frequency = AUTO_RUN_FREQUENCY_OPTIONS.get(
-            str(st.session_state.get("settings_auto_run_frequency_value", "Daily")),
-            "daily",
-        )
-        staged_schedule = {
-            "auto_run_enabled": "true" if selected_enabled else "false",
-            "auto_run_frequency": selected_frequency if selected_enabled else "off",
-            "auto_run_time": selected_time_text,
-            "auto_run_days": serialize_auto_run_days(selected_auto_run_days),
-        }
         runtime_status = get_auto_run_runtime_status(settings)
         if str(settings.get("auto_run_last_summary", "") or "").strip():
             st.info(str(settings.get("auto_run_last_summary", "") or "").strip())
@@ -1370,97 +1284,19 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             st.caption(f"Last automatic run finished: {settings.get('auto_run_last_finished_at', '')}")
         if str(settings.get("auto_run_last_status", "") or "").strip():
             st.caption(f"Last automatic run status: {settings.get('auto_run_last_status', '')}")
-        if (not runtime_status["scheduler_supported"]) and selected_enabled:
+        if (not runtime_status["scheduler_supported"]) and bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)):
             st.warning(f"Automatic job runs are not supported on {runtime_status['platform']} yet.")
-
-    current_frequency_label = next(
-        (label for label, value in AUTO_RUN_FREQUENCY_OPTIONS.items() if value == current_auto_run_frequency and value != "off"),
-        "Daily",
-    )
-    current_time_text = parse_auto_run_time(current_auto_run_time)[2]
-    selected_time_text_for_compare = (
-        st.session_state.get("settings_auto_run_time_value", parse_auto_run_time_value(current_auto_run_time)).strftime("%H:%M")
-        if isinstance(st.session_state.get("settings_auto_run_time_value", parse_auto_run_time_value(current_auto_run_time)), dt_time)
-        else current_time_text
-    )
-    schedule_has_changes = any(
-        [
-            bool(st.session_state.get("settings_auto_run_enabled_value", current_auto_run_enabled)) != current_auto_run_enabled,
-            str(st.session_state.get("settings_auto_run_frequency_value", current_frequency_label)) != current_frequency_label,
-            selected_time_text_for_compare != current_time_text,
-            serialize_auto_run_days(selected_auto_run_days) != serialize_auto_run_days(current_auto_run_days),
-        ]
-    )
-
-    if st.button(
-        "Save Automatic Run Schedule",
-        type="primary",
-        use_container_width=False,
-        disabled=not schedule_has_changes,
-        key="settings_save_auto_run_schedule",
-    ):
-        saved_settings = save_settings(staged_schedule)
-        schedule_result = configure_auto_run_schedule(saved_settings)
-        if schedule_result.get("ok"):
-            st.session_state["settings_auto_run_notice"] = {
-                "kind": "success",
-                "message": schedule_result.get("detail", "Automatic job run schedule saved."),
-            }
-        else:
-            st.session_state["settings_auto_run_notice"] = {
-                "kind": "warning",
-                "message": schedule_result.get("detail", "Automatic job run schedule was saved, but the local scheduler could not be updated."),
-            }
-        st.rerun()
 
     st.markdown("---")
     st.markdown("### AI Scoring Preferences")
-
     st.multiselect(
         "Preferred Job Levels",
         options=JOB_LEVEL_OPTIONS,
         key="settings_preferred_job_levels_value",
         help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
+        on_change=_autosave_configuration_from_session,
     )
-
-    has_configuration_changes = any(
-        [
-            str(st.session_state.get("settings_default_min_fit_score_value", current_fit)) != str(settings.get("default_min_fit_score", "Any")),
-            str(st.session_state.get("settings_default_jobs_per_page_value", current_page_size)) != str(settings.get("default_jobs_per_page", "10")),
-            str(st.session_state.get("settings_default_new_roles_sort_value", current_new_roles_sort)) != str(settings.get("default_new_roles_sort", "Highest Fit Score")),
-            serialize_preferred_job_levels(st.session_state.get("settings_preferred_job_levels_value", saved_levels)) != str(settings.get("preferred_job_levels", "")),
-        ]
-    )
-
-    if st.button(
-        "Save Configuration",
-        type="primary",
-        use_container_width=False,
-        disabled=not has_configuration_changes,
-        key="settings_save_configuration_button",
-    ):
-        default_min_fit_score = str(st.session_state.get("settings_default_min_fit_score_value", current_fit))
-        default_jobs_per_page = str(st.session_state.get("settings_default_jobs_per_page_value", current_page_size))
-        default_new_roles_sort = str(st.session_state.get("settings_default_new_roles_sort_value", current_new_roles_sort))
-        preferred_job_levels = st.session_state.get("settings_preferred_job_levels_value", saved_levels)
-
-        with st.spinner("Saving configuration..."):
-            save_settings(
-                {
-                    "default_min_fit_score": str(default_min_fit_score),
-                    "default_jobs_per_page": str(default_jobs_per_page),
-                    "default_new_roles_sort": str(default_new_roles_sort),
-                    "preferred_job_levels": serialize_preferred_job_levels(preferred_job_levels),
-                }
-            )
-
-            apply_configuration_defaults_to_session(
-                default_min_fit_score=str(default_min_fit_score),
-                default_jobs_per_page=str(default_jobs_per_page),
-            )
-
-        st.success("Configuration saved.")
-        st.rerun()
+    st.caption("Changes on this page save automatically.")
 
 def render_profile_context_tab(settings: dict[str, str]) -> None:
     _inject_settings_css()
@@ -1706,7 +1542,6 @@ def render_settings() -> None:
     initialize_settings_state(settings)
     initialize_nav_state("settings_subnav_selection", "Configuration")
 
-    st.caption("Settings sections")
     selected_section = render_button_nav(
         selected_button_type="tertiary",
         options=SETTINGS_NAV_OPTIONS,

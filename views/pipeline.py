@@ -54,10 +54,8 @@ RESCORE_STALE_OPTIONS = [
 ]
 
 PIPELINE_NAV_OPTIONS = [
-    "Overview",
-    "Run Jobs",
-    "Results",
-    "Research",
+    "Find Roles",
+    "Search Results",
 ]
 
 PIPELINE_TITLE_SUGGESTION_MAX = 10
@@ -892,12 +890,12 @@ def _build_discover_and_ingest_flash(result: dict) -> tuple[str, str]:
                 parts.append(f"{updated_count} updated")
         if maintenance_changed_count > 0:
             parts.append(f"{maintenance_changed_count} existing refreshed")
-        return "success", f"✓ Run Jobs complete: {', '.join(parts)}"
+        return "success", f"✓ Find Roles complete: {', '.join(parts)}"
 
     if maintenance_changed_count > 0 or maintenance_refreshed_count > 0:
         if maintenance_changed_count > 0:
-            return "success", f"✓ Run Jobs complete: {maintenance_changed_count} existing jobs improved"
-        return "success", f"✓ Run Jobs complete: {maintenance_refreshed_count} existing jobs refreshed"
+            return "success", f"✓ Find Roles complete: {maintenance_changed_count} existing jobs improved"
+        return "success", f"✓ Find Roles complete: {maintenance_refreshed_count} existing jobs refreshed"
 
     if seen_urls == 0:
         return "warning", "No job URLs were discovered and no existing jobs needed maintenance. Try the fallback search links below or broaden your criteria."
@@ -1011,10 +1009,10 @@ def _maybe_route_after_run_jobs(result: dict) -> None:
 
     if wizard_redirect:
         st.session_state["top_nav_selection"] = "Pipeline"
-        st.session_state["pipeline_subnav_selection"] = "Overview"
+        st.session_state["pipeline_subnav_selection"] = "Search Results"
         st.session_state["_post_wizard_run_message"] = {
             "kind": "warning",
-            "text": "Your first discovery run did not add jobs yet. Review Pipeline for diagnostics and research tools.",
+            "text": "Your first search did not add jobs yet. Review Search Results for diagnostics.",
         }
 
 
@@ -1737,11 +1735,10 @@ def _render_run_inputs() -> None:
     )
 
     _render_section_shell(
-        "Run inputs",
-        "Tune what discovery looks for",
-        "Use this only when you want to change the shape of the search. If the current settings already look right, you can skip this and run jobs immediately.",
+        "Search setup",
+        "Adjust what the search looks for",
+        "Update these inputs only when you want to change the search shape.",
         compact=True,
-        step="1",
     )
 
     section_left, section_right = st.columns([1.45, 0.95], gap="large")
@@ -1811,7 +1808,7 @@ def _render_run_inputs() -> None:
             disabled=app_is_busy() or (not has_run_input_changes),
         )
 
-        st.caption("Save your search shape here first. AI can clean up titles and locations and write the improved inputs directly back into the fields.")
+        st.caption("Save changes here before you search. AI can clean up titles and locations and add likely variants directly into the fields.")
 
         if run_input_notice_message:
             if run_input_notice_level == "error":
@@ -1898,14 +1895,13 @@ def _render_run_inputs() -> None:
 def _render_action_deck() -> None:
     busy = app_is_busy()
     _render_section_shell(
-        "Recommended path",
-        "Find and add jobs in one pass",
-        "This is the normal workflow. Run Jobs discovers new links, refreshes stale existing jobs when needed, scores the strongest matches, and leaves New Roles ready for review.",
+        "Main action",
+        "Run one search and send matches to New Roles",
+        "This is the core workflow. Use it to discover, score, and queue the strongest roles for review.",
         compact=True,
-        step="2",
     )
     _render_pipeline_ai_chip()
-    if st.button("Run Jobs", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
+    if st.button("Find Roles", type="primary", use_container_width=True, disabled=busy, key="pipeline_primary_run"):
         st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
         queue_action(
             "pipeline",
@@ -1914,68 +1910,14 @@ def _render_action_deck() -> None:
                 "use_ai_title_expansion": True,
                 "use_ai_scoring": True,
             },
-            label="Run Jobs",
+            label="Find Roles",
         )
         st.rerun()
 
     st.markdown(
-        '<div class="pipeline-secondary-actions-note">Default path for most runs. Best for normal day-to-day discovery.</div>',
+        '<div class="pipeline-secondary-actions-note">Best for normal day-to-day searching.</div>',
         unsafe_allow_html=True,
     )
-    if st.button(
-        "Schedule automatic runs in Settings",
-        use_container_width=False,
-        key="pipeline_go_to_auto_runs",
-    ):
-        st.session_state["top_nav_selection"] = "Settings"
-        st.session_state["settings_subnav_selection"] = "Configuration"
-        st.rerun()
-
-    _close_section_shell()
-
-
-def _render_action_deck_manual_only() -> None:
-    manual_urls = st.session_state.get("pipeline_manual_urls", "")
-    has_manual_urls = bool(str(manual_urls or "").strip())
-
-    _render_section_shell(
-        "Manual import",
-        "Seed specific jobs or bring saved links into the app",
-        "Use this section when you want to test exact postings or import links you already discovered. This stays secondary to the main Run Jobs flow, but it should stay easy to reach.",
-        compact=True,
-        step="3",
-    )
-
-    st.markdown(
-        '<div class="pipeline-card-copy">Paste any specific job links here when you want to seed exact postings into the app without running the full search.</div>',
-        unsafe_allow_html=True,
-    )
-    st.text_area(
-        "Paste job links",
-        key="pipeline_manual_urls",
-        height=220,
-        placeholder="Paste one job URL per line",
-    )
-
-    if st.button(
-        "Add Job Links",
-        use_container_width=True,
-        disabled=app_is_busy() or (not has_manual_urls),
-        key="pipeline_ingest_pasted",
-        help="Paste one or more job links first." if not has_manual_urls else None,
-    ):
-        st.session_state["pipeline_run_started_at"] = datetime.now().isoformat()
-        queue_action(
-            "pipeline",
-            "ingest_pasted",
-            payload={
-                "manual_urls": manual_urls,
-                "use_ai_scoring": True,
-            },
-            label="Add Job Links",
-        )
-        st.rerun()
-
     _close_section_shell()
 
 
@@ -2024,8 +1966,6 @@ def _get_last_result_next_step_message(last_result: dict) -> str:
             return "Review New Roles and spot-check AI Fit Detail on the jobs that changed the most."
         if "Validation + ingestion complete." in output_text:
             return "Go to New Roles to review the strongest matches, then generate a cover letter or mark one as applied."
-        if "Job link discovery complete" in output_text:
-            return "Import the saved links next, or open Research if discovery felt lighter than expected."
     return ""
 
 
@@ -2115,13 +2055,13 @@ def _render_results_summary_card() -> None:
 
     if not latest_run and not last_result:
         _render_section_shell(
-            "Results",
-            "No pipeline results yet",
-            "Once you run discovery, import links, or rescore jobs, the summary and next-step guidance will show up here.",
+            "Search Results",
+            "No results yet",
+            "Run a search first, then this page will summarize what happened.",
             compact=True,
         )
-        if st.button("Go to Run Jobs", key="pipeline_results_empty_to_run_jobs", type="primary", use_container_width=True):
-            _navigate_pipeline_section("Run Jobs")
+        if st.button("Go to Find Roles", key="pipeline_results_empty_to_run_jobs", type="primary", use_container_width=True):
+            _navigate_pipeline_section("Find Roles")
         _close_section_shell()
         return
 
@@ -2136,9 +2076,9 @@ def _render_results_summary_card() -> None:
     current_search_strategy = str(load_settings().get("search_strategy", "broad_recall") or "broad_recall").strip().lower()
 
     _render_section_shell(
-        "Latest result",
-        "Start here before diving into diagnostics",
-        "This is the short decision view for the most recent run. It tells you whether the run was healthy and where you should go next.",
+        "Latest run",
+        "Start here",
+        "This is the quick read on the most recent search.",
         compact=True,
     )
 
@@ -2160,124 +2100,39 @@ def _render_results_summary_card() -> None:
     )
     if should_nudge_broader_search:
         st.info(
-            "Results looked light. Try Broader Search in Run Jobs if this role is sparse, senior, or harder to source."
+            "Results looked light. Try Broader Search in Find Roles if this role is sparse, senior, or harder to source."
         )
         if st.button(
-            "Go to Run Jobs",
+            "Go to Find Roles",
             key="pipeline_results_try_broader_search",
             use_container_width=True,
         ):
-            _navigate_pipeline_section("Run Jobs")
+            _navigate_pipeline_section("Find Roles")
 
     _render_more_results_expander()
 
     _close_section_shell()
 
 
-def _render_pipeline_overview_tab() -> None:
-    _render_subpage_intro(
-        "Overview",
-        "Start here before you run or review anything else",
-        "Use this page for a quick go or no-go check. If everything looks healthy, jump to Run Jobs. If you already ran something, jump to Results.",
-    )
-    _render_section_shell(
-        "Quick actions",
-        "Choose your next step",
-        "Most of the time you only need one of these actions. Use Run Jobs to do work. Use Results to understand the latest run.",
-        compact=True,
-    )
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Go to Run Jobs", key="pipeline_overview_to_run_jobs", type="primary", use_container_width=True):
-            _navigate_pipeline_section("Run Jobs")
-        st.caption("Discovery, imports, and rescoring")
-    with c2:
-        if st.button("Go to Results", key="pipeline_overview_to_results", use_container_width=True):
-            _navigate_pipeline_section("Results")
-        st.caption("Latest run outcome and next-step guidance")
-    _close_section_shell()
-
-    left, right = st.columns([1.15, 1])
-    with left:
-        _render_pipeline_operations_card()
-    with right:
-        _render_readiness_card()
-    _render_first_run_pipeline_guidance()
-
-
 def _render_pipeline_run_jobs_tab() -> None:
     _render_subpage_intro(
-        "Run jobs",
-        "Choose one action and keep the setup nearby",
-        "This page is for doing work, not reading logs. Set the run inputs first, use the recommended path for normal discovery, and use manual import or maintenance only when needed.",
+        "Find Roles",
+        "Search for new roles",
+        "Set the search once, save it when needed, and run the main search from here.",
     )
     _render_run_inputs()
-
-    lower_left, lower_right = st.columns([1, 1])
-    with lower_left:
-        _render_action_deck()
-    with lower_right:
-        _render_action_deck_manual_only()
+    _render_action_deck()
 
 
 def _render_pipeline_results_tab() -> None:
     _render_subpage_intro(
-        "Results",
-        "Check the latest outcome before changing anything",
-        "Start with the summary and next step. Only move into diagnostics and raw output if the run underperformed or something looks wrong.",
+        "Search Results",
+        "See what the last search found",
+        "Start with the summary, then open diagnostics only if something looks off.",
     )
     _render_results_summary_card()
     _render_run_diagnostics_card()
     _render_last_result_card()
-
-
-def _render_pipeline_research_tab() -> None:
-    _render_subpage_intro(
-        "Research",
-        "Research what is going wrong before you change the workflow",
-        "Use this page to investigate weak discovery, surprising skips, source quality, or local setup issues. It is a troubleshooting workspace, not a routine action page.",
-    )
-
-    readiness = get_readiness_summary()
-    latest_run = _get_latest_run()
-    diagnostics = _build_diagnostics_from_last_result()
-    takeaway = str(diagnostics.get("takeaway", "") or "").strip()
-    next_step = str(readiness.get("next_step", "") or "").strip()
-
-    if takeaway:
-        st.markdown(f'<div class="pipeline-takeaway">{html.escape(takeaway)}</div>', unsafe_allow_html=True)
-    elif latest_run:
-        status = _humanize_pipeline_status(str(latest_run.get("status", "") or "Unknown"))
-        st.markdown(
-            f'<div class="pipeline-compact-note">Latest run status: {html.escape(status)}. Start with App Health or Search Strategy if the results felt off.</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            '<div class="pipeline-compact-note">No recent run data yet. Use Search Strategy first, then run a small discovery pass before troubleshooting deeper.</div>',
-            unsafe_allow_html=True,
-        )
-
-    with st.expander("Common investigation paths", expanded=False):
-        st.write("- Discovery felt light: inspect Search Strategy, then compare manual fallback searches.")
-        st.write("- Good jobs were skipped: compare Results diagnostics with Source Quality and Recent Run History.")
-        st.write("- AI features seem off: check App Health first, then Settings -> OpenAI API, Profile Context, and Configuration.")
-        if next_step:
-            st.write(f"- Current setup clue: {next_step}")
-
-    top_left, top_right = st.columns(2)
-    with top_left:
-        _render_research_health_card()
-
-    with top_right:
-        _render_research_recent_history_card()
-
-    bottom_left, bottom_right = st.columns(2)
-    with bottom_left:
-        _render_research_source_quality_card()
-
-    with bottom_right:
-        _render_research_search_strategy_card()
 
 
 def render_pipeline() -> None:
@@ -2286,8 +2141,7 @@ def render_pipeline() -> None:
 
     st.subheader("Pipeline")
     _render_flash()
-    initialize_nav_state("pipeline_subnav_selection", "Overview")
-    st.caption("Use the subpages below to move between readiness, active runs, recent results, and deeper research tools.")
+    initialize_nav_state("pipeline_subnav_selection", "Find Roles")
 
     selected_section = render_button_nav(
         options=PIPELINE_NAV_OPTIONS,
@@ -2297,13 +2151,9 @@ def render_pipeline() -> None:
     )
     st.markdown("<div style='height: 0.6rem;'></div>", unsafe_allow_html=True)
 
-    if selected_section == "Overview":
-        _render_pipeline_overview_tab()
-    elif selected_section == "Run Jobs":
+    if selected_section == "Find Roles":
         _render_pipeline_run_jobs_tab()
-    elif selected_section == "Results":
-        _render_pipeline_results_tab()
     else:
-        _render_pipeline_research_tab()
+        _render_pipeline_results_tab()
 
     _advance_pending_action_after_render()
