@@ -139,6 +139,23 @@ def _normalize_location_lines(value: str) -> list[str]:
     return results
 
 
+def _append_unique_lines(existing: list[str], additions: list[str]) -> list[str]:
+    results: list[str] = []
+    seen: set[str] = set()
+
+    for raw in [*existing, *additions]:
+        clean = " ".join(str(raw or "").strip().split())
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(clean)
+
+    return results
+
+
 def _refine_pipeline_run_inputs(
     *,
     target_titles: str,
@@ -168,7 +185,7 @@ def _refine_pipeline_run_inputs(
 
     suggested_title_values = _normalize_title_lines("\n".join(str(title or "") for title in (result.get("titles", []) or [])))
     fallback_title_values = _normalize_title_lines(target_titles)
-    final_title_values = suggested_title_values or fallback_title_values
+    final_title_values = _append_unique_lines(fallback_title_values, suggested_title_values)
     refined_titles = "\n".join(final_title_values)
 
     suggested_locations = result.get("locations", []) or []

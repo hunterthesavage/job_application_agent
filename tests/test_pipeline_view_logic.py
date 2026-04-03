@@ -1,4 +1,4 @@
-from views.pipeline import _run_jobs_has_reviewable_results
+from views.pipeline import _append_unique_lines, _run_jobs_has_reviewable_results
 
 
 def test_wizard_first_run_has_results_for_net_new_jobs():
@@ -44,3 +44,24 @@ def test_wizard_first_run_has_results_false_when_nothing_changed():
     }
 
     assert _run_jobs_has_reviewable_results(result) is False
+
+
+def test_append_unique_lines_preserves_manual_titles_before_ai_variants():
+    existing = [
+        "Vice President of Technology",
+        "Senior Director of Technology",
+        "SVP of Technology",
+    ]
+    additions = [
+        "Vice President of AI",
+        "SVP of Technology",
+        "Vice President of IT",
+    ]
+
+    assert _append_unique_lines(existing, additions) == [
+        "Vice President of Technology",
+        "Senior Director of Technology",
+        "SVP of Technology",
+        "Vice President of AI",
+        "Vice President of IT",
+    ]

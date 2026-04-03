@@ -292,7 +292,7 @@ def parse_location(location_text: str) -> ParsedLocation:
 
     remote_flag = is_remote_location(raw)
     hybrid_flag = is_hybrid_location(raw)
-    us_scope_flag = is_us_scope_location(raw)
+    us_scope_flag = remote_flag and is_us_scope_location(raw)
 
     stripped_normalized = _strip_leading_noise(raw)
     parts = _split_location_parts(raw)
@@ -408,6 +408,17 @@ def _fallback_token_match(job_location: ParsedLocation, preferred_location: Pars
 
     if pref_tokens and pref_tokens.issubset(job_tokens):
         return True, "matched by token subset"
+
+    preferred_city_tokens = {
+        token for token in preferred_location.city.split() if len(token) >= 3
+    }
+    if (
+        preferred_location.city
+        and preferred_city_tokens
+        and preferred_city_tokens.issubset(job_tokens)
+        and job_location.country == "united states"
+    ):
+        return True, "matched city tokens within us location"
 
     return False, "no token match"
 

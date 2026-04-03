@@ -34,3 +34,22 @@ def test_qualify_job_still_rejects_wrong_executive_function():
 
     assert result.should_accept is False
     assert result.reject_reason == "wrong function"
+
+
+def test_qualify_job_uses_structured_location_matching_for_city_without_state_abbreviation():
+    result = qualify_job(
+        job_title="Vice President of Technology",
+        company="ExampleCo",
+        location="Innovation Campus (Dallas), United States of America",
+        job_text="Leads enterprise technology strategy and operations.",
+        settings={
+            "target_titles": "Vice President of Technology",
+            "preferred_locations": "Dallas, TX",
+            "include_remote": "true",
+            "remote_only": "false",
+        },
+    )
+
+    assert result.should_accept is True
+    assert result.reject_reason == ""
+    assert "matched" in result.rationale.lower()

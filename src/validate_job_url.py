@@ -5,7 +5,7 @@ import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -601,6 +601,85 @@ def parse_greenhouse_page(url: str) -> tuple[str, str, str, str, str]:
     return title, location, text, final_url, company
 
 
+def _humanize_url_slug(value: str) -> str:
+    text = safe_text(unquote(value))
+    if not text:
+        return ""
+
+    text = re.sub(r"_[A-Za-z0-9-]+$", "", text).strip()
+    text = text.replace("---", " ")
+    text = text.replace("--", " ")
+    text = text.replace("-", " ")
+    text = text.replace("_", " ")
+    text = re.sub(r"\s+", " ", text).strip(" -|,")
+    return text
+
+
+def _looks_like_location_slug(value: str) -> bool:
+    text = _humanize_url_slug(value)
+    lowered = text.lower()
+    if not text:
+        return False
+
+    if lowered in {"remote us", "remote united states", "remote"}:
+        return True
+
+    if re.search(r"\b[A-Za-z .'-]+\s+[A-Za-z]{2}\b", text):
+        return True
+
+    return any(city in lowered for city in DFW_KEYWORDS)
+
+
+def _format_location_slug(value: str) -> str:
+    text = _humanize_url_slug(value)
+    lowered = text.lower()
+    if not text:
+        return ""
+
+    if lowered in {"remote us", "remote united states"}:
+        return "Remote, United States"
+    if lowered == "remote":
+        return "Remote"
+
+    match = re.search(r"^(?P<city>[A-Za-z .'-]+)\s+(?P<region>[A-Za-z]{2})$", text)
+    if match:
+        return f"{match.group('city').strip()}, {match.group('region').strip().upper()}"
+
+    return text
+
+
+def extract_workday_fallback_from_url(url: str) -> tuple[str, str]:
+    try:
+        parsed = urlparse(safe_text(url))
+    except Exception:
+        return "", ""
+
+    path_parts = [part for part in parsed.path.split("/") if safe_text(part)]
+    if not path_parts:
+        return "", ""
+
+    try:
+        job_index = next(index for index, part in enumerate(path_parts) if part.lower() == "job")
+    except StopIteration:
+        return "", ""
+
+    tail_parts = path_parts[job_index + 1 :]
+    if not tail_parts:
+        return "", ""
+
+    ignored = {"apply", "applymanually", "usemylastapplication", "external", "en-us", "en", "us"}
+    filtered = [part for part in tail_parts if part.lower() not in ignored]
+    if not filtered:
+        return "", ""
+
+    title = _humanize_url_slug(filtered[-1])
+    location = ""
+    if len(filtered) >= 2 and _looks_like_location_slug(filtered[-2]):
+        location = _format_location_slug(filtered[-2])
+
+    return title, location
+
+
 def parse_page(url: str) -> tuple[str, str, str, str, str]:
     if "greenhouse.io" in url.lower():
         return parse_greenhouse_page(url)
@@ -626,7 +705,7 @@ def parse_page(url: str) -> tuple[str, str, str, str, str]:
         title = soup.title.string.strip()
 
     meta_title = soup.find("meta", attrs={"property": "og:title"})
-    if meta_title and meta_title.get("content"):
+    if not title and meta_title and meta_title.get("content"):
         title = meta_title["content"].strip()
 
     if not title:
@@ -642,6 +721,14 @@ def parse_page(url: str) -> tuple[str, str, str, str, str]:
 
     if not location:
         location = extract_location_from_meta(soup)
+
+    lowered_url = url.lower()
+    if "myworkdayjobs.com" in lowered_url or "workday" in lowered_url:
+        fallback_title, fallback_location = extract_workday_fallback_from_url(response.url)
+        if not title:
+            title = fallback_title
+        if not location:
+            location = fallback_location
 
     company = extract_company_from_json_ld(soup)
     if not company:

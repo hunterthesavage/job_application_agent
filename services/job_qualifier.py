@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from services.location_matching import location_matches_preference, parse_location
 from services.search_plan import build_search_title_variants, parse_title_entries, resolve_include_remote
 
 
@@ -212,15 +213,15 @@ def _location_score(
     remote_only: bool,
     include_remote: bool,
 ) -> tuple[int, list[str], str]:
-    normalized_location = normalize_text(job_location)
     reasons: list[str] = []
     reject_reason = ""
+    parsed_location = parse_location(job_location)
 
     if remote_only:
-        if "remote" in normalized_location:
+        if parsed_location.is_remote or parsed_location.is_us_scope_remote:
             reasons.append("remote-only preference matched")
             return 22, reasons, reject_reason
-        if not normalized_location:
+        if parsed_location.is_blank:
             reasons.append("location missing")
             return 5, reasons, reject_reason
         reject_reason = "not remote"
@@ -228,7 +229,7 @@ def _location_score(
         return -20, reasons, reject_reason
 
     if not preferred_locations:
-        if "remote" in normalized_location:
+        if parsed_location.is_remote or parsed_location.is_us_scope_remote:
             if include_remote:
                 reasons.append("remote accepted")
                 return 12, reasons, reject_reason
@@ -238,13 +239,12 @@ def _location_score(
         reasons.append("no preferred locations provided")
         return 8, reasons, reject_reason
 
-    for pref in preferred_locations:
-        normalized_pref = normalize_text(pref)
-        if normalized_pref and normalized_pref in normalized_location:
-            reasons.append(f"location matched '{pref}'")
-            return 20, reasons, reject_reason
+    matched, reason = location_matches_preference(job_location, preferred_locations)
+    if matched:
+        reasons.append(reason)
+        return 20, reasons, reject_reason
 
-    if include_remote and "remote" in normalized_location:
+    if include_remote and (parsed_location.is_remote or parsed_location.is_us_scope_remote):
         reasons.append("remote accepted as fallback")
         return 10, reasons, reject_reason
 
