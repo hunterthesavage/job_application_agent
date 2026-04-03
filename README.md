@@ -47,11 +47,14 @@ Primary Mac download:
 
 ### Install Notes
 
-1. Open the downloaded `.dmg` or unzip the fallback package.
-2. Drag `Job Application Agent.app` into `Applications`.
-3. Open the app from `Applications`.
-4. If macOS warns that the app is from an unidentified developer, approve it in:
-   - `System Settings -> Privacy & Security`
+1. Open the downloaded `.dmg`.
+2. Drag `Job Application Agent.app` into `Applications`, then open it from `Applications`.
+   ![Mac DMG step 1 - Open the app](docs/assets/mac-dmg-step-1-open-app.png)
+3. On first launch, macOS may block the app and show a security warning. Click `Done` for now.
+   ![Mac DMG step 2 - Security warning](docs/assets/mac-dmg-step-2-security-warning.png)
+4. Open `System Settings -> Privacy & Security`, scroll down to the `Allow applications...` area, and click `Open Anyway`.
+   ![Mac DMG step 3 - Open anyway](docs/assets/mac-dmg-step-3-open-anyway.png)
+5. Return to the app and launch it again.
 
 ### Option 2) Download The macOS Zip
 
