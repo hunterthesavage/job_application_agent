@@ -7,6 +7,11 @@ This project follows semantic versioning:
 - `MINOR` for meaningful new capabilities that keep the product recognizably the same
 - `PATCH` for bug fixes, polish, install improvements, and small workflow refinements
 
+## [1.0.2] - 2026-04-02
+
+- Fixed the Setup Wizard `Suggest Relevant Updates` crash caused by writing back into live widget state during the same render cycle.
+- Continued desktop wrapper hardening for Windows and Mac test builds, including versioned package filenames for easier tester tracking.
+
 ## [1.0.1] - 2026-04-01
 
 Current friend-test release.

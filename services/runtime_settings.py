@@ -3,11 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from config import PROJECT_ROOT
+from config import RUNTIME_SETTINGS_FILE
 from services.settings import load_settings
-
-
-RUNTIME_SETTINGS_FILE = PROJECT_ROOT / "runtime_settings.json"
 
 
 def write_runtime_settings_file() -> Path:

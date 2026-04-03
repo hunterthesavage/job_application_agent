@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import platform
-import plistlib
 import subprocess
 import sys
 from datetime import datetime, time as dt_time
@@ -146,13 +145,23 @@ def _build_launchd_intervals(*, frequency: str, hour: int, minute: int, days: li
 
 
 def _run_subprocess(command: list[str]) -> tuple[bool, str]:
+    run_kwargs: dict[str, Any] = {
+        "check": False,
+        "capture_output": True,
+        "text": True,
+    }
+    if platform.system().lower() == "windows":
+        startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+        if startupinfo_cls is not None:
+            startupinfo = startupinfo_cls()
+            startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+            startupinfo.wShowWindow = 0
+            run_kwargs["startupinfo"] = startupinfo
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if creationflags:
+            run_kwargs["creationflags"] = creationflags
     try:
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        completed = subprocess.run(command, **run_kwargs)
     except Exception as exc:
         return False, str(exc)
 
@@ -162,6 +171,8 @@ def _run_subprocess(command: list[str]) -> tuple[bool, str]:
 
 
 def _configure_launchd(settings: dict[str, str]) -> dict[str, Any]:
+    import plistlib
+
     hour, minute, normalized_time = parse_auto_run_time(settings.get("auto_run_time", "08:00"))
     frequency = normalize_auto_run_frequency(settings.get("auto_run_frequency", "off"))
     days = parse_auto_run_days(settings.get("auto_run_days", "mon,tue,wed,thu,fri"))

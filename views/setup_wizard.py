@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import html
+from pathlib import Path
 
 import streamlit as st
 
+from services.folder_picker import pick_folder_dialog
 from services.job_levels import (
     JOB_LEVEL_OPTIONS,
     parse_preferred_job_levels,
@@ -17,8 +19,10 @@ from services.openai_key import (
     save_openai_api_key,
 )
 from services.profile_context_templates import generate_profile_context_from_resume
-from services.settings import load_settings, save_settings
-from services.openai_title_suggestions import suggest_titles_with_openai
+from services.settings import DEFAULT_SETTINGS, load_settings, save_settings
+from services.openai_title_suggestions import (
+    suggest_run_input_refinements_with_openai,
+)
 from services.ui_busy import queue_action
 
 
@@ -94,10 +98,12 @@ def _set_step_index(index: int) -> None:
 
 
 def _go_next() -> None:
+    st.session_state.pop("_post_wizard_run_message", None)
     _set_step_index(_current_step_index() + 1)
 
 
 def _go_back() -> None:
+    st.session_state.pop("_post_wizard_run_message", None)
     _set_step_index(_current_step_index() - 1)
 
 
@@ -154,12 +160,44 @@ def _initialize_wizard_state(settings: dict[str, str]) -> None:
         st.session_state["wizard_strengths_to_highlight"] = settings.get("strengths_to_highlight", "")
     if "wizard_cover_letter_voice" not in st.session_state:
         st.session_state["wizard_cover_letter_voice"] = settings.get("cover_letter_voice", "")
+    saved_cover_letter_folder = str(
+        settings.get("cover_letter_output_folder", DEFAULT_SETTINGS["cover_letter_output_folder"]) or ""
+    ).strip() or DEFAULT_SETTINGS["cover_letter_output_folder"]
+    saved_cover_letter_pattern = str(
+        settings.get(
+            "cover_letter_filename_pattern",
+            DEFAULT_SETTINGS["cover_letter_filename_pattern"],
+        )
+        or ""
+    ).strip() or DEFAULT_SETTINGS["cover_letter_filename_pattern"]
+
+    if "wizard_cover_letter_output_folder" not in st.session_state:
+        st.session_state["wizard_cover_letter_output_folder"] = settings.get(
+            "cover_letter_output_folder",
+            DEFAULT_SETTINGS["cover_letter_output_folder"],
+        )
+    else:
+        current_folder = str(st.session_state.get("wizard_cover_letter_output_folder", "") or "").strip()
+        if not current_folder:
+            st.session_state["wizard_cover_letter_output_folder"] = saved_cover_letter_folder
+
+    if "wizard_cover_letter_filename_pattern" not in st.session_state:
+        st.session_state["wizard_cover_letter_filename_pattern"] = settings.get(
+            "cover_letter_filename_pattern",
+            DEFAULT_SETTINGS["cover_letter_filename_pattern"],
+        )
+    else:
+        current_pattern = str(st.session_state.get("wizard_cover_letter_filename_pattern", "") or "").strip()
+        if not current_pattern:
+            st.session_state["wizard_cover_letter_filename_pattern"] = saved_cover_letter_pattern
 
     if "wizard_openai_api_key_value" not in st.session_state:
         st.session_state["wizard_openai_api_key_value"] = load_saved_openai_api_key()
 
     if "wizard_title_suggestions" not in st.session_state:
         st.session_state["wizard_title_suggestions"] = []
+    if "wizard_location_suggestions" not in st.session_state:
+        st.session_state["wizard_location_suggestions"] = []
     if "wizard_title_suggestions_notes" not in st.session_state:
         st.session_state["wizard_title_suggestions_notes"] = ""
     if "wizard_ai_review_generated" not in st.session_state:
@@ -245,18 +283,108 @@ def _append_line_separated(base_value: str, additions: list[str]) -> str:
     return "\n".join(current)
 
 
+def _normalize_line_separated(value: str) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw in str(value or "").splitlines():
+        clean = " ".join(str(raw or "").strip().split())
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(clean)
+    return normalized
+
+
+def _normalize_multiline_preserving_groups(value: str) -> str:
+    lines: list[str] = []
+    for raw in str(value or "").splitlines():
+        clean = " ".join(str(raw or "").strip().split())
+        if clean:
+            lines.append(clean)
+    return "\n".join(lines).strip()
+
+
+def _normalize_wizard_location_lines(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if "\n" in text:
+        parts = text.splitlines()
+    elif ";" in text:
+        parts = text.split(";")
+    else:
+        parts = text.split(",")
+
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw in parts:
+        clean = " ".join(str(raw or "").strip().split())
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(clean)
+    return normalized
+
+
+def _refine_wizard_search_inputs(
+    *,
+    target_titles: str,
+    preferred_locations: str,
+    include_keywords: str,
+    include_remote: bool,
+) -> tuple[str, str]:
+    title_lines = _normalize_line_separated(target_titles)
+    location_lines = _normalize_wizard_location_lines(preferred_locations)
+
+    fallback_titles = "\n".join(title_lines)
+    fallback_locations = "\n".join(location_lines)
+
+    if not get_openai_api_key_details().get("active_key_present"):
+        return fallback_titles, fallback_locations
+
+    result = suggest_run_input_refinements_with_openai(
+        current_titles=fallback_titles,
+        preferred_locations=fallback_locations,
+        profile_summary=str(st.session_state.get("wizard_profile_summary", "") or ""),
+        resume_text=str(st.session_state.get("wizard_resume_text", "") or ""),
+        include_keywords=include_keywords,
+        include_remote=include_remote,
+    )
+
+    if not result.get("ok"):
+        return fallback_titles, fallback_locations
+
+    suggested_titles = result.get("titles", []) or []
+    suggested_locations = result.get("locations", []) or []
+
+    final_titles = _append_line_separated(fallback_titles, [str(item or "") for item in suggested_titles]).strip()
+    final_location_lines = _normalize_wizard_location_lines("\n".join(str(item or "") for item in suggested_locations)) or location_lines
+    final_locations = "\n".join(final_location_lines).strip()
+
+    return final_titles, final_locations
+
+
 def _clear_wizard_title_suggestions() -> None:
     st.session_state["wizard_title_suggestions"] = []
+    st.session_state["wizard_location_suggestions"] = []
     st.session_state["wizard_title_suggestions_notes"] = ""
     for key in list(st.session_state.keys()):
-        if key.startswith("wizard_title_checkbox_"):
+        if key.startswith("wizard_title_checkbox_") or key.startswith("wizard_location_checkbox_"):
             del st.session_state[key]
 
 
 def _generate_wizard_title_suggestions() -> None:
     details = get_openai_api_key_details()
     titles_clean = str(st.session_state.get("wizard_target_titles", "") or "").strip()
+    locations_clean = str(st.session_state.get("wizard_preferred_locations", "") or "").strip()
     include_clean = str(st.session_state.get("wizard_include_keywords", "") or "").strip()
+    include_remote = bool(st.session_state.get("wizard_include_remote", True))
 
     st.session_state["wizard_ai_review_generated"] = True
     st.session_state["wizard_ai_review_choice_made"] = False
@@ -268,31 +396,45 @@ def _generate_wizard_title_suggestions() -> None:
         return
 
     if not bool(details.get("active_key_present")):
-        st.session_state["wizard_ai_review_message"] = "No OpenAI key is configured, so there are no AI title suggestions yet. You can continue with your current titles."
+        st.session_state["wizard_ai_review_message"] = "No OpenAI key is configured, so there are no AI suggestions yet. You can continue with your current titles and locations."
         return
 
-    result = suggest_titles_with_openai(
-        current_titles=titles_clean,
+    current_title_lines = _normalize_line_separated(titles_clean)
+    current_title_keys = {title.casefold() for title in current_title_lines}
+    current_location_lines = [line for line in _normalize_multiline_preserving_groups(locations_clean).splitlines() if line]
+    current_location_keys = {location.casefold() for location in current_location_lines}
+
+    result = suggest_run_input_refinements_with_openai(
+        current_titles="\n".join(current_title_lines),
+        preferred_locations="\n".join(current_location_lines),
         profile_summary=str(st.session_state.get("wizard_profile_summary", "") or ""),
         resume_text=str(st.session_state.get("wizard_resume_text", "") or ""),
         include_keywords=include_clean,
+        include_remote=include_remote,
     )
 
     if result.get("ok"):
-        titles = result.get("titles", []) or []
+        titles = [
+            title
+            for title in (result.get("titles", []) or [])
+            if str(title or "").strip().casefold() not in current_title_keys
+        ]
+        locations = _normalize_wizard_location_lines("\n".join(str(item or "") for item in (result.get("locations", []) or [])))
+        locations = [location for location in locations if location.casefold() not in current_location_keys]
         st.session_state["wizard_title_suggestions"] = titles
+        st.session_state["wizard_location_suggestions"] = locations
         st.session_state["wizard_title_suggestions_notes"] = str(result.get("notes", "") or "")
-        if titles:
-            st.session_state["wizard_ai_review_message"] = "Review the suggested title updates below before your first run."
+        if titles or locations:
+            st.session_state["wizard_ai_review_message"] = "Review the suggested title and location updates below before your first run."
         else:
-            st.session_state["wizard_ai_review_message"] = "No additional title suggestions were returned. You can continue with your current titles."
+            st.session_state["wizard_ai_review_message"] = "No additional title or location suggestions were returned. You can continue with your current search settings."
         return
 
     error_text = str(result.get("error", "") or "").strip()
     if error_text:
-        st.session_state["wizard_ai_review_message"] = f"Could not generate title suggestions. You can continue with your current titles. {error_text}"
+        st.session_state["wizard_ai_review_message"] = f"Could not generate search suggestions. You can continue with your current titles and locations. {error_text}"
     else:
-        st.session_state["wizard_ai_review_message"] = "Could not generate title suggestions. You can continue with your current titles."
+        st.session_state["wizard_ai_review_message"] = "Could not generate search suggestions. You can continue with your current titles and locations."
 
 
 def _render_search_step() -> None:
@@ -316,107 +458,107 @@ def _render_search_step() -> None:
     if "wizard_minimum_compensation_widget" not in st.session_state:
         st.session_state["wizard_minimum_compensation_widget"] = st.session_state.get("wizard_minimum_compensation", "")
 
-    with st.form("setup_wizard_search_form"):
-        c1, c2 = st.columns(2)
+    c1, c2 = st.columns(2)
 
-        with c1:
-            target_titles = st.text_area(
-                "Target Titles",
-                key="wizard_target_titles_widget",
-                height=120,
-                help="One title per line. Example:\nVP Technology\nCIO\nHead of Platform",
-            )
+    with c1:
+        target_titles = st.text_area(
+            "Target Titles",
+            key="wizard_target_titles_widget",
+            height=120,
+            help="One title per line. Example:\nVP Technology\nCIO\nHead of Platform",
+        )
 
-            preferred_locations = st.text_area(
-                "Preferred Locations",
-                key="wizard_preferred_locations_widget",
-                height=120,
-                help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nYou can leave this blank only if Include Remote is turned on.",
-            )
+        preferred_locations = st.text_area(
+            "Preferred Locations",
+            key="wizard_preferred_locations_widget",
+            height=120,
+            help="One location per line. Examples:\nDallas, TX\nMiami, FL\nLondon, UK\nYou can leave this blank only if Include Remote is turned on.",
+        )
 
-            preferred_job_levels = st.multiselect(
-                "Preferred Job Levels",
-                options=JOB_LEVEL_OPTIONS,
-                default=st.session_state.get("wizard_preferred_job_levels_widget", []),
-                help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
-            )
+        preferred_job_levels = st.multiselect(
+            "Preferred Job Levels",
+            options=JOB_LEVEL_OPTIONS,
+            default=st.session_state.get("wizard_preferred_job_levels_widget", []),
+            help="AI scoring will penalize jobs whose title level falls below the levels you select here.",
+        )
 
-            include_keywords = st.text_area(
-                "Include Keywords",
-                key="wizard_include_keywords_widget",
-                height=100,
-                help="Optional. Comma-separated values.",
-            )
+        include_keywords = st.text_area(
+            "Include Keywords",
+            key="wizard_include_keywords_widget",
+            height=100,
+            help="Optional. Comma-separated values.",
+        )
 
-        with c2:
-            exclude_keywords = st.text_area(
-                "Exclude Keywords",
-                key="wizard_exclude_keywords_widget",
-                height=100,
-                help="Optional. Comma-separated values.",
-            )
+    with c2:
+        exclude_keywords = st.text_area(
+            "Exclude Keywords",
+            key="wizard_exclude_keywords_widget",
+            height=100,
+            help="Optional. Comma-separated values.",
+        )
 
-            include_remote = st.toggle("Include Remote", key="wizard_include_remote_widget")
+        include_remote = st.toggle("Include Remote", key="wizard_include_remote_widget")
 
-            minimum_compensation = st.text_input(
-                "Minimum Compensation",
-                key="wizard_minimum_compensation_widget",
-                help="Optional. Leave blank if you do not want to filter on compensation.",
-            )
+        minimum_compensation = st.text_input(
+            "Minimum Compensation",
+            key="wizard_minimum_compensation_widget",
+            help="Optional. Leave blank if you do not want to filter on compensation.",
+        )
 
-        back_col, next_col = st.columns([1, 1.35])
-        with back_col:
-            back_clicked = st.form_submit_button("Back", use_container_width=True)
-        with next_col:
-            next_clicked = st.form_submit_button("Suggest Relevant Updates", type="primary", use_container_width=True)
+    back_col, next_col = st.columns([1, 1.35])
+    with back_col:
+        back_clicked = st.button("Back", use_container_width=True, key="wizard_search_back")
+    with next_col:
+        next_clicked = st.button("Suggest Relevant Updates", type="primary", use_container_width=True, key="wizard_search_next")
 
-        if back_clicked:
-            _go_back()
-            st.rerun()
+    if back_clicked:
+        _go_back()
+        st.rerun()
 
-        if next_clicked:
-            titles_clean = str(target_titles or "").strip()
-            locations_clean = str(preferred_locations or "").strip()
-            preferred_job_levels_clean = serialize_preferred_job_levels(preferred_job_levels)
-            include_clean = str(include_keywords or "").strip()
-            exclude_clean = str(exclude_keywords or "").strip()
-            minimum_clean = str(minimum_compensation or "").strip()
+    if next_clicked:
+        titles_clean = "\n".join(_normalize_line_separated(target_titles)).strip()
+        locations_clean = _normalize_multiline_preserving_groups(preferred_locations)
+        preferred_job_levels_clean = serialize_preferred_job_levels(preferred_job_levels)
+        include_clean = str(include_keywords or "").strip()
+        exclude_clean = str(exclude_keywords or "").strip()
+        minimum_clean = str(minimum_compensation or "").strip()
 
-            if not titles_clean:
-                st.error("Add at least one target title before continuing.")
-                return
-            if not locations_clean and not include_remote:
-                st.error("Add at least one preferred location or turn on Include Remote.")
-                return
+        if not titles_clean:
+            st.error("Add at least one target title before continuing.")
+            return
+        if not locations_clean and not include_remote:
+            st.error("Add at least one preferred location or turn on Include Remote.")
+            return
 
-            save_settings(
-                {
-                    "target_titles": titles_clean,
-                    "preferred_locations": locations_clean,
-                    "preferred_job_levels": preferred_job_levels_clean,
-                    "include_keywords": include_clean,
-                    "exclude_keywords": exclude_clean,
-                    "include_remote": "true" if include_remote else "false",
-                    "remote_only": "false",
-                    "minimum_compensation": minimum_clean,
-                }
-            )
+        save_settings(
+            {
+                "target_titles": titles_clean,
+                "preferred_locations": locations_clean,
+                "preferred_job_levels": preferred_job_levels_clean,
+                "include_keywords": include_clean,
+                "exclude_keywords": exclude_clean,
+                "include_remote": "true" if include_remote else "false",
+                "remote_only": "false",
+                "minimum_compensation": minimum_clean,
+            }
+        )
 
-            st.session_state["wizard_target_titles"] = titles_clean
-            st.session_state["wizard_preferred_locations"] = locations_clean
-            st.session_state["wizard_preferred_job_levels"] = list(preferred_job_levels)
-            st.session_state["wizard_preferred_job_levels_widget"] = list(preferred_job_levels)
-            st.session_state["wizard_include_keywords"] = include_clean
-            st.session_state["wizard_exclude_keywords"] = exclude_clean
-            st.session_state["wizard_include_remote"] = include_remote
-            st.session_state["wizard_minimum_compensation"] = minimum_clean
-            st.session_state["wizard_ai_review_generated"] = False
-            st.session_state["wizard_ai_review_choice_made"] = False
-            st.session_state["wizard_ai_review_message"] = ""
-            _clear_wizard_title_suggestions()
+        st.session_state["wizard_target_titles"] = titles_clean
+        st.session_state["wizard_preferred_locations"] = locations_clean
+        st.session_state["wizard_preferred_job_levels"] = list(preferred_job_levels)
+        st.session_state["wizard_preferred_job_levels_widget"] = list(preferred_job_levels)
+        st.session_state["wizard_include_keywords"] = include_clean
+        st.session_state["wizard_exclude_keywords"] = exclude_clean
+        st.session_state["wizard_include_remote"] = include_remote
+        st.session_state["wizard_minimum_compensation"] = minimum_clean
+        st.session_state["wizard_ai_review_generated"] = False
+        st.session_state["wizard_ai_review_choice_made"] = False
+        st.session_state["wizard_ai_review_message"] = ""
+        _clear_wizard_title_suggestions()
+        _generate_wizard_title_suggestions()
 
-            _go_next()
-            st.rerun()
+        _go_next()
+        st.rerun()
 
 
 def _render_profile_step() -> None:
@@ -436,6 +578,8 @@ def _render_profile_step() -> None:
             str(st.session_state.get("wizard_profile_summary", "") or "") != str(settings.get("profile_summary", "") or ""),
             str(st.session_state.get("wizard_strengths_to_highlight", "") or "") != str(settings.get("strengths_to_highlight", "") or ""),
             str(st.session_state.get("wizard_cover_letter_voice", "") or "") != str(settings.get("cover_letter_voice", "") or ""),
+            str(st.session_state.get("wizard_cover_letter_output_folder", "") or "") != str(settings.get("cover_letter_output_folder", "") or ""),
+            str(st.session_state.get("wizard_cover_letter_filename_pattern", "") or "") != str(settings.get("cover_letter_filename_pattern", "") or ""),
         ]
     )
 
@@ -490,7 +634,54 @@ def _render_profile_step() -> None:
         help="Cover letters only. This does not affect job scoring.",
     )
 
-    _render_wizard_step_heading("3", "Save Profile Context")
+    _render_wizard_step_heading("3", "Cover Letter Output")
+    st.caption("Use the same defaults as Settings, or change them now so generated letters land where you expect.")
+    folder_col, browse_col = st.columns([5, 1.2])
+    with browse_col:
+        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
+        browse_clicked = st.button(
+            "Browse",
+            use_container_width=True,
+            key="wizard_browse_cover_letter_folder",
+        )
+
+    if browse_clicked:
+        current_folder = st.session_state.get(
+            "wizard_cover_letter_output_folder",
+            DEFAULT_SETTINGS["cover_letter_output_folder"],
+        )
+        selected_folder, picker_error = pick_folder_dialog(
+            current_folder,
+            title="Select Cover Letter Output Folder",
+        )
+        if picker_error:
+            st.session_state["wizard_cover_letter_output_message"] = (
+                f"Could not open folder picker: {picker_error}"
+            )
+        else:
+            st.session_state.pop("wizard_cover_letter_output_message", None)
+        st.session_state["wizard_cover_letter_output_folder"] = selected_folder
+        st.rerun()
+
+    with folder_col:
+        cover_letter_output_folder = st.text_input(
+            "Cover Letter Location",
+            key="wizard_cover_letter_output_folder",
+            help="Folder where generated .txt cover letters will be saved.",
+        )
+    cover_letter_filename_pattern = st.text_input(
+        "Cover Letter Format",
+        key="wizard_cover_letter_filename_pattern",
+        help="Use placeholders like {company}, {title}, {date}. Example: CL_{company}.txt",
+    )
+    resolved_folder = Path(str(cover_letter_output_folder or "").strip() or DEFAULT_SETTINGS["cover_letter_output_folder"]).expanduser()
+    st.caption(f"Resolved output path: {resolved_folder}")
+    wizard_cover_letter_output_message = str(st.session_state.get("wizard_cover_letter_output_message", "") or "").strip()
+    if wizard_cover_letter_output_message:
+        st.warning(wizard_cover_letter_output_message)
+    st.caption("Available placeholders: {company}, {title}, {date}")
+
+    _render_wizard_step_heading("4", "Save Profile Context")
     if not has_unsaved_changes:
         st.caption("Make a change before saving Profile Context.")
 
@@ -518,6 +709,8 @@ def _render_profile_step() -> None:
                 "profile_summary": str(profile_summary or "").strip(),
                 "strengths_to_highlight": str(strengths_to_highlight or "").strip(),
                 "cover_letter_voice": str(cover_letter_voice or "").strip(),
+                "cover_letter_output_folder": str(cover_letter_output_folder or "").strip(),
+                "cover_letter_filename_pattern": str(cover_letter_filename_pattern or "").strip(),
             }
         )
         _go_next()
@@ -603,73 +796,113 @@ def _render_openai_step() -> None:
 
 def _render_ai_review_step() -> None:
     st.markdown("## Review Relevant Updates")
-    st.write("Before your first run, review AI-suggested updates to broaden your search. For now this step suggests related titles. Keyword suggestions can be added next.")
-
-    if not st.session_state.get("wizard_ai_review_generated", False):
-        with st.spinner("Reviewing titles and suggesting relevant updates..."):
-            _generate_wizard_title_suggestions()
+    st.write("Before your first run, review AI-suggested updates to tighten titles and locations. Accept the ones that look right, then let the first run go find jobs.")
 
     message = str(st.session_state.get("wizard_ai_review_message", "") or "").strip()
     if message:
-        if st.session_state.get("wizard_title_suggestions"):
+        if st.session_state.get("wizard_title_suggestions") or st.session_state.get("wizard_location_suggestions"):
             st.info(message)
         else:
             st.warning(message)
 
-    st.markdown("### Target Titles")
-    st.text_area(
-        "Target Titles",
-        value=str(st.session_state.get("wizard_target_titles", "") or ""),
-        height=120,
-        disabled=True,
-        label_visibility="collapsed",
-    )
-
-    suggestions = st.session_state.get("wizard_title_suggestions", []) or []
+    title_suggestions = st.session_state.get("wizard_title_suggestions", []) or []
+    location_suggestions = st.session_state.get("wizard_location_suggestions", []) or []
     notes = str(st.session_state.get("wizard_title_suggestions_notes", "") or "").strip()
-    if suggestions:
-        with st.container(border=True):
-            st.markdown("### Suggested Titles")
-            if notes:
-                st.caption(notes)
-            st.caption("Choose which suggested titles you want to add before your first run.")
+    if title_suggestions or location_suggestions:
+        if notes:
+            st.caption(notes)
 
-            selected: list[str] = []
-            for index, title in enumerate(suggestions):
-                checkbox_key = f"wizard_title_checkbox_{index}"
-                if checkbox_key not in st.session_state:
-                    st.session_state[checkbox_key] = True
-                if st.checkbox(title, key=checkbox_key):
-                    selected.append(title)
+        left_col, right_col = st.columns(2)
+        selected_titles: list[str] = []
+        selected_locations: list[str] = []
 
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button(
-                    "Accept Titles and Find Jobs",
-                    type="primary",
-                    use_container_width=True,
-                    key="wizard_accept_titles",
-                    disabled=not bool(selected),
-                    help="Select at least one suggested title first." if not selected else None,
-                ):
-                    updated = _append_line_separated(st.session_state.get("wizard_target_titles", ""), selected)
-                    st.session_state["wizard_target_titles"] = updated
-                    st.session_state["wizard_target_titles_widget"] = updated
-                    save_settings({"target_titles": updated})
-                    st.session_state["wizard_ai_review_choice_made"] = True
-                    st.session_state["wizard_ai_review_message"] = "Selected title suggestions were added. Starting your first job search now."
-                    _start_first_discovery()
-                    st.rerun()
-            with c2:
-                if st.button("Find Jobs Without Changes", use_container_width=True, key="wizard_cancel_titles"):
-                    st.session_state["wizard_ai_review_choice_made"] = True
-                    st.session_state["wizard_ai_review_message"] = "Using your current titles. Starting your first job search now."
-                    _start_first_discovery()
-                    st.rerun()
+        with left_col:
+            st.markdown("### Target Titles")
+            st.text_area(
+                "Target Titles",
+                value=str(st.session_state.get("wizard_target_titles", "") or ""),
+                height=120,
+                disabled=True,
+                label_visibility="collapsed",
+            )
+            with st.container(border=True):
+                st.markdown("### Suggested Titles")
+                if title_suggestions:
+                    st.caption("Choose which title updates you want to add.")
+                    for index, title in enumerate(title_suggestions):
+                        checkbox_key = f"wizard_title_checkbox_{index}"
+                        if checkbox_key not in st.session_state:
+                            st.session_state[checkbox_key] = True
+                        if st.checkbox(title, key=checkbox_key):
+                            selected_titles.append(title)
+                else:
+                    st.caption("No title updates suggested this time.")
+
+        with right_col:
+            st.markdown("### Preferred Locations")
+            st.text_area(
+                "Preferred Locations",
+                value=str(st.session_state.get("wizard_preferred_locations", "") or ""),
+                height=120,
+                disabled=True,
+                label_visibility="collapsed",
+            )
+            with st.container(border=True):
+                st.markdown("### Suggested Locations")
+                if location_suggestions:
+                    st.caption("Choose which normalized locations you want to use.")
+                    for index, location in enumerate(location_suggestions):
+                        checkbox_key = f"wizard_location_checkbox_{index}"
+                        if checkbox_key not in st.session_state:
+                            st.session_state[checkbox_key] = True
+                        if st.checkbox(location, key=checkbox_key):
+                            selected_locations.append(location)
+                else:
+                    st.caption("No location updates suggested this time.")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button(
+                "Run Job Search",
+                type="primary",
+                use_container_width=True,
+                key="wizard_accept_titles_and_locations",
+                disabled=not bool(selected_titles or selected_locations),
+                help="Select at least one suggested update first." if not (selected_titles or selected_locations) else None,
+            ):
+                updated_titles = _append_line_separated(st.session_state.get("wizard_target_titles", ""), selected_titles)
+                updated_locations = (
+                    "\n".join(_normalize_wizard_location_lines("\n".join(selected_locations))).strip()
+                    if selected_locations
+                    else str(st.session_state.get("wizard_preferred_locations", "") or "").strip()
+                )
+                st.session_state["wizard_target_titles"] = updated_titles
+                st.session_state["wizard_preferred_locations"] = updated_locations
+                save_settings(
+                    {
+                        "target_titles": updated_titles,
+                        "preferred_locations": updated_locations,
+                    }
+                )
+                st.session_state["wizard_ai_review_choice_made"] = True
+                st.session_state["wizard_ai_review_message"] = "Selected title and location suggestions were applied. Starting your first job search now."
+                _start_first_discovery()
+                st.rerun()
+        with c2:
+            if st.button("Run Job Search Without Changes", use_container_width=True, key="wizard_cancel_titles"):
+                st.session_state["wizard_ai_review_choice_made"] = True
+                st.session_state["wizard_ai_review_message"] = "Using your current titles and locations. Starting your first job search now."
+                _start_first_discovery()
+                st.rerun()
+        back_col, _, _ = st.columns([1, 1, 1])
+        with back_col:
+            if st.button("Back", use_container_width=True, key="wizard_ai_review_back_with_suggestions"):
+                _go_back()
+                st.rerun()
     else:
         c1, c2 = st.columns([1.4, 1])
         with c1:
-            if st.button("Find and Add Jobs", type="primary", use_container_width=True, key="wizard_find_and_add_jobs"):
+            if st.button("Run Job Search", type="primary", use_container_width=True, key="wizard_find_and_add_jobs"):
                 _start_first_discovery()
                 st.rerun()
         with c2:

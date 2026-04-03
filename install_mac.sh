@@ -19,7 +19,7 @@ for path in README.md app.py config.py requirements.txt profile_context.txt; do
     chmod a+r "$path" 2>/dev/null || true
   fi
 done
-chmod +x install_mac.sh run_app.sh install_mac.command run_app.command 2>/dev/null || true
+chmod +x install_mac.sh run_app.sh run_desktop_app.sh install_mac.command run_app.command run_desktop_app.command 2>/dev/null || true
 
 echo "==> Creating virtual environment"
 python3 -m venv .venv
@@ -50,10 +50,14 @@ EOF
 fi
 
 echo "==> Making launcher executable"
-chmod +x run_app.sh run_app.command
+chmod +x run_app.sh run_app.command run_desktop_app.sh run_desktop_app.command
 
 echo
 
 echo "Install complete."
 echo "Start the app with: ./run_app.sh"
 echo "Or double-click: run_app.command"
+echo
+echo "Desktop wrapper spike:"
+echo "Start the native window with: ./run_desktop_app.sh"
+echo "Or double-click: run_desktop_app.command"

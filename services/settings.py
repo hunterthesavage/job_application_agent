@@ -17,6 +17,38 @@ def get_default_cover_letter_filename_pattern() -> str:
     return "CL_{company}.txt"
 
 
+def _looks_like_cover_letter_filename(value: str) -> bool:
+    text = _normalize_value(value)
+    if not text:
+        return False
+    lower = text.lower()
+    has_path_separator = "/" in text or "\\" in text
+    return not has_path_separator and (
+        lower.endswith((".txt", ".doc", ".docx", ".md", ".pdf")) or "{" in text or "}" in text
+    )
+
+
+def _looks_like_folder_path(value: str) -> bool:
+    text = _normalize_value(value)
+    if not text:
+        return False
+    return any(marker in text for marker in ("/", "\\", "~")) or (
+        len(text) >= 2 and text[1] == ":"
+    )
+
+
+def normalize_cover_letter_output_settings(folder_value, pattern_value) -> tuple[str, str]:
+    folder = _normalize_value(folder_value)
+    pattern = _normalize_value(pattern_value)
+
+    if not folder or _looks_like_cover_letter_filename(folder):
+        folder = get_default_cover_letter_output_folder()
+    if not pattern or _looks_like_folder_path(pattern):
+        pattern = get_default_cover_letter_filename_pattern()
+
+    return folder, pattern
+
+
 DEFAULT_SETTINGS: dict[str, str] = {
     "resume_text": "",
     "profile_summary": "",
@@ -98,6 +130,13 @@ def load_settings() -> dict[str, str]:
         settings["cover_letter_output_folder"] = get_default_cover_letter_output_folder()
     if not settings.get("cover_letter_filename_pattern", "").strip():
         settings["cover_letter_filename_pattern"] = get_default_cover_letter_filename_pattern()
+    (
+        settings["cover_letter_output_folder"],
+        settings["cover_letter_filename_pattern"],
+    ) = normalize_cover_letter_output_settings(
+        settings.get("cover_letter_output_folder", ""),
+        settings.get("cover_letter_filename_pattern", ""),
+    )
 
     return settings
 
@@ -115,6 +154,18 @@ def save_settings(updates: dict[str, str]) -> dict[str, str]:
         if key == "cover_letter_filename_pattern" and not cleaned_value:
             cleaned_value = get_default_cover_letter_filename_pattern()
         cleaned_updates[key] = cleaned_value
+
+    if "cover_letter_output_folder" in cleaned_updates or "cover_letter_filename_pattern" in cleaned_updates:
+        current_settings = load_settings()
+        normalized_folder, normalized_pattern = normalize_cover_letter_output_settings(
+            cleaned_updates.get("cover_letter_output_folder", current_settings.get("cover_letter_output_folder", "")),
+            cleaned_updates.get(
+                "cover_letter_filename_pattern",
+                current_settings.get("cover_letter_filename_pattern", ""),
+            ),
+        )
+        cleaned_updates["cover_letter_output_folder"] = normalized_folder
+        cleaned_updates["cover_letter_filename_pattern"] = normalized_pattern
 
     with db_connection() as conn:
         for key, value in cleaned_updates.items():

@@ -475,6 +475,10 @@ def inject_custom_css() -> None:
                 padding-right: 0.45rem;
             }
 
+            .ai-button-chip-wrap-placeholder {
+                visibility: hidden;
+            }
+
             .ai-button-chip {
                 display: inline-flex;
                 align-items: center;
@@ -493,6 +497,23 @@ def inject_custom_css() -> None:
                 box-shadow:
                     0 6px 14px rgba(6, 24, 31, 0.22),
                     inset 0 1px 0 rgba(255,255,255,0.06);
+            }
+
+            .ai-button-chip-hidden {
+                opacity: 0;
+            }
+
+            .job-card div[data-testid="stButton"] > button[kind="primary"] {
+                min-height: 48px;
+                box-shadow:
+                    0 10px 22px rgba(190,24,93,0.18),
+                    inset 0 1px 0 rgba(255,255,255,0.10);
+            }
+
+            .job-card div[data-testid="stButton"] > button[kind="primary"]:hover {
+                box-shadow:
+                    0 13px 26px rgba(190,24,93,0.20),
+                    inset 0 1px 0 rgba(255,255,255,0.14);
             }
 
             .control-label {

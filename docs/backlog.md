@@ -39,9 +39,18 @@ The app now explains saved versus environment keys clearly, but public users may
 ### Validate the Windows package on one more real machine
 The packaging path is much healthier now, but one more real-machine pass would further de-risk broader sharing.
 
+### Prefer the Windows installer over the portable zip
+Once the desktop wrapper installer is stable, promote the one-file Windows setup `.exe` as the main handoff and keep the zip only as fallback.
+
 ## Later
 
 These are worth keeping, but they are not the best V1 use of time right now.
+
+### Sign the Windows installer and app
+Use Authenticode signing so the Windows installer and desktop app stop showing Unknown publisher / SmartScreen trust friction on first launch.
+
+### Sign and notarize the Mac desktop package
+Use Apple Developer ID signing, notarization, and stapling so the desktop app stops showing the unidentified developer/security friction on first launch.
 
 ### Surface OpenAI usage, token, and cost visibility
 Add a read-only app view that shows OpenAI usage for the configured key, including token consumption, cost, and links back to billing or usage pages.

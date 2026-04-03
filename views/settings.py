@@ -1,12 +1,22 @@
 import html
 from datetime import time as dt_time
 from pathlib import Path
-import os
-import subprocess
 
 import streamlit as st
 
-from config import APP_NAME, APP_VERSION, BACKUPS_DIR, DATA_DIR, DATABASE_PATH, JOB_URLS_FILE, LOGS_DIR, MANUAL_URLS_FILE, OPENAI_API_KEY_FILE, PROJECT_ROOT
+from config import (
+    APP_NAME,
+    APP_VERSION,
+    BACKUPS_DIR,
+    DATA_DIR,
+    DATABASE_PATH,
+    JOB_URLS_FILE,
+    LOGS_DIR,
+    MANUAL_URLS_FILE,
+    OPENAI_API_KEY_FILE,
+    PROJECT_ROOT,
+    RUNTIME_SETTINGS_FILE,
+)
 from services.auto_run import (
     AUTO_RUN_FREQUENCY_OPTIONS,
     WEEKDAY_OPTIONS,
@@ -27,6 +37,7 @@ from services.job_levels import (
     parse_preferred_job_levels,
     serialize_preferred_job_levels,
 )
+from services.folder_picker import pick_folder_dialog
 from services.openai_key import (
     delete_saved_openai_api_key,
     get_effective_openai_api_key,
@@ -38,13 +49,19 @@ from services.openai_key import (
 )
 from services.pipeline_runtime import rescore_existing_jobs
 from services.profile_context_templates import generate_profile_context_from_resume
+from services.settings import (
+    DEFAULT_SETTINGS,
+    get_default_cover_letter_output_folder,
+    load_settings,
+    normalize_cover_letter_output_settings,
+    save_settings,
+)
 from services.source_layer import (
     SOURCE_LAYER_MODE_ENV_VAR,
     get_source_layer_mode,
     set_source_layer_mode,
 )
 from services.source_layer_shadow_populate import populate_shadow_from_legacy_export
-from services.settings import DEFAULT_SETTINGS, get_default_cover_letter_output_folder, load_settings, save_settings
 from services.source_layer_status_smoke import build_source_layer_status_summary
 from services.status import get_system_status
 from services.ui_busy import app_is_busy, queue_action
@@ -201,69 +218,8 @@ def _save_internal_search_tools_visibility() -> None:
     )
 
 
-def pick_folder_dialog(initial_path: str) -> str:
-    start_path = str(Path(initial_path).expanduser()) if initial_path else str(Path.home())
-
-    if os.name == "nt":
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            selected = filedialog.askdirectory(
-                initialdir=start_path,
-                title="Select Cover Letter Output Folder",
-                mustexist=False,
-            )
-            root.destroy()
-            if selected:
-                return selected
-            return initial_path
-        except Exception as exc:
-            st.session_state["cover_letter_output_settings_saved_message"] = (
-                f"Could not open folder picker: {exc}"
-            )
-            return initial_path
-
-    script = f'''
-set startFolder to POSIX file "{start_path}" as alias
-try
-    set chosenFolder to choose folder with prompt "Select Cover Letter Output Folder" default location startFolder
-on error
-    set chosenFolder to choose folder with prompt "Select Cover Letter Output Folder"
-end try
-POSIX path of chosenFolder
-'''.strip()
-
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if result.returncode == 0:
-            selected = result.stdout.strip()
-            if selected:
-                return selected
-
-        stderr_text = (result.stderr or "").strip()
-        if stderr_text and "User canceled" not in stderr_text:
-            st.session_state["cover_letter_output_settings_saved_message"] = (
-                f"Could not open folder picker: {stderr_text}"
-            )
-    except Exception as exc:
-        st.session_state["cover_letter_output_settings_saved_message"] = (
-            f"Could not open folder picker: {exc}"
-        )
-
-    return initial_path
-
-
 def save_cover_letter_output_settings(folder_value: str, pattern_value: str) -> dict[str, str]:
+    folder_value, pattern_value = normalize_cover_letter_output_settings(folder_value, pattern_value)
     return save_settings(
         {
             "cover_letter_output_folder": str(folder_value).strip(),
@@ -518,7 +474,7 @@ def _reset_app_data() -> tuple[list[str], list[str]]:
         DATA_DIR / "openai_api_state.json",
         JOB_URLS_FILE,
         MANUAL_URLS_FILE,
-        PROJECT_ROOT / "runtime_settings.json",
+        RUNTIME_SETTINGS_FILE,
     ]
 
     for target in targets:
@@ -1203,7 +1159,14 @@ def render_configuration_tab(settings: dict[str, str]) -> None:
             "settings_cover_letter_output_folder_value",
             DEFAULT_SETTINGS["cover_letter_output_folder"],
         )
-        selected_folder = pick_folder_dialog(current_folder)
+        selected_folder, picker_error = pick_folder_dialog(
+            current_folder,
+            title="Select Cover Letter Output Folder",
+        )
+        if picker_error:
+            st.session_state["cover_letter_output_settings_saved_message"] = (
+                f"Could not open folder picker: {picker_error}"
+            )
         st.session_state["settings_cover_letter_output_folder_value"] = selected_folder
 
         try:

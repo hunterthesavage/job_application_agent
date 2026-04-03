@@ -54,16 +54,41 @@ def load_profile_context_from_settings(settings: dict[str, str]) -> str:
     return "\n\n".join(parts).strip()
 
 
-def generate_letter(profile_context: str, job: dict[str, str]) -> str:
-    api_key = get_effective_openai_api_key()
-    if not api_key:
-        raise ValueError(
-            "No OpenAI API key is configured. Add one in Settings → OpenAI API, or set OPENAI_API_KEY in your environment."
+def extract_cover_letter_voice(settings: dict[str, str]) -> str:
+    return safe_text(settings.get("cover_letter_voice", ""))
+
+
+def build_cover_letter_length_guidance(cover_letter_voice: str) -> str:
+    voice = safe_text(cover_letter_voice).lower()
+    succinct_markers = (
+        "succinct",
+        "concise",
+        "brief",
+        "short",
+        "to the point",
+        "no fluff",
+        "direct",
+        "lean",
+        "tight",
+    )
+
+    if any(marker in voice for marker in succinct_markers):
+        return (
+            "- Keep it tight: 2 to 3 short paragraphs and roughly 120 to 180 words.\n"
+            "- Prioritize sharp, concrete fit over polished filler or scene-setting."
         )
 
-    client = OpenAI(api_key=api_key)
+    return (
+        "- Keep it readable: 3 to 4 reasonably short paragraphs and roughly 180 to 300 words.\n"
+        "- Prioritize specificity and relevance over generic enthusiasm."
+    )
 
-    prompt = f"""
+
+def build_cover_letter_prompt(profile_context: str, job: dict[str, str], cover_letter_voice: str) -> str:
+    voice = safe_text(cover_letter_voice) or "Clear, specific, and professional."
+    length_guidance = build_cover_letter_length_guidance(voice)
+
+    return f"""
 Candidate profile:
 {profile_context}
 
@@ -77,19 +102,36 @@ Application Angle: {job.get('application_angle', '')}
 Cover Letter Starter: {job.get('cover_letter_starter', '')}
 Compensation: {job.get('compensation_raw', '')}
 
-Write a tailored executive-level cover letter.
+Write a tailored professional cover letter.
 
-Requirements:
-- 4 to 6 paragraphs
-- confident, modern executive tone
-- no bullet points
-- no em dashes
-- tailored to role and company
-- emphasize leadership, transformation, execution
-- avoid generic phrasing
-- plain text only
-- do not add a signature, sign-off line, or candidate name at the end
+Cover Letter Voice:
+{voice}
+
+Rules:
+- The Cover Letter Voice is the highest-priority writing instruction. Follow it over the default style guidance below when there is any tension.
+{length_guidance}
+- Tailor the letter to the role and company.
+- Use direct, concrete language tied to the candidate profile and job.
+- Avoid fluff, clichés, generic enthusiasm, and repeated resume summary.
+- Emphasize relevant leadership, execution, and business impact only when supported by the profile and role.
+- No bullet points.
+- No em dashes.
+- Plain text only.
+- Do not add a greeting, sign-off line, or candidate name unless the voice explicitly calls for it.
 """.strip()
+
+
+def generate_letter(profile_context: str, job: dict[str, str], settings: dict[str, str] | None = None) -> str:
+    api_key = get_effective_openai_api_key()
+    if not api_key:
+        raise ValueError(
+            "No OpenAI API key is configured. Add one in Settings → OpenAI API, or set OPENAI_API_KEY in your environment."
+        )
+
+    client = OpenAI(api_key=api_key)
+    resolved_settings = settings or load_settings()
+    cover_letter_voice = extract_cover_letter_voice(resolved_settings)
+    prompt = build_cover_letter_prompt(profile_context, job, cover_letter_voice)
 
     response = client.responses.create(
         model="gpt-5",
@@ -155,7 +197,7 @@ def generate_cover_letter_for_job_id(job_id: int) -> dict[str, str]:
     settings = load_settings()
     profile_context = load_profile_context_from_settings(settings)
 
-    letter = generate_letter(profile_context, job)
+    letter = generate_letter(profile_context, job, settings=settings)
     output_path = save_letter_to_file(letter, settings, job)
     record_cover_letter_artifact(job_id, str(output_path))
 

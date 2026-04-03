@@ -196,6 +196,20 @@ def render_action_loading_screen(scope: str) -> None:
     st.markdown(
         f"""
         <div style="
+            position:fixed;
+            inset:0;
+            z-index:9998;
+            background:rgba(5,8,15,0.62);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+        "></div>
+        <div style="
+            position:fixed;
+            top:1.4rem;
+            left:50%;
+            transform:translateX(-50%);
+            width:min(920px, calc(100vw - 2rem));
+            z-index:9999;
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 24px;
             background:
@@ -203,8 +217,6 @@ def render_action_loading_screen(scope: str) -> None:
                 linear-gradient(180deg, rgba(16,22,36,0.96) 0%, rgba(10,14,24,0.99) 100%);
             box-shadow: 0 18px 48px rgba(0,0,0,0.24);
             padding: 1.35rem 1.4rem 1.2rem 1.4rem;
-            margin-top: 1rem;
-            margin-bottom: 1rem;
             display:flex;
             align-items:center;
             gap:1.05rem;
@@ -259,6 +271,51 @@ def render_action_loading_screen(scope: str) -> None:
         </div>
         """,
         unsafe_allow_html=True,
+    )
+    components_html(
+        """
+        <script>
+        (function () {
+          function nudgeTop() {
+            try { window.scrollTo(0, 0); } catch (e) {}
+            try { parent.window.scrollTo(0, 0); } catch (e) {}
+            try {
+              const selectors = [
+                '.main',
+                'section.main',
+                '[data-testid="stAppViewContainer"]',
+                '[data-testid="stAppViewContainer"] section.main',
+                '.stApp',
+                'body',
+                'html'
+              ];
+              selectors.forEach((selector) => {
+                const nodes = window.parent.document.querySelectorAll(selector);
+                nodes.forEach((node) => {
+                  try { node.scrollTop = 0; } catch (e) {}
+                });
+              });
+            } catch (e) {}
+            try {
+              if (window.parent.document.documentElement) {
+                window.parent.document.documentElement.scrollTop = 0;
+              }
+              if (window.parent.document.body) {
+                window.parent.document.body.scrollTop = 0;
+              }
+            } catch (e) {}
+          }
+          nudgeTop();
+          let count = 0;
+          const timer = setInterval(() => {
+            nudgeTop();
+            count += 1;
+            if (count >= 24) { clearInterval(timer); }
+          }, 150);
+        })();
+        </script>
+        """,
+        height=0,
     )
 
 def initialize_app_once() -> None:
