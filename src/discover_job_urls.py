@@ -700,6 +700,33 @@ def _is_empty_search_result_error(exc: Exception) -> bool:
     return "no results found" in message
 
 
+def _run_search_query_with_retry(
+    ddgs: Any,
+    query: str,
+    max_results: int,
+    tier_name: str,
+    log_lines: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    last_exc: Exception | None = None
+    for attempt in range(1, 3):
+        try:
+            results = list(ddgs.text(query, max_results=max_results))
+            if attempt > 1 and log_lines is not None:
+                log_lines.append(f"Search retry [{tier_name}] succeeded on attempt {attempt}.")
+            return results
+        except Exception as exc:
+            if _is_empty_search_result_error(exc):
+                return []
+            last_exc = exc
+            if attempt < 2 and log_lines is not None:
+                log_lines.append(
+                    f"Search retry [{tier_name}] after transient failure for query '{query}': {exc}"
+                )
+    if last_exc is not None:
+        raise last_exc
+    return []
+
+
 def discover_google_style_urls(
     settings: dict[str, str],
     log_lines: list[str] | None = None,
@@ -764,7 +791,13 @@ def discover_google_style_urls(
                     log_lines.append(f"Searching query [{tier_name}]: {query}")
 
                 try:
-                    results = list(ddgs.text(query, max_results=max_results))
+                    results = _run_search_query_with_retry(
+                        ddgs,
+                        query,
+                        max_results,
+                        tier_name,
+                        log_lines=log_lines,
+                    )
                     result_count = len(results)
                     total_search_results += result_count
                     tier_result_count += result_count
@@ -846,12 +879,6 @@ def discover_google_style_urls(
                         discovered.append(final_url)
 
                 except Exception as exc:
-                    if _is_empty_search_result_error(exc):
-                        if log_lines is not None:
-                            log_lines.append(f"Search results returned [{tier_name}]: 0")
-                        consecutive_search_failures = 0
-                        continue
-
                     consecutive_search_failures += 1
                     if log_lines is not None:
                         log_lines.append(f"Search failed [{tier_name}] for query '{query}': {exc}")

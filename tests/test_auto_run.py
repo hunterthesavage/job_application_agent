@@ -49,7 +49,7 @@ def test_build_headless_run_command_prefers_installed_macos_bundle(monkeypatch, 
 
     bundle_root = tmp_path / "Job Application Agent.app"
     executable = bundle_root / "Contents" / "MacOS" / "Job Application Agent"
-    script = bundle_root / "scripts" / "run_scheduled_jobs.py"
+    script = bundle_root / "Contents" / "Resources" / "scripts" / "run_scheduled_jobs.py"
     executable.parent.mkdir(parents=True, exist_ok=True)
     script.parent.mkdir(parents=True, exist_ok=True)
     executable.write_text("binary placeholder", encoding="utf-8")

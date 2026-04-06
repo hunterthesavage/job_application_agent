@@ -280,6 +280,7 @@ FUNCTION_LANE_GROUPS: dict[str, set[str]] = {
         "product",
         "technical",
     },
+    "ai": {"ai", "artificial", "intelligence"},
     "finance": {"finance", "financial", "accounting", "treasury", "audit", "controller"},
     "operations": {
         "operations",
@@ -298,6 +299,8 @@ FUNCTION_LANE_GROUPS: dict[str, set[str]] = {
     "people": {"people", "hr", "human", "talent", "recruiting", "acquisition"},
     "legal": {"legal", "compliance", "privacy", "regulatory", "counsel"},
 }
+
+SIGNIFICANT_SHORT_TITLE_TOKENS = {"ai"}
 
 
 def _detect_leadership_levels(text: str) -> set[str]:
@@ -881,7 +884,7 @@ def _cheap_url_title_prefilter(job_url: str, settings: dict[str, Any]) -> tuple[
     target_token_pool = set()
     for target in expanded_titles:
         for token in tokenize(target):
-            if len(token) >= 3:
+            if len(token) >= 3 or token in SIGNIFICANT_SHORT_TITLE_TOKENS:
                 target_token_pool.add(token)
 
     overlap = hint_tokens.intersection(target_token_pool)

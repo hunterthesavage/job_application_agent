@@ -6,7 +6,7 @@ Job Application Agent is a local-first Streamlit app for discovering, validating
 The current product is designed around a single-user workflow on a local machine, with SQLite as the primary system of record and optional OpenAI support for title suggestions and cover-letter-related workflows.
 
 ## Current release
-- Version: `1.0.5`
+- Version: `1.0.6`
 
 ## What is working now
 

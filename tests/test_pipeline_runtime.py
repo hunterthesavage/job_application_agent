@@ -219,6 +219,122 @@ def test_build_jobs_from_urls_canonicalizes_wrapper_urls_before_validation(monke
     assert result["seen_urls"] == 1
 
 
+def test_discover_job_links_top_titles_flow_through_discovery_and_ingest(monkeypatch):
+    import services.pipeline_runtime as runtime
+    from services.search_plan import build_search_plan
+
+    settings = {
+        "target_titles": (
+            "VP of Technology\n"
+            "VP of AI\n"
+            "VP of ITSM\n"
+            "VP of Service Delivery\n"
+            "VP of Technology\n"
+            "VP of Artificial Intelligence\n"
+            "VP of IT Service Management\n"
+            "VP of Service Delivery\n"
+            "VP of Engineering\n"
+            "VP of Infrastructure"
+        ),
+        "preferred_locations": "Dallas, TX\nPlano, TX\nFrisco, TX\nRemote",
+        "include_remote": "true",
+        "search_strategy": "broad_recall",
+    }
+
+    captured = {"queries": [], "plan": None}
+
+    monkeypatch.setattr(runtime, "get_source_layer_mode", lambda: "legacy")
+    monkeypatch.setattr(runtime, "load_settings", lambda: settings)
+    monkeypatch.setattr(
+        runtime.discover_module,
+        "build_search_plan",
+        lambda current_settings: build_search_plan(current_settings, use_ai_expansion=False),
+    )
+
+    def fake_discover_urls(current_settings, use_ai_expansion=True):
+        plan = build_search_plan(current_settings, use_ai_expansion=use_ai_expansion)
+        captured["plan"] = plan
+        grouped_tier = next((tier for tier in plan.query_tiers if tier.get("name") == "ats_grouped"), None)
+        captured["queries"] = list(grouped_tier["queries"]) if grouped_tier else []
+        assert grouped_tier is not None
+        assert len(grouped_tier["queries"]) == 3
+        assert all('vice president of Technology vice president of AI' not in query for query in grouped_tier["queries"])
+        assert any('"vice president of Technology"' in query for query in grouped_tier["queries"])
+        return {
+            "all_urls": [
+                "https://jobs.lever.co/example/12345",
+                "https://job-boards.greenhouse.io/example/jobs/12345",
+            ],
+            "greenhouse_urls": ["https://job-boards.greenhouse.io/example/jobs/12345"],
+            "lever_urls": ["https://jobs.lever.co/example/12345"],
+            "search_urls": [
+                "https://jobs.lever.co/example/12345",
+                "https://job-boards.greenhouse.io/example/jobs/12345",
+            ],
+            "output": "Discovery output",
+            "drop_summary": {},
+        }
+
+    monkeypatch.setattr(runtime.discover_module, "discover_urls", fake_discover_urls)
+    monkeypatch.setattr(runtime.discover_module, "save_output_urls", lambda file_path, urls: None)
+    monkeypatch.setattr(runtime.discover_module, "build_google_discovery_queries", lambda settings, use_ai_expansion=False: ["query 1"])
+
+    seen = {"urls": [], "source_name": None, "source_detail": None, "use_ai_scoring": None}
+
+    def fake_build_jobs(urls, source_name, source_detail, *, use_ai_scoring=True, seeded_job_urls=None):
+        seen["urls"] = list(urls)
+        seen["source_name"] = source_name
+        seen["source_detail"] = source_detail
+        seen["use_ai_scoring"] = use_ai_scoring
+        assert urls == [
+            "https://jobs.lever.co/example/12345",
+            "https://job-boards.greenhouse.io/example/jobs/12345",
+        ]
+        return {
+            "status": "completed",
+            "output": "Ingest output",
+            "summary": {
+                "run_id": 99,
+                "inserted_count": 2,
+                "updated_count": 0,
+                "skipped_removed_count": 0,
+            },
+            "accepted_jobs": 2,
+            "seen_urls": 2,
+            "skipped_count": 0,
+            "skipped_duplicate_batch_count": 0,
+            "error_count": 0,
+            "build_seconds": 0.0,
+            "ingest_seconds": 0.0,
+            "skip_summary": {},
+            "seeded_accepted_jobs": 0,
+            "seeded_accepted_companies": [],
+        }
+
+    monkeypatch.setattr(runtime, "_build_jobs_from_urls", fake_build_jobs)
+    monkeypatch.setattr(runtime, "record_source_layer_run", lambda **kwargs: None)
+    monkeypatch.setattr(runtime, "update_ingestion_run_details", lambda run_id, extra_details: None)
+    monkeypatch.setattr(runtime, "refresh_existing_jobs_if_needed", lambda **kwargs: {"output": "", "refreshed_count": 0, "rescored_count": 0, "changed_count": 0})
+
+    result = runtime.discover_and_ingest(use_ai_title_expansion=True, use_ai_scoring=False)
+
+    assert result["discovery"]["url_count"] == 2
+    assert seen["source_name"] == "Local Pipeline"
+    assert seen["source_detail"] == "in_memory_discovery_result"
+    assert seen["use_ai_scoring"] is False
+    assert captured["plan"].base_titles == [
+        "VP of Technology",
+        "VP of AI",
+        "VP of ITSM",
+        "VP of Service Delivery",
+        "VP of Artificial Intelligence",
+        "VP of IT Service Management",
+        "VP of Engineering",
+        "VP of Infrastructure",
+    ]
+    assert len(captured["queries"]) == 3
+
+
 def test_discover_job_links_includes_shadow_summary_when_enabled(monkeypatch):
     import services.pipeline_runtime as runtime
 
@@ -1750,3 +1866,48 @@ def test_build_jobs_from_urls_skips_ai_when_disabled(monkeypatch):
 
     assert result["accepted_jobs"] == 1
     assert "AI job scoring: disabled for this run" in result["output"]
+
+
+def test_detect_function_lanes_includes_ai_titles():
+    import services.pipeline_runtime as runtime
+
+    assert runtime._detect_function_lanes("VP of AI") == {"ai"}
+    assert runtime._detect_function_lanes("VP of Artificial Intelligence") == {"ai"}
+    assert runtime._detect_function_lanes("VP AI Compliance Officer") >= {"ai"}
+
+
+def test_ats_prefilter_accepts_ai_detail_urls_but_rejects_irrelevant_ats_pages(monkeypatch):
+    import services.pipeline_runtime as runtime
+
+    settings = {
+        "target_titles": (
+            "VP of Technology\n"
+            "VP of AI\n"
+            "VP of ITSM\n"
+            "VP of Service Delivery\n"
+            "VP of Technology\n"
+            "VP of Artificial Intelligence\n"
+            "VP of IT Service Management\n"
+            "VP of Service Delivery\n"
+            "VP of Engineering\n"
+            "VP of Infrastructure"
+        ),
+        "preferred_locations": "Dallas, TX\nPlano, TX\nFrisco, TX\nRemote",
+        "include_remote": "true",
+    }
+    ai_url = "https://ms.wd5.myworkdayjobs.com/External/job/Dallas-Texas-United-States-of-America/VP--AI-Compliance-Officer_PT-JR033013"
+    talent_url = "https://snc.wd1.myworkdayjobs.com/en-US/SNC_External_Career_Site/job/Vice-President-of-Talent-Management-and-Agentic-Learning_R0029083"
+    investor_url = "https://jobs.smartrecruiters.com/PublicStorage/744000109825767-vice-president-investor-relations-strategic-partnerships"
+
+    assert runtime._cheap_url_title_prefilter(ai_url, settings) == (
+        True,
+        "url title hint token overlap: ai",
+    )
+    assert runtime._cheap_url_title_prefilter(talent_url, settings) == (
+        False,
+        "url title signature mismatch: vice president of talent management and agentic learning_r0029083",
+    )
+    assert runtime._cheap_url_title_prefilter(investor_url, settings) == (
+        False,
+        "url title prefilter mismatch: 744000109825767 vice president investor relations strategic partnerships",
+    )
