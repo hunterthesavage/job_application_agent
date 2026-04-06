@@ -135,9 +135,23 @@ def get_macos_app_executable_path(bundle_root: Path | None = None) -> Path:
     return root / "Contents" / "MacOS" / APP_NAME
 
 
+def _get_scheduled_runner_script_candidates(bundle_root: Path) -> list[Path]:
+    return [
+        bundle_root / "Contents" / "Resources" / "scripts" / "run_scheduled_jobs.py",
+        bundle_root / "scripts" / "run_scheduled_jobs.py",
+        PROJECT_ROOT / "scripts" / "run_scheduled_jobs.py",
+    ]
+
+
 def get_scheduled_runner_script_path() -> str:
-    script_path = get_preferred_macos_app_bundle_root() / "scripts" / "run_scheduled_jobs.py"
-    return str(script_path.resolve())
+    if platform.system().lower() == "darwin":
+        bundle_root = get_preferred_macos_app_bundle_root()
+        for candidate in _get_scheduled_runner_script_candidates(bundle_root):
+            if candidate.exists():
+                return str(candidate.resolve())
+        return str(_get_scheduled_runner_script_candidates(bundle_root)[0].resolve())
+
+    return str((PROJECT_ROOT / "scripts" / "run_scheduled_jobs.py").resolve())
 
 
 def build_headless_run_command() -> list[str]:

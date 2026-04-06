@@ -111,3 +111,54 @@ def test_build_search_plan_respects_include_remote_false_with_locations():
     assert plan.include_remote is False
     assert all("remote" not in query.lower() for query in plan.queries)
     assert any("Dallas, TX" in note or "Fort Worth, TX" in note for note in plan.notes)
+
+
+def test_build_search_plan_keeps_common_vp_bundle_queries_separate():
+    from services.search_plan import build_search_plan
+
+    plan = build_search_plan(
+        settings={
+            "target_titles": (
+                "VP of Technology\n"
+                "VP of AI\n"
+                "VP of ITSM\n"
+                "VP of Service Delivery\n"
+                "VP of Technology\n"
+                "VP of Artificial Intelligence\n"
+                "VP of IT Service Management\n"
+                "VP of Service Delivery\n"
+                "VP of Engineering\n"
+                "VP of Infrastructure"
+            ),
+            "preferred_locations": "Dallas, TX\nPlano, TX\nFrisco, TX\nRemote",
+            "include_remote": "true",
+            "search_strategy": "broad_recall",
+        },
+        use_ai_expansion=True,
+    )
+
+    grouped_tier = next((tier for tier in plan.query_tiers if tier.get("name") == "ats_grouped"), None)
+
+    assert plan.base_titles == [
+        "VP of Technology",
+        "VP of AI",
+        "VP of ITSM",
+        "VP of Service Delivery",
+        "VP of Artificial Intelligence",
+        "VP of IT Service Management",
+        "VP of Engineering",
+        "VP of Infrastructure",
+    ]
+    assert plan.title_variants == [
+        "vice president of Technology",
+        "vice president of AI",
+        "vice president of ITSM",
+        "vice president of Service Delivery",
+        "vice president of Artificial Intelligence",
+        "vice president of information technology Service Management",
+    ]
+    assert grouped_tier is not None
+    assert len(grouped_tier["queries"]) == 3
+    assert all('vice president of Technology vice president of AI' not in query for query in grouped_tier["queries"])
+    assert all(query.count('"vice president of ') == 6 for query in grouped_tier["queries"])
+    assert any('"vice president of Technology"' in query for query in grouped_tier["queries"])

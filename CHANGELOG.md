@@ -7,6 +7,12 @@ This project follows semantic versioning:
 - `MINOR` for meaningful new capabilities that keep the product recognizably the same
 - `PATCH` for bug fixes, polish, install improvements, and small workflow refinements
 
+## [1.0.6] - 2026-04-06
+
+- Tightened AI lane detection so `AI` executive titles survive ATS prefiltering without broadly loosening unrelated job pages.
+- Kept ATS detail filtering narrow while improving recall for AI and technology leadership searches.
+- Rebuilt macOS auto-run setup around the installed app bundle so LaunchAgent scheduling points at the packaged runner script.
+
 ## [1.0.5] - 2026-04-06
 
 - Fixed macOS automatic-run packaging so the `.dmg` now includes the scheduled runner script inside the app bundle.
