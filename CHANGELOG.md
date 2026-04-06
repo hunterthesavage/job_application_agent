@@ -7,6 +7,12 @@ This project follows semantic versioning:
 - `MINOR` for meaningful new capabilities that keep the product recognizably the same
 - `PATCH` for bug fixes, polish, install improvements, and small workflow refinements
 
+## [1.0.5] - 2026-04-06
+
+- Fixed macOS automatic-run packaging so the `.dmg` now includes the scheduled runner script inside the app bundle.
+- Made the desktop wrapper honor scheduled-run invocations by running `run_scheduled_jobs.py` when launchd passes it in.
+- Hardened Mac auto-run configuration so it prefers the installed `/Applications` bundle instead of a translocated app path.
+
 ## [1.0.4] - 2026-04-03
 
 - Simplified Pipeline down to `Find Roles` and `Search Results` so the main search path is easier to understand.

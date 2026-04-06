@@ -5,6 +5,7 @@ import os
 import socket
 import subprocess
 import sys
+import runpy
 import threading
 import time
 from pathlib import Path
@@ -76,6 +77,15 @@ def resolve_window_launch_flags() -> dict[str, bool]:
 
 def is_frozen_app() -> bool:
     return bool(getattr(sys, "frozen", False))
+
+
+def resolve_scheduled_jobs_script_arg() -> Path | None:
+    if len(sys.argv) < 2:
+        return None
+    candidate = Path(str(sys.argv[1])).expanduser()
+    if candidate.name == "run_scheduled_jobs.py":
+        return candidate
+    return None
 
 
 def resolve_streamlit_script_path() -> Path:
@@ -253,6 +263,22 @@ def _monitor_embedded_server(window: object) -> None:
 
 
 def launch_desktop_window() -> int:
+    scheduled_jobs_script = resolve_scheduled_jobs_script_arg()
+    if scheduled_jobs_script is not None:
+        if not scheduled_jobs_script.exists():
+            raise DesktopWrapperLaunchError(
+                f"Scheduled runner script was not found at {scheduled_jobs_script}."
+            )
+        try:
+            runpy.run_path(str(scheduled_jobs_script), run_name="__main__")
+        except SystemExit as exc:
+            if exc.code is None:
+                return 0
+            if isinstance(exc.code, int):
+                return exc.code
+            return 1
+        return 0
+
     try:
         import webview
     except Exception as exc:  # pragma: no cover - import failure depends on local env

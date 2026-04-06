@@ -58,6 +58,7 @@ pyinstaller \
   --add-data "views:views" \
   --add-data "ui:ui" \
   --add-data "src:src" \
+  --add-data "scripts/run_scheduled_jobs.py:scripts" \
   --add-data "config.py:." \
   desktop_app.py
 
@@ -83,6 +84,11 @@ fi
 echo "==> Re-signing app bundle after metadata updates"
 codesign --force --deep --sign - "${APP_BUNDLE_PATH}"
 codesign --verify --deep --strict "${APP_BUNDLE_PATH}"
+
+if [ ! -f "${APP_BUNDLE_PATH}/Contents/Resources/scripts/run_scheduled_jobs.py" ]; then
+  echo "Scheduled runner script was not packaged into the app bundle."
+  exit 1
+fi
 
 echo "==> Packaging macOS desktop app zip"
 mkdir -p "${RELEASE_DIR}"

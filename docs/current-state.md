@@ -6,7 +6,7 @@ Job Application Agent is a local-first Streamlit app for discovering, validating
 The current product is designed around a single-user workflow on a local machine, with SQLite as the primary system of record and optional OpenAI support for title suggestions and cover-letter-related workflows.
 
 ## Current release
-- Version: `1.0.4`
+- Version: `1.0.5`
 
 ## What is working now
 
@@ -37,6 +37,10 @@ The Pipeline view is now intentionally simpler.
 Current sections:
 - `Find Roles`
 - `Search Results`
+
+### Mac auto-run
+- The packaged macOS app bundle now includes the scheduled-run helper script used by LaunchAgent background runs.
+- Auto-run setup prefers the installed `/Applications/Job Application Agent.app` bundle instead of a translocated path when the app is packaged.
 
 Current capabilities:
 - Edit and save run inputs

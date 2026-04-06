@@ -44,6 +44,26 @@ def test_configure_auto_run_schedule_builds_launchd_plist(monkeypatch, tmp_path)
     assert any(command[0] == "launchctl" for command in commands)
 
 
+def test_build_headless_run_command_prefers_installed_macos_bundle(monkeypatch, tmp_path):
+    import services.auto_run as auto_run
+
+    bundle_root = tmp_path / "Job Application Agent.app"
+    executable = bundle_root / "Contents" / "MacOS" / "Job Application Agent"
+    script = bundle_root / "scripts" / "run_scheduled_jobs.py"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_text("binary placeholder", encoding="utf-8")
+    script.write_text("print('scheduled run')", encoding="utf-8")
+
+    monkeypatch.setattr(auto_run.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(auto_run, "is_frozen_app", lambda: True)
+    monkeypatch.setattr(auto_run, "get_macos_app_bundle_root", lambda: bundle_root)
+
+    command = auto_run.build_headless_run_command()
+
+    assert command == [str(executable.resolve()), str(script.resolve())]
+
+
 def test_disable_auto_run_schedule_removes_launch_agent(monkeypatch, tmp_path):
     import services.auto_run as auto_run
 

@@ -8,7 +8,7 @@ from datetime import datetime, time as dt_time
 from pathlib import Path
 from typing import Any
 
-from config import LOGS_DIR, PROJECT_ROOT
+from config import APP_NAME, LOGS_DIR, PROJECT_ROOT
 
 
 AUTO_RUN_FREQUENCY_OPTIONS: dict[str, str] = {
@@ -114,12 +114,39 @@ def get_current_python_executable() -> str:
     return str(Path(sys.executable).resolve())
 
 
+def is_frozen_app() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def get_macos_app_bundle_root() -> Path:
+    return Path("/Applications") / f"{APP_NAME}.app"
+
+
+def get_preferred_macos_app_bundle_root() -> Path:
+    if platform.system().lower() == "darwin" and is_frozen_app():
+        installed_bundle_root = get_macos_app_bundle_root()
+        if installed_bundle_root.exists():
+            return installed_bundle_root
+    return PROJECT_ROOT
+
+
+def get_macos_app_executable_path(bundle_root: Path | None = None) -> Path:
+    root = bundle_root or get_macos_app_bundle_root()
+    return root / "Contents" / "MacOS" / APP_NAME
+
+
 def get_scheduled_runner_script_path() -> str:
-    return str((PROJECT_ROOT / "scripts" / "run_scheduled_jobs.py").resolve())
+    script_path = get_preferred_macos_app_bundle_root() / "scripts" / "run_scheduled_jobs.py"
+    return str(script_path.resolve())
 
 
 def build_headless_run_command() -> list[str]:
-    return [get_current_python_executable(), get_scheduled_runner_script_path()]
+    executable_path = get_current_python_executable()
+    if platform.system().lower() == "darwin":
+        preferred_executable = get_macos_app_executable_path(get_preferred_macos_app_bundle_root())
+        if preferred_executable.exists():
+            executable_path = str(preferred_executable.resolve())
+    return [executable_path, get_scheduled_runner_script_path()]
 
 
 def get_launch_agent_path() -> Path:
@@ -180,10 +207,28 @@ def _configure_launchd(settings: dict[str, str]) -> dict[str, Any]:
     launch_agent_path.parent.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
+    program_arguments = build_headless_run_command()
+    executable_path = Path(program_arguments[0])
+    script_path = Path(program_arguments[1])
+    if not executable_path.exists():
+        return {
+            "ok": False,
+            "detail": f"Mac launcher executable was not found at {executable_path}. Open the installed .dmg app from /Applications and try again.",
+            "scheduler_path": str(launch_agent_path),
+            "normalized_time": normalized_time,
+        }
+    if not script_path.exists():
+        return {
+            "ok": False,
+            "detail": f"Scheduled runner script was not found at {script_path}. Reinstall the current .dmg package and try again.",
+            "scheduler_path": str(launch_agent_path),
+            "normalized_time": normalized_time,
+        }
+
     plist_payload = {
         "Label": AUTO_RUN_LAUNCHD_LABEL,
-        "ProgramArguments": build_headless_run_command(),
-        "WorkingDirectory": str(PROJECT_ROOT.resolve()),
+        "ProgramArguments": program_arguments,
+        "WorkingDirectory": str(get_preferred_macos_app_bundle_root().resolve()),
         "RunAtLoad": False,
         "StartCalendarInterval": _build_launchd_intervals(
             frequency=frequency,
