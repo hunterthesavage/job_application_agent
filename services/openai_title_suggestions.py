@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import requests
 
@@ -70,6 +71,37 @@ def _unique_locations(values: list[str]) -> list[str]:
     return results
 
 
+ROLE_PREFIX_TOKENS = {"manager", "mgr", "director", "dir"}
+
+
+def _tokenize_title(value: str) -> list[str]:
+    cleaned = _clean_title(value).lower().replace("/", " ")
+    return [part for part in cleaned.replace(",", " ").split() if part]
+
+
+def _is_close_title_variant(main_title: str, variant: str) -> bool:
+    main_clean = _clean_title(main_title)
+    variant_clean = _clean_title(variant)
+    if not main_clean or not variant_clean:
+        return False
+
+    lowered_variant = variant_clean.lower()
+    if re.search(r"\bvice pres\b", lowered_variant):
+        return False
+
+    main_tokens = _tokenize_title(main_clean)
+    variant_tokens = _tokenize_title(variant_clean)
+    if not main_tokens or not variant_tokens:
+        return False
+
+    main_first = main_tokens[0]
+    variant_first = variant_tokens[0]
+    if main_first not in ROLE_PREFIX_TOKENS and variant_first in ROLE_PREFIX_TOKENS:
+        return False
+
+    return True
+
+
 def _build_prompt(
     current_titles: str,
     profile_summary: str = "",
@@ -101,6 +133,59 @@ Rules:
 
 Current target titles:
 {current_titles}
+
+Profile summary:
+{profile_summary}
+
+Resume text:
+{resume_text[:4000]}
+
+Include keywords:
+{include_keywords}
+""".strip()
+
+
+def _build_title_group_prompt(
+    main_titles: list[str],
+    profile_summary: str = "",
+    resume_text: str = "",
+    include_keywords: str = "",
+    max_variants_per_title: int = 5,
+) -> str:
+    title_lines = "\n".join(f"- {title}" for title in main_titles if _clean_title(title))
+    return f"""
+You are helping a job seeker expand each job title into close ATS-friendly subtitle variants.
+
+Return strict JSON with this shape:
+{{
+  "title_groups": [
+    {{
+      "main_title": "VP of IT",
+      "variants": ["Vice President of IT", "VP Information Technology"]
+    }}
+  ],
+  "notes": "One short sentence"
+}}
+
+Rules:
+- Return JSON only.
+- For each main title, return up to {max_variants_per_title} variants.
+- Keep each variant very close to the main title.
+- Keep the same seniority band and the same functional lane.
+- Prioritize only level variance and abbreviation variance when they make sense.
+- Examples of allowed behavior: Manager vs Mgr, Director vs Dir, VP vs Vice President, IT vs Information Technology, AI vs Artificial Intelligence.
+- Prefer standard ATS phrasing and natural word order.
+- Do not create awkward inversions like `Manager Information Technology` or `Mgr IT` when the natural title is `IT Manager`.
+- Do not shorten words into partial fragments like `Vice Pres`.
+- Do not invent adjacent roles that materially change scope or function.
+- Do not include the main title again in the variants list.
+- If a title does not need variants, return an empty list for that title.
+- Prefer ATS-friendly wording that is likely to appear on real career sites.
+- Be conservative. Tight variants are better than broad brainstorming.
+- Avoid duplicates.
+
+Main titles:
+{title_lines}
 
 Profile summary:
 {profile_summary}
@@ -264,6 +349,126 @@ def suggest_titles_with_openai(
             "ok": False,
             "error": f"OpenAI request failed. {exc}",
             "titles": [],
+            "notes": "",
+        }
+
+
+def suggest_title_groups_with_openai(
+    main_titles: list[str],
+    profile_summary: str = "",
+    resume_text: str = "",
+    include_keywords: str = "",
+    max_variants_per_title: int = 5,
+) -> dict[str, object]:
+    api_key = get_effective_openai_api_key()
+    cleaned_titles = _unique_titles(main_titles)
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "No OpenAI API key is available. Add a key in Settings or Setup Wizard first.",
+            "title_groups": [],
+            "notes": "",
+        }
+    if not cleaned_titles:
+        return {
+            "ok": False,
+            "error": "No titles were provided for subtitle generation.",
+            "title_groups": [],
+            "notes": "",
+        }
+
+    variant_limit = max(0, min(int(max_variants_per_title or 5), 5))
+    prompt = _build_title_group_prompt(
+        main_titles=cleaned_titles,
+        profile_summary=profile_summary,
+        resume_text=resume_text,
+        include_keywords=include_keywords,
+        max_variants_per_title=variant_limit,
+    )
+
+    payload = {
+        "model": OPENAI_TITLE_SUGGEST_MODEL,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {
+                "role": "system",
+                "content": "You expand job-search titles into tight subtitle variants and return strict JSON only.",
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        "temperature": 0.3,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            OPENAI_CHAT_COMPLETIONS_URL,
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        raw = json.loads(response.text)
+        content = (
+            raw.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+        parsed = json.loads(content or "{}")
+        raw_groups = parsed.get("title_groups", [])
+        notes = str(parsed.get("notes", "") or "").strip()
+
+        normalized_groups: list[dict[str, object]] = []
+        for main_title in cleaned_titles:
+            raw_group = next(
+                (
+                    group for group in raw_groups
+                    if isinstance(group, dict)
+                    and _clean_title(group.get("main_title", ""))
+                    and _clean_title(group.get("main_title", "")).casefold() == main_title.casefold()
+                ),
+                {},
+            ) if isinstance(raw_groups, list) else {}
+            variants = _unique_titles(list(raw_group.get("variants", []) or []))[:variant_limit]
+            variants = [variant for variant in variants if variant.casefold() != main_title.casefold()]
+            variants = [variant for variant in variants if _is_close_title_variant(main_title, variant)]
+            normalized_groups.append(
+                {
+                    "main_title": main_title,
+                    "variants": variants,
+                }
+            )
+
+        return {
+            "ok": True,
+            "error": "",
+            "title_groups": normalized_groups,
+            "notes": notes,
+            "model": OPENAI_TITLE_SUGGEST_MODEL,
+        }
+    except requests.HTTPError as exc:
+        try:
+            detail = exc.response.text
+        except Exception:
+            detail = str(exc)
+        return {
+            "ok": False,
+            "error": f"OpenAI request failed ({getattr(exc.response, 'status_code', 'unknown')}). {detail}",
+            "title_groups": [],
+            "notes": "",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"OpenAI request failed. {exc}",
+            "title_groups": [],
             "notes": "",
         }
 

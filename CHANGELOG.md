@@ -7,6 +7,13 @@ This project follows semantic versioning:
 - `MINOR` for meaningful new capabilities that keep the product recognizably the same
 - `PATCH` for bug fixes, polish, install improvements, and small workflow refinements
 
+## [1.1.0] - 2026-04-08
+
+- Added structured title groups in Pipeline so users can save up to 10 main titles and review close AI-generated subtitle variants before search.
+- Changed discovery planning to search close title aliases as one family instead of treating every wording variant as a separate search lane.
+- Added a reusable discovery quality benchmark plus comparison reporting for daily debugging and regression tracking.
+- Added soft-expired ATS page detection so dead job pages are counted explicitly instead of leaking through as generic failures.
+
 ## [1.0.6] - 2026-04-06
 
 - Tightened AI lane detection so `AI` executive titles survive ATS prefiltering without broadly loosening unrelated job pages.

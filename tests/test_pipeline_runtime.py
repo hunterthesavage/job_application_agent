@@ -159,6 +159,49 @@ def test_build_jobs_from_urls_treats_ats_404_as_skip(monkeypatch):
     assert "Skipped unavailable ATS posting" in result["output"]
 
 
+def test_build_jobs_from_urls_treats_soft_expired_page_as_skip(monkeypatch):
+    import services.pipeline_runtime as runtime
+    from src.validate_job_url import ExpiredJobPageError
+
+    monkeypatch.setattr(runtime, "load_settings", lambda: {})
+    monkeypatch.setattr(runtime, "is_probable_job_url", lambda job_url: (True, "workday_detail"))
+    monkeypatch.setattr(runtime, "_cheap_url_title_prefilter", lambda job_url, settings: (True, "ok"))
+    monkeypatch.setattr(
+        runtime,
+        "create_job_record",
+        lambda job_url: (_ for _ in ()).throw(
+            ExpiredJobPageError(
+                "Soft-expired ATS job page: https://example.wd1.myworkdayjobs.com/job/1 | the page you are looking for doesn't exist"
+            )
+        ),
+    )
+    monkeypatch.setattr(runtime.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        runtime,
+        "ingest_job_records",
+        lambda **kwargs: {
+            "inserted_count": 0,
+            "updated_count": 0,
+            "skipped_removed_count": 0,
+            "net_new_count": 0,
+            "rediscovered_count": 0,
+            "duplicate_in_run_count": 0,
+        },
+    )
+
+    result = runtime._build_jobs_from_urls(
+        ["https://example.wd1.myworkdayjobs.com/en-US/Careers/job/1"],
+        source_name="Local Pipeline",
+        source_detail="test",
+        use_ai_scoring=False,
+    )
+
+    assert result["error_count"] == 0
+    assert result["skipped_count"] == 1
+    assert result["skip_summary"]["stale_ats_posting"] == 1
+    assert "Skipped unavailable ATS posting" in result["output"]
+
+
 def test_build_jobs_from_urls_canonicalizes_wrapper_urls_before_validation(monkeypatch):
     import services.pipeline_runtime as runtime
 
@@ -258,8 +301,8 @@ def test_discover_job_links_top_titles_flow_through_discovery_and_ingest(monkeyp
         captured["queries"] = list(grouped_tier["queries"]) if grouped_tier else []
         assert grouped_tier is not None
         assert len(grouped_tier["queries"]) == 3
-        assert all('vice president of Technology vice president of AI' not in query for query in grouped_tier["queries"])
-        assert any('"vice president of Technology"' in query for query in grouped_tier["queries"])
+        assert all('vice president of technology vice president of artificial intelligence' not in query for query in grouped_tier["queries"])
+        assert any('"vice president of technology"' in query for query in grouped_tier["queries"])
         return {
             "all_urls": [
                 "https://jobs.lever.co/example/12345",
@@ -1187,7 +1230,7 @@ def test_build_icims_search_url_uses_form_action_and_location_value(monkeypatch)
     )
 
     assert "career-schwab.icims.com/jobs/search" in url
-    assert "searchKeyword=Vice+President+of+information+technology" in url
+    assert "searchKeyword=vice+president+of+information+technology" in url
     assert "searchLocation=-12787-Dallas" in url
 
 
@@ -1689,7 +1732,7 @@ def test_build_taleo_search_url_supports_classic_public_search_page():
 
     assert (
         url
-        == "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl?keyword=Vice+President+of+information+technology"
+        == "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl?keyword=vice+president+of+information+technology"
     )
 
 

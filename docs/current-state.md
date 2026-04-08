@@ -6,7 +6,7 @@ Job Application Agent is a local-first Streamlit app for discovering, validating
 The current product is designed around a single-user workflow on a local machine, with SQLite as the primary system of record and optional OpenAI support for title suggestions and cover-letter-related workflows.
 
 ## Current release
-- Version: `1.0.6`
+- Version: `1.1.0`
 
 ## What is working now
 
@@ -44,6 +44,7 @@ Current sections:
 
 Current capabilities:
 - Edit and save run inputs
+- Save grouped main titles with close AI subtitle variants
 - Run the main search flow from `Find Roles`
 - View latest run summary and diagnostics in `Search Results`
 
@@ -59,6 +60,11 @@ Current pipeline flow:
 8. Dedupe accepted items within the run
 9. Ingest accepted jobs into SQLite
 10. Persist run history and source registry updates
+
+Discovery quality tooling now also includes:
+- local debug-suite comparison reports
+- title-variant benchmark runs
+- explicit stale ATS page detection in validation metrics
 
 ### OpenAI-backed actions in the current UI
 Current user-visible actions that can call OpenAI:

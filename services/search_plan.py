@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -166,6 +167,54 @@ def parse_title_entries(value: str) -> list[str]:
     return _parse_legacy_comma_titles(text)
 
 
+def _parse_title_groups_setting(value: Any) -> list[dict[str, Any]]:
+    raw_text = str(value or "").strip()
+    if not raw_text:
+        return []
+    try:
+        data = json.loads(raw_text)
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+
+    groups: list[dict[str, Any]] = []
+    seen_main_titles: set[str] = set()
+    for raw_group in data:
+        if not isinstance(raw_group, dict):
+            continue
+        main_title = safe_text(raw_group.get("main_title", ""))
+        if not main_title:
+            continue
+        main_key = normalize_text(main_title)
+        if not main_key or main_key in seen_main_titles:
+            continue
+        seen_main_titles.add(main_key)
+
+        variants: list[str] = []
+        seen_variants: set[str] = set()
+        for raw_variant in raw_group.get("variants", []) or []:
+            if not isinstance(raw_variant, dict):
+                continue
+            if not bool(raw_variant.get("selected", True)):
+                continue
+            title = safe_text(raw_variant.get("title", ""))
+            key = normalize_text(title)
+            if not title or not key or key == main_key or key in seen_variants:
+                continue
+            seen_variants.add(key)
+            variants.append(title)
+
+        groups.append(
+            {
+                "main_title": main_title,
+                "variants": variants,
+            }
+        )
+
+    return groups
+
+
 def parse_preferred_locations(value: str) -> list[str]:
     text = safe_text(value)
     if not text:
@@ -213,6 +262,7 @@ def dedupe_preserve_order(items: list[str]) -> list[str]:
 @dataclass
 class SearchPlanInput:
     target_titles: list[str] = field(default_factory=list)
+    target_title_groups: list[dict[str, Any]] = field(default_factory=list)
     preferred_locations: list[str] = field(default_factory=list)
     include_keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
@@ -224,8 +274,15 @@ class SearchPlanInput:
 
     @classmethod
     def from_settings(cls, settings: dict[str, Any]) -> "SearchPlanInput":
+        title_groups = _parse_title_groups_setting(settings.get("target_title_groups", ""))
+        base_titles = (
+            dedupe_preserve_order([safe_text(group.get("main_title", "")) for group in title_groups])
+            if title_groups
+            else dedupe_preserve_order(parse_title_entries(settings.get("target_titles", "")))
+        )
         return cls(
-            target_titles=dedupe_preserve_order(parse_title_entries(settings.get("target_titles", ""))),
+            target_titles=base_titles,
+            target_title_groups=title_groups,
             preferred_locations=dedupe_preserve_order(parse_preferred_locations(settings.get("preferred_locations", ""))),
             include_keywords=dedupe_preserve_order(parse_csv_text(settings.get("include_keywords", ""))),
             exclude_keywords=dedupe_preserve_order(parse_csv_text(settings.get("exclude_keywords", ""))),
@@ -243,6 +300,7 @@ class SearchPlan:
     expanded_titles: list[str] = field(default_factory=list)
     effective_titles: list[str] = field(default_factory=list)
     title_variants: list[str] = field(default_factory=list)
+    title_families: list[dict[str, Any]] = field(default_factory=list)
     preferred_locations: list[str] = field(default_factory=list)
     location_variants: list[str] = field(default_factory=list)
     include_keywords: list[str] = field(default_factory=list)
@@ -387,6 +445,7 @@ TITLE_NOISE_TOKENS = {
 }
 
 SEARCH_SAFE_TOKEN_EXPANSIONS = {
+    "ai": "artificial intelligence",
     "vp": "vice president",
     "svp": "senior vice president",
     "evp": "executive vice president",
@@ -410,6 +469,20 @@ SEARCH_SAFE_TOKEN_EXPANSIONS = {
     "strat": "strategy",
     "trans": "transformation",
 }
+
+SEARCH_ROLE_PREFIX_PATTERNS = [
+    ["executive", "vice", "president"],
+    ["assistant", "vice", "president"],
+    ["senior", "vice", "president"],
+    ["vice", "president"],
+    ["senior", "manager"],
+    ["managing", "director"],
+    ["senior", "director"],
+    ["manager"],
+    ["director"],
+    ["head"],
+    ["chief"],
+]
 
 
 def _detect_title_seniority_query(title: str) -> str:
@@ -454,7 +527,8 @@ def _build_search_safe_title(title: str) -> str:
         return ""
 
     collapsed = (
-        original.replace("/", " ")
+        original.lower()
+        .replace("/", " ")
         .replace("-", " ")
         .replace(",", " ")
         .replace("&", " and ")
@@ -465,12 +539,19 @@ def _build_search_safe_title(title: str) -> str:
 
     expanded_tokens: list[str] = []
     for token in tokens:
-        normalized = normalize_text(token)
+        normalized = normalize_text(token.strip("."))
         replacement = SEARCH_SAFE_TOKEN_EXPANSIONS.get(normalized)
         if replacement:
             expanded_tokens.extend(replacement.split())
         else:
-            expanded_tokens.append(token)
+            expanded_tokens.append(token.strip("."))
+
+    for pattern in SEARCH_ROLE_PREFIX_PATTERNS:
+        if expanded_tokens[: len(pattern)] == pattern:
+            remainder = expanded_tokens[len(pattern) :]
+            if remainder and remainder[0] != "of":
+                expanded_tokens = pattern + ["of"] + remainder
+            break
 
     return " ".join(expanded_tokens)
 
@@ -512,6 +593,80 @@ def _build_title_variants(effective_titles: list[str], max_variants: int = 10) -
 
 def build_search_title_variants(titles: list[str], max_variants: int = 10) -> list[str]:
     return _build_title_variants(dedupe_preserve_order(titles), max_variants=max_variants)
+
+
+def _build_title_family_aliases(candidates: list[str], max_aliases: int = 3) -> list[str]:
+    aliases: list[str] = []
+
+    for title in candidates:
+        clean_title = safe_text(title)
+        if not clean_title:
+            continue
+
+        aliases.append(clean_title)
+
+        search_safe = _build_search_safe_title(clean_title)
+        if _should_prefer_search_safe_variant(clean_title, search_safe):
+            aliases.append(search_safe)
+
+    return dedupe_preserve_order(aliases)[:max_aliases]
+
+
+def _build_title_families(
+    *,
+    base_titles: list[str],
+    title_groups: list[dict[str, Any]],
+    effective_titles: list[str],
+    max_families: int,
+    max_aliases_per_family: int = 3,
+) -> list[dict[str, Any]]:
+    families: list[dict[str, Any]] = []
+
+    if title_groups:
+        for group in title_groups[:max_families]:
+            main_title = safe_text(group.get("main_title", ""))
+            if not main_title:
+                continue
+            candidates = [main_title] + [
+                safe_text(title)
+                for title in group.get("variants", []) or []
+                if safe_text(title)
+            ]
+            aliases = _build_title_family_aliases(candidates, max_aliases=max_aliases_per_family)
+            if not aliases:
+                continue
+            primary_title = next(
+                (
+                    alias
+                    for alias in aliases
+                    if normalize_text(alias) == normalize_text(_build_search_safe_title(alias))
+                ),
+                aliases[0],
+            )
+            families.append(
+                {
+                    "main_title": main_title,
+                    "aliases": aliases,
+                    "primary_title": primary_title,
+                }
+            )
+        return families
+
+    for title in effective_titles[:max_families]:
+        clean_title = safe_text(title)
+        if not clean_title:
+            continue
+        aliases = _build_title_family_aliases([clean_title], max_aliases=max_aliases_per_family)
+        if not aliases:
+            continue
+        families.append(
+            {
+                "main_title": clean_title,
+                "aliases": aliases,
+                "primary_title": aliases[0],
+            }
+        )
+    return families
 
 
 def _build_location_variants(
@@ -584,25 +739,41 @@ def _expand_titles_with_ai(plan_input: SearchPlanInput) -> tuple[list[str], list
 
 
 def _build_query_tiers(
-    title_variants: list[str],
+    title_families: list[dict[str, Any]],
     location_variants: list[str],
     include_keywords: list[str],
     budgets: dict[str, int],
     search_strategy: str,
 ) -> list[dict[str, Any]]:
     tiers: list[dict[str, Any]] = []
-    if not title_variants:
+    if not title_families:
         return tiers
 
+    title_variants = dedupe_preserve_order(
+        [
+            safe_text(alias)
+            for family in title_families
+            for alias in family.get("aliases", []) or []
+            if safe_text(alias)
+        ]
+    )
     keyword_terms = _build_keyword_terms(include_keywords, title_variants)
     keyword_fragment = f' "{keyword_terms[0]}"' if keyword_terms else ""
 
-    grouped_title_limit = min(len(title_variants), budgets.get("title_variants", 6))
+    grouped_family_limit = min(len(title_families), budgets.get("title_variants", 6))
     location_limit = min(len(location_variants), budgets.get("location_variants", 3))
 
     grouped_queries: list[str] = []
-    if grouped_title_limit > 1:
-        title_or = " OR ".join(f'"{title}"' for title in title_variants[:grouped_title_limit])
+    if grouped_family_limit >= 1:
+        grouped_aliases = dedupe_preserve_order(
+            [
+                safe_text(alias)
+                for family in title_families[:grouped_family_limit]
+                for alias in family.get("aliases", []) or []
+                if safe_text(alias)
+            ]
+        )
+        title_or = " OR ".join(f'"{title}"' for title in grouped_aliases)
         for location in location_variants[:location_limit]:
             grouped_queries.append(
                 f"({title_or}) \"{location}\"{keyword_fragment} {ATS_SITE_BLOCK}"
@@ -618,7 +789,8 @@ def _build_query_tiers(
 
     broad_queries: list[str] = []
     if search_strategy == "broad_recall":
-        for title in title_variants[:budgets.get("title_variants", 6)]:
+        for family in title_families[:budgets.get("title_variants", 6)]:
+            title = safe_text(family.get("primary_title", ""))
             seniority_query = _detect_title_seniority_query(title)
             keyword_phrase = _extract_title_keyword_phrase(title)
             if not seniority_query or not keyword_phrase:
@@ -637,10 +809,22 @@ def _build_query_tiers(
         )
 
     strict_queries: list[str] = []
-    for title in title_variants[:budgets.get("title_variants", 6)]:
+    for family in title_families[:budgets.get("title_variants", 6)]:
+        aliases = [
+            safe_text(alias)
+            for alias in family.get("aliases", []) or []
+            if safe_text(alias)
+        ]
+        if not aliases:
+            continue
+        title_fragment = (
+            f'"{aliases[0]}"'
+            if len(aliases) == 1
+            else "(" + " OR ".join(f'"{alias}"' for alias in aliases) + ")"
+        )
         for location in location_variants[:location_limit]:
             strict_queries.append(
-                f"\"{title}\" \"{location}\"{keyword_fragment} {ATS_SITE_BLOCK}"
+                f"{title_fragment} \"{location}\"{keyword_fragment} {ATS_SITE_BLOCK}"
             )
     if strict_queries:
         tiers.append(
@@ -652,7 +836,10 @@ def _build_query_tiers(
         )
 
     loose_queries: list[str] = []
-    for title in title_variants[:budgets.get("title_variants", 6)]:
+    for family in title_families[:budgets.get("title_variants", 6)]:
+        title = safe_text(family.get("primary_title", ""))
+        if not title:
+            continue
         for location in location_variants[:location_limit]:
             loose_queries.append(
                 f"{title} {location}{keyword_fragment} {ATS_SITE_BLOCK}"
@@ -667,10 +854,22 @@ def _build_query_tiers(
         )
 
     career_queries: list[str] = []
-    for title in title_variants[:budgets.get("title_variants", 6)]:
+    for family in title_families[:budgets.get("title_variants", 6)]:
+        aliases = [
+            safe_text(alias)
+            for alias in family.get("aliases", []) or []
+            if safe_text(alias)
+        ]
+        if not aliases:
+            continue
+        title_fragment = (
+            f'"{aliases[0]}"'
+            if len(aliases) == 1
+            else "(" + " OR ".join(f'"{alias}"' for alias in aliases) + ")"
+        )
         for location in location_variants[:location_limit]:
             career_queries.append(
-                f"\"{title}\" \"{location}\" {CAREER_WEB_SIGNAL_BLOCK}"
+                f"{title_fragment} \"{location}\" {CAREER_WEB_SIGNAL_BLOCK}"
             )
     if career_queries:
         tiers.append(
@@ -682,10 +881,22 @@ def _build_query_tiers(
         )
 
     job_board_queries: list[str] = []
-    for title in title_variants[:budgets.get("title_variants", 6)]:
+    for family in title_families[:budgets.get("title_variants", 6)]:
+        aliases = [
+            safe_text(alias)
+            for alias in family.get("aliases", []) or []
+            if safe_text(alias)
+        ]
+        if not aliases:
+            continue
+        title_fragment = (
+            f'"{aliases[0]}"'
+            if len(aliases) == 1
+            else "(" + " OR ".join(f'"{alias}"' for alias in aliases) + ")"
+        )
         for location in location_variants[:min(location_limit, 2)]:
             job_board_queries.append(
-                f"\"{title}\" \"{location}\" {JOB_BOARD_DISCOVERY_BLOCK}"
+                f"{title_fragment} \"{location}\" {JOB_BOARD_DISCOVERY_BLOCK}"
             )
     if job_board_queries:
         tiers.append(
@@ -725,6 +936,21 @@ def build_search_plan(
         effective_titles,
         max_variants=budgets.get("title_variants", 6),
     )
+    title_families = _build_title_families(
+        base_titles=base_titles,
+        title_groups=plan_input.target_title_groups,
+        effective_titles=effective_titles,
+        max_families=budgets.get("title_variants", 6),
+    )
+    if title_families:
+        title_variants = dedupe_preserve_order(
+            [
+                safe_text(alias)
+                for family in title_families
+                for alias in family.get("aliases", []) or []
+                if safe_text(alias)
+            ]
+        )
     location_variants = _build_location_variants(
         preferred_locations=plan_input.preferred_locations,
         remote_only=plan_input.remote_only,
@@ -740,6 +966,8 @@ def build_search_plan(
         f"locations={budgets.get('location_variants', 0)}, "
         f"total_queries<={budgets.get('total_queries', 0)}"
     )
+    if title_families:
+        notes.append(f"Search title families: {len(title_families)}")
 
     if plan_input.preferred_locations and not plan_input.remote_only and plan_input.include_remote:
         notes.append(
@@ -758,7 +986,7 @@ def build_search_plan(
         notes.append("Effective location policy: Remote included")
 
     query_tiers = _build_query_tiers(
-        title_variants=title_variants,
+        title_families=title_families,
         location_variants=location_variants,
         include_keywords=plan_input.include_keywords,
         budgets=budgets,
@@ -776,6 +1004,7 @@ def build_search_plan(
         expanded_titles=[title for title in effective_titles if title not in base_titles],
         effective_titles=effective_titles,
         title_variants=title_variants,
+        title_families=title_families,
         preferred_locations=plan_input.preferred_locations,
         location_variants=location_variants,
         include_keywords=plan_input.include_keywords,

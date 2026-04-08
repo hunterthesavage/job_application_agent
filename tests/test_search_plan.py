@@ -1,3 +1,6 @@
+import json
+
+
 def test_build_search_plan_balanced_does_not_add_broad_tier():
     from services.search_plan import build_search_plan
 
@@ -73,12 +76,15 @@ def test_build_search_plan_expands_shorthand_title_into_search_safe_variant():
         normalize_text(title) == "vice president of information technology"
         for title in plan.title_variants
     )
-    assert not any(normalize_text(title) == "vp of it" for title in plan.title_variants)
+    assert any(normalize_text(title) == "vp of it" for title in plan.title_variants)
     broad_tier = next((tier for tier in plan.query_tiers if tier.get("name") == "ats_broad"), None)
+    strict_tier = next((tier for tier in plan.query_tiers if tier.get("name") == "ats_strict"), None)
     assert broad_tier is not None
+    assert strict_tier is not None
     assert any('"information technology"' in query for query in broad_tier["queries"])
     assert not any(' "it" ' in query for query in broad_tier["queries"])
     assert all('("vice president" OR "vp")' not in query for query in broad_tier["queries"])
+    assert any('("VP of IT" OR "vice president of information technology") "remote"' in query for query in strict_tier["queries"])
 
 
 def test_parse_title_entries_preserves_legacy_vp_it_phrase():
@@ -150,15 +156,77 @@ def test_build_search_plan_keeps_common_vp_bundle_queries_separate():
         "VP of Infrastructure",
     ]
     assert plan.title_variants == [
-        "vice president of Technology",
-        "vice president of AI",
-        "vice president of ITSM",
-        "vice president of Service Delivery",
-        "vice president of Artificial Intelligence",
-        "vice president of information technology Service Management",
+        "VP of Technology",
+        "vice president of technology",
+        "VP of AI",
+        "vice president of artificial intelligence",
+        "VP of ITSM",
+        "vice president of itsm",
+        "VP of Service Delivery",
+        "vice president of service delivery",
+        "VP of Artificial Intelligence",
+        "VP of IT Service Management",
+        "vice president of information technology service management",
     ]
     assert grouped_tier is not None
     assert len(grouped_tier["queries"]) == 3
-    assert all('vice president of Technology vice president of AI' not in query for query in grouped_tier["queries"])
-    assert all(query.count('"vice president of ') == 6 for query in grouped_tier["queries"])
-    assert any('"vice president of Technology"' in query for query in grouped_tier["queries"])
+    assert all('VP of Technology vice president of technology VP of AI' not in query for query in grouped_tier["queries"])
+    assert all(query.count('"vice president') >= 5 for query in grouped_tier["queries"])
+    assert any('"VP of Technology"' in query for query in grouped_tier["queries"])
+
+
+def test_build_search_plan_uses_title_groups_as_compact_alias_families():
+    from services.search_plan import build_search_plan
+
+    plan = build_search_plan(
+        settings={
+            "target_titles": "manager of information technology\ninformation technology manager\nvice president of information technology",
+            "target_title_groups": json.dumps(
+                [
+                    {
+                        "main_title": "manager of it",
+                        "variants": [
+                            {"title": "IT Manager", "selected": True, "source": "ai"},
+                            {"title": "Information Technology Manager", "selected": True, "source": "ai"},
+                            {"title": "Mgr Information Technology", "selected": True, "source": "ai"},
+                        ],
+                    },
+                    {
+                        "main_title": "vp of it",
+                        "variants": [
+                            {"title": "Vice President of IT", "selected": True, "source": "ai"},
+                            {"title": "VP Information Technology", "selected": True, "source": "ai"},
+                            {"title": "Vice President of Information Technology", "selected": True, "source": "ai"},
+                        ],
+                    },
+                ]
+            ),
+            "preferred_locations": "Remote",
+            "remote_only": "true",
+            "search_strategy": "broad_recall",
+        },
+        use_ai_expansion=False,
+    )
+
+    assert plan.base_titles == ["manager of it", "vp of it"]
+    assert len(plan.title_families) == 2
+
+    manager_family = plan.title_families[0]
+    vp_family = plan.title_families[1]
+
+    assert manager_family["aliases"] == [
+        "manager of it",
+        "manager of information technology",
+        "IT Manager",
+    ]
+    assert vp_family["aliases"] == [
+        "vp of it",
+        "vice president of information technology",
+        "Vice President of IT",
+    ]
+
+    strict_tier = next((tier for tier in plan.query_tiers if tier.get("name") == "ats_strict"), None)
+    assert strict_tier is not None
+    assert len(strict_tier["queries"]) == 2
+    assert any('("manager of it" OR "manager of information technology" OR "IT Manager") "remote"' in query for query in strict_tier["queries"])
+    assert any('("vp of it" OR "vice president of information technology" OR "Vice President of IT") "remote"' in query for query in strict_tier["queries"])

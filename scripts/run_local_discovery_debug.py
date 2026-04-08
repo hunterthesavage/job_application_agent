@@ -105,7 +105,9 @@ def _build_report_summary(
     source_layer_mode: str,
     use_ai_title_expansion: bool,
     report_dir: Path,
+    validation_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    validation = validation_result if isinstance(validation_result, dict) else {}
     return {
         "label": label,
         "source_layer_mode": source_layer_mode,
@@ -116,6 +118,18 @@ def _build_report_summary(
         "next_gen_seed_url_count": len(result.get("next_gen_seed_urls", []) or []),
         "next_gen_supported_seeds_scanned": int(result.get("next_gen_supported_seeds_scanned", 0) or 0),
         "next_gen_unsupported_seeds_skipped": int(result.get("next_gen_unsupported_seeds_skipped", 0) or 0),
+        "drop_summary": result.get("drop_summary", {}),
+        "accepted_jobs": int(validation.get("accepted_jobs", 0) or 0),
+        "seen_urls": int(validation.get("seen_urls", 0) or 0),
+        "validation_skipped_count": int(validation.get("skipped_count", 0) or 0),
+        "validation_skipped_title_prefilter_count": int(validation.get("skipped_title_prefilter_count", 0) or 0),
+        "validation_skipped_duplicate_batch_count": int(validation.get("skipped_duplicate_batch_count", 0) or 0),
+        "validation_error_count": int(validation.get("error_count", 0) or 0),
+        "validation_seeded_accepted_jobs": int(validation.get("seeded_accepted_jobs", 0) or 0),
+        "validation_legacy_accepted_jobs": int(validation.get("legacy_accepted_jobs", 0) or 0),
+        "validation_skip_summary": validation.get("skip_summary", {}),
+        "validation_build_seconds": float(validation.get("build_seconds", 0.0) or 0.0),
+        "validation_ingest_seconds": float(validation.get("ingest_seconds", 0.0) or 0.0),
         "report_dir": str(report_dir),
     }
 
@@ -126,6 +140,7 @@ def _write_report_files(
     effective_settings: dict[str, str],
     result: dict[str, Any] | None,
     summary: dict[str, Any],
+    validation_result: dict[str, Any] | None = None,
 ) -> None:
     report_dir.mkdir(parents=True, exist_ok=True)
     (report_dir / "effective_settings.json").write_text(
@@ -153,6 +168,11 @@ def _write_report_files(
         "\n".join(result.get("plan", []) or []) + ("\n" if result.get("plan") else ""),
         encoding="utf-8",
     )
+    if validation_result is not None:
+        (report_dir / "validation_output.txt").write_text(
+            str(validation_result.get("output", "") or ""),
+            encoding="utf-8",
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -182,6 +202,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="use_ai_title_expansion",
         action="store_false",
         help="Disable AI title expansion during discovery.",
+    )
+    parser.add_argument(
+        "--validate-urls",
+        action="store_true",
+        help="Run validation on discovered URLs and persist quality metrics in the report summary.",
     )
     return parser
 
@@ -217,6 +242,7 @@ def main() -> int:
             effective_settings=effective_settings,
             result=None,
             summary=summary,
+            validation_result=None,
         )
         print(f"Dry run complete. Report directory: {report_dir}")
         return 0
@@ -225,6 +251,15 @@ def main() -> int:
         result = runtime.discover_job_links(
             use_ai_title_expansion=bool(args.use_ai_title_expansion)
         )
+        validation_result: dict[str, Any] | None = None
+        if args.validate_urls:
+            validation_result = runtime._build_jobs_from_urls(
+                result.get("urls", []) or [],
+                source_name="Local Pipeline",
+                source_detail="discovery_debug_validation",
+                use_ai_scoring=False,
+                seeded_job_urls=result.get("next_gen_seed_urls", []) or [],
+            )
 
     summary = _build_report_summary(
         result,
@@ -232,12 +267,14 @@ def main() -> int:
         source_layer_mode=source_layer_mode,
         use_ai_title_expansion=bool(args.use_ai_title_expansion),
         report_dir=report_dir,
+        validation_result=validation_result,
     )
     _write_report_files(
         report_dir,
         effective_settings=effective_settings,
         result=result,
         summary=summary,
+        validation_result=validation_result,
     )
 
     print(f"Discovery debug run complete. Report directory: {report_dir}")
