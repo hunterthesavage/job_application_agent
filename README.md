@@ -29,7 +29,7 @@
 | Platform | Primary package | Fallback package |
 | --- | --- | --- |
 | macOS | [DMG 1.1.0](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgent-macos-desktop-wrapper-1.1.0.dmg) | [ZIP 1.1.0](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgent-macos-desktop-wrapper-1.1.0.zip) |
-| Windows | [Installer 1.0.5 (latest Windows build)](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-setup-1.0.5.exe) | [ZIP 1.0.5 (latest Windows build)](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-windows-1.0.5.zip) |
+| Windows | [Installer 1.1.0](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-setup-1.1.0.exe) | [ZIP 1.1.0](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-windows-1.1.0.zip) |
 
 ---
 
@@ -75,7 +75,7 @@ cd ~ && ( [ -d job_application_agent/.git ] || git clone https://github.com/hunt
 
 ### Option 1) Step-By-Step Windows Install
 
-1. Download [Windows Installer 1.0.5](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-setup-1.0.5.exe).
+1. Download [Windows Installer 1.1.0](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-setup-1.1.0.exe).
 2. After the download finishes, you may get this warning. Click the 3 dots `...` and choose Keep.
    ![Step 1 - Download warning](docs/assets/windows-installer-step-1b-download-warning.png)
 3. You may also get this Trust warning. Click the drop down and choose 'Keep anyway'.
@@ -96,7 +96,7 @@ cd ~ && ( [ -d job_application_agent/.git ] || git clone https://github.com/hunt
 
 If the installer does not work on this machine, use the zip instead:
 
-- [Windows Zip 1.0.5](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-windows-1.0.5.zip)
+- [Windows Zip 1.1.0](https://github.com/hunterthesavage/job_application_agent/releases/download/desktop-wrapper-test/JobApplicationAgentDesktop-windows-1.1.0.zip)
 
 ### Step-By-Step Windows Zip Fallback
 
