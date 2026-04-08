@@ -94,3 +94,121 @@ def test_suggest_run_input_refinements_returns_titles_and_locations(monkeypatch)
     assert result["ok"] is True
     assert result["titles"] == ["VP Information Technology", "Vice President, IT"]
     assert result["locations"] == ["Dallas, TX", "Fort Worth, TX"]
+
+
+def test_suggest_title_groups_with_openai_returns_variants_per_main_title(monkeypatch):
+    import services.openai_title_suggestions as suggestions
+
+    monkeypatch.setattr(suggestions, "get_effective_openai_api_key", lambda: "test-key")
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return _FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": __import__("json").dumps(
+                                {
+                                    "title_groups": [
+                                        {
+                                            "main_title": "VP of IT",
+                                            "variants": [
+                                                "Vice President of IT",
+                                                "VP Information Technology",
+                                                "VP of IT",
+                                            ],
+                                        },
+                                        {
+                                            "main_title": "IT Manager",
+                                            "variants": [
+                                                "IT Mgr",
+                                                "Information Technology Manager",
+                                            ],
+                                        },
+                                    ],
+                                    "notes": "Kept each title close to the original ATS wording.",
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(suggestions.requests, "post", fake_post)
+
+    result = suggestions.suggest_title_groups_with_openai(
+        main_titles=["VP of IT", "IT Manager"],
+        max_variants_per_title=5,
+    )
+
+    assert result["ok"] is True
+    assert result["title_groups"] == [
+        {
+            "main_title": "VP of IT",
+            "variants": ["Vice President of IT", "VP Information Technology"],
+        },
+        {
+            "main_title": "IT Manager",
+            "variants": ["IT Mgr", "Information Technology Manager"],
+        },
+    ]
+
+
+def test_suggest_title_groups_with_openai_filters_awkward_variants(monkeypatch):
+    import services.openai_title_suggestions as suggestions
+
+    monkeypatch.setattr(suggestions, "get_effective_openai_api_key", lambda: "test-key")
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return _FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": __import__("json").dumps(
+                                {
+                                    "title_groups": [
+                                        {
+                                            "main_title": "IT Manager",
+                                            "variants": [
+                                                "Manager Information Technology",
+                                                "Mgr IT",
+                                                "Information Technology Manager",
+                                                "IT Mgr",
+                                            ],
+                                        },
+                                        {
+                                            "main_title": "VP of IT",
+                                            "variants": [
+                                                "Vice Pres of IT",
+                                                "Vice President of IT",
+                                            ],
+                                        },
+                                    ]
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(suggestions.requests, "post", fake_post)
+
+    result = suggestions.suggest_title_groups_with_openai(
+        main_titles=["IT Manager", "VP of IT"],
+        max_variants_per_title=5,
+    )
+
+    assert result["ok"] is True
+    assert result["title_groups"] == [
+        {
+            "main_title": "IT Manager",
+            "variants": ["Information Technology Manager", "IT Mgr"],
+        },
+        {
+            "main_title": "VP of IT",
+            "variants": ["Vice President of IT"],
+        },
+    ]

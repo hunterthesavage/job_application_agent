@@ -57,6 +57,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "cover_letter_output_folder": get_default_cover_letter_output_folder(),
     "cover_letter_filename_pattern": get_default_cover_letter_filename_pattern(),
     "target_titles": "",
+    "target_title_groups": "",
     "preferred_job_levels": "",
     "preferred_locations": "",
     "include_keywords": "",

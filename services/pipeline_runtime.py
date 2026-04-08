@@ -46,7 +46,7 @@ from services.source_trust import enrich_job_payload
 from services.job_qualifier import qualify_job
 from services.source_layer_shadow import SHADOW_SELECTION_CAP
 from src import discover_job_urls as discover_module
-from src.validate_job_url import create_job_record
+from src.validate_job_url import ExpiredJobPageError, create_job_record
 
 
 AUTO_ACCEPT_SCORE = 45
@@ -116,6 +116,8 @@ def _is_transient_fetch_error(exc: Exception) -> bool:
 
 
 def _is_stale_ats_posting_error(exc: Exception, job_url: str) -> bool:
+    if isinstance(exc, ExpiredJobPageError):
+        return True
     if not isinstance(exc, requests.exceptions.HTTPError):
         return False
     response = getattr(exc, "response", None)

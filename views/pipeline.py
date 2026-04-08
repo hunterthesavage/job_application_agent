@@ -17,7 +17,10 @@ from services.job_levels import (
     serialize_preferred_job_levels,
 )
 from services.openai_key import has_openai_api_key
-from services.openai_title_suggestions import suggest_run_input_refinements_with_openai
+from services.openai_title_suggestions import (
+    suggest_run_input_refinements_with_openai,
+    suggest_title_groups_with_openai,
+)
 from services.readiness import get_readiness_summary
 from services.pipeline_runtime import (
     build_search_preview,
@@ -28,6 +31,18 @@ from services.pipeline_runtime import (
     rescore_existing_jobs,
 )
 from services.settings import load_settings, save_settings
+from services.title_groups import (
+    MAX_MAIN_TITLES,
+    MAX_SUBTITLE_VARIANTS,
+    build_effective_title_list,
+    build_effective_titles_text,
+    build_search_titles_text,
+    create_empty_title_group,
+    load_title_groups_from_settings,
+    merge_ai_variants_into_groups,
+    normalize_title_groups,
+    serialize_title_groups,
+)
 from services.ui_busy import (
     app_is_busy,
     clear_action,
@@ -58,7 +73,6 @@ PIPELINE_NAV_OPTIONS = [
     "Search Results",
 ]
 
-PIPELINE_TITLE_SUGGESTION_MAX = 10
 SEARCH_STRATEGY_OPTIONS = {
     "Broader Search": "broad_recall",
     "Standard": "balanced",
@@ -85,32 +99,6 @@ def _append_comma_separated(existing: str, additions: list[str]) -> str:
 def _clear_pipeline_title_suggestions() -> None:
     st.session_state["pipeline_title_suggestions_notes"] = ""
     st.session_state["pipeline_run_input_summary"] = {}
-
-
-def _normalize_title_lines(value: str) -> list[str]:
-    text = str(value or "").strip()
-    if not text:
-        return []
-    if "\n" in text:
-        parts = text.splitlines()
-    elif ";" in text:
-        parts = text.split(";")
-    else:
-        parts = text.split(",")
-
-    results: list[str] = []
-    seen: set[str] = set()
-    for part in parts:
-        clean = " ".join(str(part or "").strip().split())
-        if not clean:
-            continue
-        key = clean.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        results.append(clean)
-    return results
-
 
 def _normalize_location_lines(value: str) -> list[str]:
     text = str(value or "").strip()
@@ -154,67 +142,275 @@ def _append_unique_lines(existing: list[str], additions: list[str]) -> list[str]
     return results
 
 
-def _refine_pipeline_run_inputs(
+def _title_group_variant_label(variant: dict[str, Any]) -> str:
+    title = str(variant.get("title", "") or "").strip()
+    if not title:
+        return ""
+    source = str(variant.get("source", "") or "").strip().lower()
+    if source == "ai":
+        return f"{title}  [AI]"
+    return title
+
+
+def _summarize_title_groups(groups: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized = normalize_title_groups(groups)
+    effective_titles = build_effective_title_list(normalized)
+    generated_variant_count = sum(len(group.get("variants", []) or []) for group in normalized)
+    selected_variant_count = sum(
+        1
+        for group in normalized
+        for variant in (group.get("variants", []) or [])
+        if bool(variant.get("selected", True))
+    )
+    return {
+        "title_groups": normalized,
+        "titles": effective_titles,
+        "main_title_count": len(normalized),
+        "generated_variant_count": generated_variant_count,
+        "selected_variant_count": selected_variant_count,
+    }
+
+
+def _coerce_title_group_editor_state(title_groups: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    coerced: list[dict[str, Any]] = []
+
+    for raw_group in title_groups or []:
+        if not isinstance(raw_group, dict):
+            continue
+        group_id = str(raw_group.get("id", "") or create_empty_title_group()["id"]).strip()
+        main_title = " ".join(str(raw_group.get("main_title", "") or "").split())
+        variants: list[dict[str, Any]] = []
+        for raw_variant in raw_group.get("variants", []) or []:
+            if not isinstance(raw_variant, dict):
+                continue
+            title = " ".join(str(raw_variant.get("title", "") or "").split())
+            if not title:
+                continue
+            variants.append(
+                {
+                    "title": title,
+                    "selected": bool(raw_variant.get("selected", True)),
+                    "source": str(raw_variant.get("source", "") or "ai"),
+                }
+            )
+        coerced.append(
+            {
+                "id": group_id,
+                "main_title": main_title,
+                "variants": variants,
+            }
+        )
+        if len(coerced) >= MAX_MAIN_TITLES:
+            break
+
+    if not coerced:
+        coerced = [create_empty_title_group()]
+
+    return coerced
+
+
+def _collect_pipeline_title_groups_from_widgets(title_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+
+    for group in _coerce_title_group_editor_state(title_groups):
+        group_id = str(group.get("id", "") or create_empty_title_group()["id"]).strip()
+        main_title = " ".join(str(st.session_state.get(f"pipeline_main_title_{group_id}", group.get("main_title", "")) or "").split())
+        variants: list[dict[str, Any]] = []
+        for variant_index, variant in enumerate(group.get("variants", []) or []):
+            if not isinstance(variant, dict):
+                continue
+            title = " ".join(str(variant.get("title", "") or "").split())
+            if not title:
+                continue
+            selected = bool(
+                st.session_state.get(
+                    f"pipeline_variant_selected_{group_id}_{variant_index}",
+                    bool(variant.get("selected", True)),
+                )
+            )
+            variants.append(
+                {
+                    "title": title,
+                    "selected": selected,
+                    "source": str(variant.get("source", "") or "ai"),
+                }
+            )
+        collected.append(
+            {
+                "id": group_id,
+                "main_title": main_title,
+                "variants": variants,
+            }
+        )
+
+    return _coerce_title_group_editor_state(collected)
+
+
+def _render_pipeline_title_group_editor(title_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized_groups = _coerce_title_group_editor_state(title_groups)
+
+    remove_group_id = ""
+    updated_groups: list[dict[str, Any]] = []
+
+    for index, group in enumerate(normalized_groups, start=1):
+        group_id = str(group.get("id", "") or create_empty_title_group()["id"])
+        cols = st.columns([0.82, 0.18], gap="small")
+        with cols[0]:
+            widget_key = f"pipeline_main_title_{group_id}"
+            if widget_key not in st.session_state:
+                st.session_state[widget_key] = str(group.get("main_title", "") or "")
+            main_title = st.text_input(
+                f"Main Title {index}",
+                key=widget_key,
+                placeholder="Enter a job title to search",
+            )
+        with cols[1]:
+            st.markdown("<div style='height: 1.8rem;'></div>", unsafe_allow_html=True)
+            if st.button(
+                "Remove",
+                key=f"pipeline_remove_title_{group_id}",
+                use_container_width=True,
+                disabled=len(normalized_groups) <= 1,
+            ):
+                remove_group_id = group_id
+
+        updated_variants: list[dict[str, Any]] = []
+        existing_variants = group.get("variants", []) or []
+        if main_title and existing_variants:
+            st.caption("Subtitle variants")
+        for variant_index, variant in enumerate(existing_variants):
+            variant_title = str(variant.get("title", "") or "").strip()
+            if not variant_title:
+                continue
+            selection_key = f"pipeline_variant_selected_{group_id}_{variant_index}"
+            if selection_key not in st.session_state:
+                st.session_state[selection_key] = bool(variant.get("selected", True))
+            selected = st.checkbox(
+                _title_group_variant_label(variant),
+                key=selection_key,
+            )
+            updated_variants.append(
+                {
+                    "title": variant_title,
+                    "selected": selected,
+                    "source": str(variant.get("source", "") or "ai"),
+                }
+            )
+
+        updated_groups.append(
+            {
+                "id": group_id,
+                "main_title": main_title,
+                "variants": updated_variants,
+            }
+        )
+
+    if remove_group_id:
+        remaining_groups = [group for group in updated_groups if str(group.get("id", "")) != remove_group_id]
+        st.session_state["pipeline_title_groups_value"] = _coerce_title_group_editor_state(remaining_groups)
+        st.rerun()
+
+    add_disabled = len(updated_groups) >= MAX_MAIN_TITLES
+    if st.button(
+        "Add Another Title",
+        use_container_width=False,
+        disabled=add_disabled,
+        key="pipeline_add_title_group",
+    ):
+        st.session_state["pipeline_title_groups_value"] = _coerce_title_group_editor_state(updated_groups + [create_empty_title_group()])
+        st.rerun()
+
+    if add_disabled:
+        st.caption(f"You can search up to {MAX_MAIN_TITLES} main titles.")
+    else:
+        st.caption(
+            f"Add up to {MAX_MAIN_TITLES} main titles. On save, AI will generate up to {MAX_SUBTITLE_VARIANTS} close subtitle variants per title."
+        )
+
+    return _coerce_title_group_editor_state(updated_groups)
+
+
+def _generate_pipeline_title_groups(
     *,
-    target_titles: str,
+    title_groups: list[dict[str, Any]],
     preferred_locations: str,
     include_keywords: str,
     include_remote: bool,
-) -> tuple[str, str, str, str, dict[str, list[str]]]:
+) -> tuple[list[dict[str, Any]], str, str, dict[str, Any]]:
     st.session_state["pipeline_title_suggestion_message"] = ""
     _clear_pipeline_title_suggestions()
 
-    titles_clean = str(target_titles or "").strip()
-    locations_clean = str(preferred_locations or "").strip()
-
-    if not titles_clean:
-        return target_titles, preferred_locations, "", "", {"titles": [], "locations": []}
+    normalized_groups = normalize_title_groups(title_groups)
+    if not normalized_groups:
+        return [], preferred_locations, "", "", _summarize_title_groups([])
 
     settings = load_settings()
-    result = suggest_run_input_refinements_with_openai(
-        current_titles=titles_clean,
-        preferred_locations=locations_clean,
+    result = suggest_title_groups_with_openai(
+        main_titles=[group.get("main_title", "") for group in normalized_groups],
         profile_summary=str(settings.get("profile_summary", "") or ""),
         resume_text=str(settings.get("resume_text", "") or ""),
         include_keywords=str(include_keywords or "").strip(),
-        include_remote=include_remote,
-        max_titles=PIPELINE_TITLE_SUGGESTION_MAX,
+        max_variants_per_title=MAX_SUBTITLE_VARIANTS,
     )
 
-    suggested_title_values = _normalize_title_lines("\n".join(str(title or "") for title in (result.get("titles", []) or [])))
-    fallback_title_values = _normalize_title_lines(target_titles)
-    final_title_values = _append_unique_lines(fallback_title_values, suggested_title_values)
-    refined_titles = "\n".join(final_title_values)
-
-    suggested_locations = result.get("locations", []) or []
-    suggested_location_values = _normalize_location_lines("\n".join(str(location or "") for location in suggested_locations))
-    fallback_location_values = _normalize_location_lines(preferred_locations)
-    final_location_values = suggested_location_values or fallback_location_values
-    refined_locations = "\n".join(final_location_values)
-
     if result.get("ok"):
-        title_additions = [title for title in (result.get("titles", []) or []) if title.strip()]
-        location_additions = [location for location in suggested_locations if str(location or "").strip()]
-        st.session_state["pipeline_title_suggestions_notes"] = str(result.get("notes", "") or "")
-        st.session_state["pipeline_run_input_summary"] = {
-            "titles": final_title_values,
-            "locations": final_location_values,
+        ai_variants_by_main_title = {
+            str(group.get("main_title", "") or "").strip(): [
+                str(title or "").strip()
+                for title in (group.get("variants", []) or [])
+                if str(title or "").strip()
+            ]
+            for group in (result.get("title_groups", []) or [])
+            if str(group.get("main_title", "") or "").strip()
         }
-        if title_additions or location_additions:
-            message = "Run inputs saved. AI cleaned up the fields and appended likely title/location variants directly into them."
+        merged_groups = merge_ai_variants_into_groups(normalized_groups, ai_variants_by_main_title)
+        summary = _summarize_title_groups(merged_groups)
+        title_notes = ""
+        if summary["generated_variant_count"]:
+            title_notes = "Subtitle variants focus on close abbreviation and level changes while preserving the original role and seniority."
+        st.session_state["pipeline_title_suggestions_notes"] = title_notes
+        st.session_state["pipeline_run_input_summary"] = summary
+        if summary["generated_variant_count"]:
+            message = (
+                "Run inputs saved. AI generated close subtitle variants for each main title and kept your previous selections where possible."
+            )
         else:
-            message = "Run inputs saved. No additional AI input refinements were returned."
-        return refined_titles, refined_locations, message, str(result.get("notes", "") or ""), {
-            "titles": final_title_values,
-            "locations": final_location_values,
-        }
+            message = "Run inputs saved. AI did not find any close subtitle variants to add."
+        location_result = suggest_run_input_refinements_with_openai(
+            current_titles=build_effective_titles_text(merged_groups),
+            preferred_locations=preferred_locations,
+            profile_summary=str(settings.get("profile_summary", "") or ""),
+            resume_text=str(settings.get("resume_text", "") or ""),
+            include_keywords=str(include_keywords or "").strip(),
+            include_remote=include_remote,
+            max_titles=1,
+            max_locations=6,
+        )
+        refined_locations = preferred_locations
+        location_notes = ""
+        if location_result.get("ok"):
+            suggested_location_values = _normalize_location_lines(
+                "\n".join(str(location or "") for location in (location_result.get("locations", []) or []))
+            )
+            if suggested_location_values:
+                refined_locations = "\n".join(suggested_location_values)
+                summary["locations"] = suggested_location_values
+                location_notes = "Location lines were normalized into clean search targets."
+            if suggested_location_values:
+                if summary["generated_variant_count"]:
+                    message = "Run inputs saved. AI generated close subtitle variants and normalized your location lines."
+                else:
+                    message = "Run inputs saved. AI normalized your location lines."
+        combined_notes = " ".join(part for part in [title_notes, location_notes] if part).strip()
+        return merged_groups, refined_locations, message, combined_notes, summary
 
     error_text = str(result.get("error", "") or "").strip()
     if error_text:
-        message = f"Run inputs saved. Could not refine titles or locations with AI. {error_text}"
+        message = f"Run inputs saved. Could not generate subtitle variants with AI. {error_text}"
     else:
-        message = "Run inputs saved. Could not refine titles or locations with AI."
-    return target_titles, preferred_locations, message, "", {"titles": fallback_title_values, "locations": fallback_location_values}
+        message = "Run inputs saved. Could not generate subtitle variants with AI."
+    summary = _summarize_title_groups(normalized_groups)
+    return normalized_groups, preferred_locations, message, "", summary
 
 
 def _inject_pipeline_css() -> None:
@@ -679,36 +875,42 @@ def _render_flash() -> None:
 
 
 def _save_run_inputs_action(payload: dict[str, Any]) -> tuple[str, str]:
-    saved_target_titles = str(payload.get("target_titles", "") or "")
+    saved_title_groups = normalize_title_groups(payload.get("title_groups", []) or [])
     saved_locations = str(payload.get("preferred_locations", "") or "")
     saved_include_keywords = str(payload.get("include_keywords", "") or "")
-    saved_include_remote = bool(payload.get("include_remote", True))
     saved_job_levels = payload.get("preferred_job_levels", []) or []
     saved_exclude_keywords = str(payload.get("exclude_keywords", "") or "")
     saved_search_strategy = str(payload.get("search_strategy", "Broader Search") or "Broader Search")
+    saved_include_remote = bool(payload.get("include_remote", True))
 
-    final_target_titles = saved_target_titles
+    final_title_groups = saved_title_groups
     final_locations = saved_locations
     final_message = "Run inputs saved."
     final_notes = ""
-    final_summary: dict[str, list[str]] = {"titles": [], "locations": _normalize_location_lines(saved_locations)}
+    final_summary: dict[str, Any] = _summarize_title_groups(saved_title_groups)
+    final_summary["locations"] = _normalize_location_lines(saved_locations)
 
-    if has_openai_api_key():
+    if saved_title_groups and has_openai_api_key():
         (
-            final_target_titles,
+            final_title_groups,
             final_locations,
             final_message,
             final_notes,
             final_summary,
-        ) = _refine_pipeline_run_inputs(
-            target_titles=saved_target_titles,
+        ) = _generate_pipeline_title_groups(
+            title_groups=saved_title_groups,
             preferred_locations=saved_locations,
             include_keywords=saved_include_keywords,
             include_remote=saved_include_remote,
         )
+    elif saved_title_groups:
+        final_message = "Run inputs saved. Add an OpenAI API key to generate close subtitle variants automatically."
+
+    final_target_titles = build_search_titles_text(final_title_groups)
 
     save_settings(
         {
+            "target_title_groups": serialize_title_groups(final_title_groups),
             "target_titles": final_target_titles,
             "preferred_locations": final_locations,
             "preferred_job_levels": serialize_preferred_job_levels(saved_job_levels),
@@ -719,17 +921,23 @@ def _save_run_inputs_action(payload: dict[str, Any]) -> tuple[str, str]:
             "search_strategy": SEARCH_STRATEGY_OPTIONS.get(saved_search_strategy, "broad_recall"),
         }
     )
-    st.session_state["pipeline_pending_target_titles_value"] = final_target_titles
+    st.session_state["pipeline_pending_title_groups_value"] = final_title_groups
     st.session_state["pipeline_pending_preferred_locations_value"] = final_locations
     st.session_state["pipeline_title_suggestion_message"] = final_message
     st.session_state["pipeline_title_suggestions_notes"] = final_notes
     st.session_state["pipeline_run_input_summary"] = final_summary
 
     title_count = len(final_summary.get("titles", []) or [])
+    main_title_count = int(final_summary.get("main_title_count", 0) or 0)
+    variant_count = int(final_summary.get("generated_variant_count", 0) or 0)
     location_count = len(final_summary.get("locations", []) or [])
     changed_parts: list[str] = []
-    if title_count:
-        changed_parts.append(f"{title_count} title updates")
+    if main_title_count:
+        changed_parts.append(f"{main_title_count} main titles")
+    if variant_count:
+        changed_parts.append(f"{variant_count} subtitle variants")
+    elif title_count:
+        changed_parts.append(f"{title_count} effective titles")
     if location_count:
         changed_parts.append(f"{location_count} location lines saved")
 
@@ -1668,7 +1876,7 @@ def _render_readiness_card() -> None:
 
 def _render_run_inputs() -> None:
     settings = load_settings()
-    current_target_titles = str(settings.get("target_titles", "") or "")
+    current_title_groups = load_title_groups_from_settings(settings)
     current_preferred_locations = str(settings.get("preferred_locations", "") or "")
     current_preferred_job_levels = parse_preferred_job_levels(settings.get("preferred_job_levels", ""))
     current_include_keywords = str(settings.get("include_keywords", "") or "")
@@ -1676,16 +1884,16 @@ def _render_run_inputs() -> None:
     current_include_remote = _str_to_bool(settings.get("include_remote", "true"), default=True)
     current_search_strategy = str(settings.get("search_strategy", "broad_recall") or "broad_recall")
 
-    pending_target_titles = st.session_state.pop("pipeline_pending_target_titles_value", None)
-    if pending_target_titles is not None:
-        st.session_state["pipeline_target_titles_value"] = str(pending_target_titles)
+    pending_title_groups = st.session_state.pop("pipeline_pending_title_groups_value", None)
+    if pending_title_groups is not None:
+        st.session_state["pipeline_title_groups_value"] = normalize_title_groups(pending_title_groups)
 
     pending_preferred_locations = st.session_state.pop("pipeline_pending_preferred_locations_value", None)
     if pending_preferred_locations is not None:
         st.session_state["pipeline_preferred_locations_value"] = str(pending_preferred_locations)
 
-    if "pipeline_target_titles_value" not in st.session_state:
-        st.session_state["pipeline_target_titles_value"] = current_target_titles
+    if "pipeline_title_groups_value" not in st.session_state:
+        st.session_state["pipeline_title_groups_value"] = normalize_title_groups(current_title_groups) or [create_empty_title_group()]
     if "pipeline_preferred_locations_value" not in st.session_state:
         st.session_state["pipeline_preferred_locations_value"] = current_preferred_locations
     if "pipeline_preferred_job_levels_value" not in st.session_state:
@@ -1715,24 +1923,8 @@ def _render_run_inputs() -> None:
     run_input_notice_message = str(st.session_state.pop("pipeline_run_input_notice_message", "") or "").strip()
     run_input_notice_level = str(st.session_state.pop("pipeline_run_input_notice_level", "success") or "success").strip().lower()
     suggested_titles = run_input_summary.get("titles", []) or []
+    suggested_title_groups = run_input_summary.get("title_groups", []) or []
     suggested_locations = run_input_summary.get("locations", []) or []
-
-    has_run_input_changes = any(
-        [
-            str(st.session_state.get("pipeline_target_titles_value", current_target_titles)) != current_target_titles,
-            str(st.session_state.get("pipeline_preferred_locations_value", current_preferred_locations)) != current_preferred_locations,
-            serialize_preferred_job_levels(st.session_state.get("pipeline_preferred_job_levels_value", current_preferred_job_levels))
-            != str(settings.get("preferred_job_levels", "")),
-            str(st.session_state.get("pipeline_include_keywords_value", current_include_keywords)) != current_include_keywords,
-            str(st.session_state.get("pipeline_exclude_keywords_value", current_exclude_keywords)) != current_exclude_keywords,
-            ("true" if bool(st.session_state.get("pipeline_include_remote_value", current_include_remote)) else "false")
-            != str(settings.get("include_remote", "true")),
-            SEARCH_STRATEGY_OPTIONS.get(
-                str(st.session_state.get("pipeline_search_strategy_value", "Broader Search")),
-                "broad_recall",
-            ) != current_search_strategy,
-        ]
-    )
 
     _render_section_shell(
         "Search setup",
@@ -1744,12 +1936,13 @@ def _render_run_inputs() -> None:
     section_left, section_right = st.columns([1.45, 0.95], gap="large")
 
     with section_left:
-        st.text_area(
-            "Target Titles",
-            key="pipeline_target_titles_value",
-            height=100,
-            help="One title per line.",
+        st.markdown("**Target Titles**")
+        st.caption("Enter up to 10 main titles. AI will generate close subtitle variants for each title on save, and you can deselect any variant you do not want to use.")
+        rendered_title_groups = _render_pipeline_title_group_editor(
+            st.session_state.get("pipeline_title_groups_value", current_title_groups)
         )
+        editable_title_groups = _collect_pipeline_title_groups_from_widgets(rendered_title_groups)
+        st.session_state["pipeline_title_groups_value"] = editable_title_groups
 
         location_col, remote_col = st.columns([1.35, 0.65], gap="medium")
         with location_col:
@@ -1799,6 +1992,25 @@ def _render_run_inputs() -> None:
                 help="Comma-separated values",
             )
 
+    current_groups_serialized = serialize_title_groups(current_title_groups)
+    editable_groups_serialized = serialize_title_groups(editable_title_groups)
+    has_run_input_changes = any(
+        [
+            editable_groups_serialized != current_groups_serialized,
+            str(st.session_state.get("pipeline_preferred_locations_value", current_preferred_locations)) != current_preferred_locations,
+            serialize_preferred_job_levels(st.session_state.get("pipeline_preferred_job_levels_value", current_preferred_job_levels))
+            != str(settings.get("preferred_job_levels", "")),
+            str(st.session_state.get("pipeline_include_keywords_value", current_include_keywords)) != current_include_keywords,
+            str(st.session_state.get("pipeline_exclude_keywords_value", current_exclude_keywords)) != current_exclude_keywords,
+            ("true" if bool(st.session_state.get("pipeline_include_remote_value", current_include_remote)) else "false")
+            != str(settings.get("include_remote", "true")),
+            SEARCH_STRATEGY_OPTIONS.get(
+                str(st.session_state.get("pipeline_search_strategy_value", "Broader Search")),
+                "broad_recall",
+            ) != current_search_strategy,
+        ]
+    )
+
     with section_right:
         _render_pipeline_ai_chip()
         save_run_inputs = st.button(
@@ -1818,43 +2030,50 @@ def _render_run_inputs() -> None:
             else:
                 st.success(run_input_notice_message)
 
-        if suggested_titles or suggestion_message:
-            title_items = "".join(f"<li>{html.escape(str(title))}</li>" for title in suggested_titles)
-            location_items = "".join(f"<li>{html.escape(str(location))}</li>" for location in suggested_locations)
-            note_markup = (
-                f'<div class="pipeline-ai-updates-copy">{html.escape(notes)}</div>'
-                if notes
-                else ""
-            )
-            title_markup = (
-                '<div class="pipeline-ai-updates-label">Added title variants</div>'
-                f'<ul class="pipeline-ai-updates-list">{title_items}</ul>'
-                if suggested_titles
-                else ""
-            )
-            location_markup = (
-                '<div class="pipeline-ai-updates-label">Current saved location lines</div>'
-                f'<ul class="pipeline-ai-updates-list">{location_items}</ul>'
-                if suggested_locations
-                else ""
-            )
-            message_markup = (
-                f'<div class="pipeline-ai-updates-copy">{html.escape(suggestion_message)}</div>'
-                if suggestion_message
-                else ""
-            )
-            st.markdown(
-                f"""
-                <div class="pipeline-ai-updates-box">
-                    <div class="pipeline-ai-updates-title">AI Input Updates</div>
-                    {message_markup}
-                    {note_markup}
-                    {title_markup}
-                    {location_markup}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        if suggested_titles or suggestion_message or suggested_title_groups or suggested_locations:
+            st.markdown('<div class="pipeline-ai-updates-box">', unsafe_allow_html=True)
+            st.markdown('<div class="pipeline-ai-updates-title">AI Input Updates</div>', unsafe_allow_html=True)
+            if suggestion_message:
+                st.markdown(
+                    f'<div class="pipeline-ai-updates-copy">{html.escape(suggestion_message)}</div>',
+                    unsafe_allow_html=True,
+                )
+            if notes:
+                st.markdown(
+                    f'<div class="pipeline-ai-updates-copy">{html.escape(notes)}</div>',
+                    unsafe_allow_html=True,
+                )
+            if suggested_title_groups:
+                st.markdown('<div class="pipeline-ai-updates-label">Subtitle variants by main title</div>', unsafe_allow_html=True)
+                for group in suggested_title_groups:
+                    main_title = str(group.get("main_title", "") or "").strip()
+                    if not main_title:
+                        continue
+                    variant_titles = [
+                        str(variant.get("title", "") or "").strip()
+                        for variant in (group.get("variants", []) or [])
+                        if str(variant.get("title", "") or "").strip()
+                    ]
+                    detail = ", ".join(variant_titles) if variant_titles else "No subtitle variants added"
+                    st.markdown(
+                        f'<div class="pipeline-ai-updates-copy"><strong>{html.escape(main_title)}</strong>: {html.escape(detail)}</div>',
+                        unsafe_allow_html=True,
+                    )
+            elif suggested_titles:
+                title_items = "".join(f"<li>{html.escape(str(title))}</li>" for title in suggested_titles)
+                st.markdown(
+                    '<div class="pipeline-ai-updates-label">Effective search titles</div>'
+                    f'<ul class="pipeline-ai-updates-list">{title_items}</ul>',
+                    unsafe_allow_html=True,
+                )
+            if suggested_locations:
+                location_items = "".join(f"<li>{html.escape(str(location))}</li>" for location in suggested_locations)
+                st.markdown(
+                    '<div class="pipeline-ai-updates-label">Current saved location lines</div>'
+                    f'<ul class="pipeline-ai-updates-list">{location_items}</ul>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
         elif suggestion_message:
             st.caption(suggestion_message)
 
@@ -1863,7 +2082,7 @@ def _render_run_inputs() -> None:
             "pipeline",
             "save_run_inputs",
             payload={
-                "target_titles": str(st.session_state.get("pipeline_target_titles_value", current_target_titles) or ""),
+                "title_groups": editable_title_groups,
                 "preferred_locations": str(
                     st.session_state.get("pipeline_preferred_locations_value", current_preferred_locations) or ""
                 ),
@@ -1907,7 +2126,7 @@ def _render_action_deck() -> None:
             "pipeline",
             "discover_and_ingest",
             payload={
-                "use_ai_title_expansion": True,
+                "use_ai_title_expansion": False,
                 "use_ai_scoring": True,
             },
             label="Find Roles",
@@ -1915,7 +2134,7 @@ def _render_action_deck() -> None:
         st.rerun()
 
     st.markdown(
-        '<div class="pipeline-secondary-actions-note">Best for normal day-to-day searching.</div>',
+        '<div class="pipeline-secondary-actions-note">Best for normal day-to-day searching. Searches use your saved main titles plus selected subtitle variants without adding extra run-time title expansion.</div>',
         unsafe_allow_html=True,
     )
     _close_section_shell()

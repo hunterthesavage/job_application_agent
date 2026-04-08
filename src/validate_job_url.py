@@ -112,12 +112,59 @@ LEGAL_ENTITY_SUFFIXES = {
     "plc",
 }
 
+SOFT_EXPIRED_PAGE_PATTERNS = [
+    "the page you are looking for doesn't exist",
+    "the page you are looking for does not exist",
+    "this job is no longer available",
+    "job no longer available",
+    "job posting no longer available",
+    "this position has been filled",
+    "this requisition has been filled",
+    "this opportunity is no longer available",
+]
+
+SOFT_EXPIRED_PAGE_SUPPORT_MARKERS = [
+    "search for jobs",
+    "search jobs",
+    "view all jobs",
+    "back to jobs",
+    "back to careers",
+]
+
+
+class ExpiredJobPageError(RuntimeError):
+    pass
+
 
 def parse_csv_text(value: str) -> list[str]:
     text = safe_text(value)
     if not text:
         return []
     return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _raise_if_soft_expired_page(soup: BeautifulSoup, *, url: str) -> None:
+    page_text = soup.get_text(" ", strip=True)
+    normalized_text = re.sub(r"\s+", " ", safe_text(page_text)).lower()
+    if not normalized_text:
+        return
+
+    title_text = ""
+    if soup.title and soup.title.string:
+        title_text = safe_text(soup.title.string).lower()
+
+    matched_pattern = next(
+        (pattern for pattern in SOFT_EXPIRED_PAGE_PATTERNS if pattern in normalized_text or pattern in title_text),
+        "",
+    )
+    if not matched_pattern:
+        return
+
+    has_support_marker = any(marker in normalized_text for marker in SOFT_EXPIRED_PAGE_SUPPORT_MARKERS)
+    if not has_support_marker and "404" not in title_text and "not found" not in title_text:
+        return
+
+    raise ExpiredJobPageError(f"Soft-expired ATS job page: {url} | {matched_pattern}")
 
 
 def load_runtime_settings() -> dict[str, str]:
@@ -560,6 +607,7 @@ def parse_greenhouse_page(url: str) -> tuple[str, str, str, str, str]:
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "lxml")
+    _raise_if_soft_expired_page(soup, url=response.url)
 
     final_url = response.url
 
@@ -692,6 +740,7 @@ def parse_page(url: str) -> tuple[str, str, str, str, str]:
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "lxml")
+    _raise_if_soft_expired_page(soup, url=response.url)
 
     title = ""
     location = ""
